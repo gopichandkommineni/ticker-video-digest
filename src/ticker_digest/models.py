@@ -18,3 +18,19 @@ class VideoMetadata(BaseModel):
     @property
     def url(self) -> str:
         return f"https://youtube.com/watch?v={self.video_id}"
+
+
+class TranscriptSegment(BaseModel):
+    text: str
+    start_seconds: float
+    duration_seconds: float
+
+
+class Transcript(BaseModel):
+    video_id: str
+    segments: list[TranscriptSegment]
+    language: str
+
+    @property
+    def full_text(self) -> str:
+        return " ".join(segment.text for segment in self.segments)
