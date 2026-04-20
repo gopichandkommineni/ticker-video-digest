@@ -13,6 +13,8 @@ dependencies = [
     "pydantic>=2",
     "python-dotenv",
     "streamlit",
+    "cryptography>=42.0",
+    "cffi>=1.16",
 ]
 
 [project.optional-dependencies]
