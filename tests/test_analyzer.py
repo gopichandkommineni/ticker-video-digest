@@ -22,9 +22,10 @@ def _make_transcript(video_id: str = "vid001") -> Transcript:
     return Transcript(
         video_id=video_id,
         segments=[
-            TranscriptSegment(text="Company announced a new contract.", start=10.0, duration=3.0),
-            TranscriptSegment(text="Revenue guidance raised for next quarter.", start=45.0, duration=2.5),
+            TranscriptSegment(text="Company announced a new contract.", start_seconds=10.0, duration_seconds=3.0),
+            TranscriptSegment(text="Revenue guidance raised for next quarter.", start_seconds=45.0, duration_seconds=2.5),
         ],
+        language="en",
     )
 
 

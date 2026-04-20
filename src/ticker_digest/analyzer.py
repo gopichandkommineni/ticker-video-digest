@@ -46,7 +46,7 @@ def extract_insights(transcript: Transcript, metadata: VideoMetadata) -> VideoIn
     client = anthropic.Anthropic()
 
     formatted = "\n".join(
-        f"[{int(seg.start)}s] {seg.text}" for seg in transcript.segments
+        f"[{int(seg.start_seconds)}s] {seg.text}" for seg in transcript.segments
     )
 
     system = [

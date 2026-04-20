@@ -23,18 +23,18 @@ class VideoMetadata(BaseModel):
 
 class TranscriptSegment(BaseModel):
     text: str
-    start: float
-    duration: float
+    start_seconds: float
+    duration_seconds: float
 
 
 class Transcript(BaseModel):
     video_id: str
     segments: list[TranscriptSegment]
+    language: str
 
-    @computed_field  # type: ignore[prop-decorator]
     @property
     def full_text(self) -> str:
-        return " ".join(seg.text for seg in self.segments)
+        return " ".join(segment.text for segment in self.segments)
 
 
 Sentiment = Literal["bullish", "bearish", "neutral", "mixed"]
