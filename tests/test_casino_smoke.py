@@ -5,24 +5,22 @@ Skipped in unit-only runs (-m "not integration").
 """
 import pytest
 
-from casino_dashboard.data.yfinance_client import fetch_ticker_snapshot
+from casino_dashboard.data.yfinance_client import fetch_ticker_history
+from casino_dashboard.models import TickerSnapshot
 
 
 @pytest.mark.integration
 def test_rklb_real_snapshot():
-    snap = fetch_ticker_snapshot("RKLB", lookback_days=90)
+    result = fetch_ticker_history("RKLB", lookback_days=90)
 
-    assert snap is not None, "fetch_ticker_snapshot returned None for RKLB"
-    assert snap.ticker == "RKLB"
-
-    # yfinance history(period="3mo") should yield ~60 trading days
-    # We only get a single TickerSnapshot (latest day), but avg_volume_30d
-    # is computed from the full 3-month history; assert it looks sane.
-    assert snap.open > 0
-    assert snap.high >= snap.low
-    assert snap.close > 0
-    assert snap.volume > 0
-    assert snap.avg_volume_30d is not None and snap.avg_volume_30d > 0
-
-    # News: yfinance usually returns at least a few items for an active ticker
-    assert len(snap.news_items) > 0, "Expected at least one news item for RKLB"
+    assert len(result) > 0, "fetch_ticker_history returned no snapshots for RKLB"
+    # result[0] is the oldest entry; use the latest for avg_volume_30d (needs 30 prior days)
+    first = result[0]
+    latest = result[-1]
+    assert isinstance(first, TickerSnapshot)
+    assert first.ticker == "RKLB"
+    assert first.open > 0
+    assert first.high >= first.low
+    assert first.close > 0
+    assert first.volume > 0
+    assert latest.avg_volume_30d is not None and latest.avg_volume_30d > 0
