@@ -14,6 +14,7 @@ from casino_dashboard.db.repository import (
 from casino_dashboard.db.schema import _DEFAULT_DB_PATH, init_db
 from casino_dashboard.models import NewsItem
 from casino_dashboard.universe import load_universe
+from casino_dashboard.ui.sector_aggregator import aggregate_signals_by_sector
 
 
 def resolve_sector_default(
@@ -93,6 +94,14 @@ def load_social_history(
 def load_latest_social_mentions(db_path: str = str(_DEFAULT_DB_PATH)) -> pd.DataFrame:
     """Return wide-format DataFrame of latest social mention counts, indexed by ticker."""
     return get_latest_social_mentions(Path(db_path))
+
+
+@st.cache_data(ttl=3600)
+def load_sector_aggregates(db_path: str = str(_DEFAULT_DB_PATH)) -> pd.DataFrame:
+    """Load signals matrix and return sector-level aggregate DataFrame."""
+    signals_df = load_signals_matrix(db_path)
+    universe = load_universe()
+    return aggregate_signals_by_sector(signals_df, universe)
 
 
 @st.cache_data(ttl=3600)
