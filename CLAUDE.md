@@ -65,6 +65,14 @@ they're reused across the per-video pass.
 The output is aggregated commentary from public YouTube videos.
 It is not investment advice. The UI and CLI must surface this clearly.
 
+## Daily refresh ops
+
+- Daily refresh runs in GitHub Actions on schedule (`0 13 * * *` UTC), **NOT locally**.
+- `data/snapshots.db` is the production database and is version-controlled.
+- The Action commits `data/snapshots.db` back to `main` automatically after each run.
+- Local runs of `daily_refresh.py` are for testing only — **DO NOT commit `data/snapshots.db`
+  from a local sandbox run** (it will overwrite production data with incomplete/test results).
+
 ## v6 canonical-files policy
 The following files are CANONICAL CONFIGURATION. Do not modify, regenerate,
 or replace them without an explicit prompt instructing you to do so:
