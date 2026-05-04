@@ -74,15 +74,15 @@ def test_fetch_ticker_history_returns_list():
         assert snap.news_items == []
 
 
-def test_90_trading_days_yield_roughly_90_snapshots():
-    hist = _make_history(90)
+def test_500_trading_days_yield_roughly_500_snapshots():
+    hist = _make_history(500)
     mock_ticker = _make_mock_ticker(hist=hist)
 
     with patch("casino_dashboard.data.yfinance_client.yf.Ticker", return_value=mock_ticker):
         snaps = fetch_ticker_history("RKLB")
 
-    # Business-day history of 90 rows → exactly 90 snapshots
-    assert len(snaps) == 90
+    # 2y of business-day history (~500 rows) → exactly 500 snapshots
+    assert len(snaps) == 500
 
 
 def test_avg_volume_30d_computed_correctly():

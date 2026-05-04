@@ -31,7 +31,7 @@ def _fetch_with_retry(ticker: str, lookback_days: int) -> list[TickerSnapshot]:
 def _fetch_once(ticker: str, lookback_days: int) -> list[TickerSnapshot]:
     yf_ticker = yf.Ticker(ticker)
 
-    hist = yf_ticker.history(period="3mo", auto_adjust=False)
+    hist = yf_ticker.history(period="2y", auto_adjust=False)
     if hist.empty:
         raise ValueError(f"Empty history for {ticker}")
 
