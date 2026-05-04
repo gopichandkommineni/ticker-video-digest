@@ -52,5 +52,5 @@ def sector_card(
                 st.markdown("Near BO: —")
 
         if st.button("View →", key=f"sector_card_{sector_id}"):
-            st.query_params["sector"] = sector_id
+            st.session_state["preselect_sector"] = sector_id
             st.switch_page("pages/01_All_Tickers.py")

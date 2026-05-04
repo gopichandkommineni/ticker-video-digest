@@ -11,6 +11,25 @@ from casino_dashboard.models import NewsItem
 from casino_dashboard.universe import load_universe
 
 
+def resolve_sector_default(
+    session_state: dict,
+    query_params: dict,
+    all_sector_ids: list[str],
+) -> list[str]:
+    """Return sector_id list to pre-select in the All Tickers multiselect.
+
+    Priority: session_state["preselect_sector"] (set by card click via
+    st.switch_page, which doesn't preserve query_params) → query_params["sector"]
+    (for direct URL access) → all sectors as fallback.
+    """
+    sector_id = session_state.pop("preselect_sector", None) or query_params.get(
+        "sector", None
+    )
+    if sector_id and sector_id in all_sector_ids:
+        return [sector_id]
+    return list(all_sector_ids)
+
+
 @st.cache_data(ttl=3600)
 def load_signals_matrix(db_path: str = str(_DEFAULT_DB_PATH)) -> pd.DataFrame:
     """Return wide-format DataFrame of latest signals for all tickers."""
