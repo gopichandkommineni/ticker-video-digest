@@ -64,3 +64,11 @@ they're reused across the per-video pass.
 ## Disclaimers
 The output is aggregated commentary from public YouTube videos.
 It is not investment advice. The UI and CLI must surface this clearly.
+
+## v6 canonical-files policy
+The following files are CANONICAL CONFIGURATION. Do not modify, regenerate,
+or replace them without an explicit prompt instructing you to do so:
+- config/themes.yaml — the 8-sector ticker universe
+- STRATEGY.md — the casino-coherent investment thesis
+If a session begins and these files do not match what a prompt assumes,
+STOP and report the mismatch. Do not "fix" them by overwriting.
