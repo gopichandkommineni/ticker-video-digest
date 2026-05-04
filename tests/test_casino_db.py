@@ -123,3 +123,40 @@ def test_multiple_tickers_isolated(tmp_path: Path):
     nvda = get_snapshot("NVDA", date(2024, 12, 31), db)
     assert rklb is not None and rklb.ticker == "RKLB"
     assert nvda is not None and nvda.ticker == "NVDA"
+
+
+def test_save_snapshot_idempotent_same_ticker_date(tmp_path: Path):
+    import sqlite3
+    db = tmp_path / "test.db"
+    snap = _make_snap()
+    save_snapshot(snap, db)
+
+    updated = snap.model_copy(update={"close": 77.0})
+    save_snapshot(updated, db)
+
+    with sqlite3.connect(db) as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM ticker_snapshots WHERE ticker = ? AND date = ?",
+            ("RKLB", "2024-12-31"),
+        ).fetchone()[0]
+    assert count == 1
+
+    retrieved = get_snapshot("RKLB", date(2024, 12, 31), db)
+    assert retrieved is not None
+    assert retrieved.close == pytest.approx(77.0)
+
+
+def test_news_items_dedup_by_ticker_link(tmp_path: Path):
+    import sqlite3
+    db = tmp_path / "test.db"
+    snap = _make_snap()
+    save_snapshot(snap, db)
+    # Save same snapshot again — same (ticker, link) should not create a second row
+    save_snapshot(snap, db)
+
+    with sqlite3.connect(db) as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM news_items WHERE ticker = ? AND link = ?",
+            ("RKLB", "https://example.com/1"),
+        ).fetchone()[0]
+    assert count == 1

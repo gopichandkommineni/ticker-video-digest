@@ -39,25 +39,30 @@ def save_snapshot(snap: TickerSnapshot, db_path: Path = _DEFAULT_DB_PATH) -> Non
                 snap.avg_volume_30d,
             ),
         )
-        conn.executemany(
-            """
-            INSERT OR IGNORE INTO news_items
-                (ticker, snap_date, title, link, publisher, published_at, fetched_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                (
-                    snap.ticker,
-                    snap.date.isoformat(),
-                    item.title,
-                    item.link,
-                    item.publisher,
-                    item.published_at.isoformat(),
-                    fetched_at,
-                )
-                for item in snap.news_items
-            ],
-        )
+        if snap.news_items:
+            existing_links = {row[0] for row in conn.execute(
+                "SELECT link FROM news_items WHERE ticker = ?", (snap.ticker,)
+            ).fetchall()}
+            new_news = [item for item in snap.news_items if item.link not in existing_links]
+            conn.executemany(
+                """
+                INSERT INTO news_items
+                    (ticker, snap_date, title, link, publisher, published_at, fetched_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        snap.ticker,
+                        snap.date.isoformat(),
+                        item.title,
+                        item.link,
+                        item.publisher,
+                        item.published_at.isoformat(),
+                        fetched_at,
+                    )
+                    for item in new_news
+                ],
+            )
 
 
 def get_snapshot(
