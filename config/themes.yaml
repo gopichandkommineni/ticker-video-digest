@@ -1,0 +1,62 @@
+# Casino-coherent thematic universe — v6
+# See STRATEGY.md for sector selection criteria.
+# This file is canonical. Do not auto-generate or replace without explicit
+# request. The 8 sectors below were chosen against specific criteria
+# (story density, asymmetry, narrative stage) — they are not generic.
+
+sectors:
+  nuclear:
+    display_name: "Nuclear"
+    description: "SMR builders + uranium fuel cycle"
+    stage: "mid"
+    speculative: false
+    tickers: [SMR, OKLO, NNE, BWXT, NXE, CCJ, UEC, UUUU, DNN, LEU]
+
+  photonics:
+    display_name: "Photonics & Optical"
+    description: "AI compute interconnect bottleneck"
+    stage: "early-mid"
+    speculative: false
+    tickers: [LITE, COHR, AAOI, POET, FN, MRVL, CIEN]
+
+  quantum:
+    display_name: "Quantum Computing"
+    description: "Pre-revenue post-classical compute"
+    stage: "very-early"
+    speculative: true
+    tickers: [IONQ, RGTI, QBTS, QUBT, ARQQ]
+
+  drones_defense:
+    display_name: "Drones & Autonomous Defense"
+    description: "Unmanned systems, geopolitical tailwind"
+    stage: "mid"
+    speculative: false
+    tickers: [KTOS, AVAV, ONDS, RCAT, UMAC, RKLB]
+
+  space:
+    display_name: "Space Economy"
+    description: "Launch + operators + comms"
+    stage: "mid"
+    speculative: false
+    tickers: [RKLB, ASTS, PL, IRDM, INTU, LUNR]
+
+  critical_minerals:
+    display_name: "Critical Minerals"
+    description: "Rare earths, silver, supply chain onshoring"
+    stage: "mid"
+    speculative: false
+    tickers: [MP, USAR, CDE, AG, NB, UAMY, REMX]
+
+  ai_infrastructure:
+    display_name: "AI Infrastructure"
+    description: "Power, cooling, networking, storage"
+    stage: "mid-late"
+    speculative: false
+    tickers: [VRT, ETN, PWR, SMCI, ANET, DELL, NTAP, POWL]
+
+  crypto_equities:
+    display_name: "Crypto Infrastructure"
+    description: "Public-equity exposure to crypto rails"
+    stage: "mid"
+    speculative: false
+    tickers: [COIN, CRCL, BMNR, BTBT, CIFR, IREN]

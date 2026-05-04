@@ -191,6 +191,9 @@ cython_debug/
 # Ruff stuff:
 .ruff_cache/
 
+# Casino Dashboard SQLite databases
+data/*.db
+
 # PyPI configuration file
 .pypirc
 
