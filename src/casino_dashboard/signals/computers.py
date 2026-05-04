@@ -1,3 +1,5 @@
+from datetime import date
+
 import pandas as pd
 
 from casino_dashboard.models import TickerSnapshot
@@ -61,6 +63,85 @@ def compute_dist_from_extreme(
         return (latest_close - extreme) / extreme
     else:
         raise ValueError(f"kind must be 'high' or 'low', got {kind!r}")
+
+
+def compute_return_1m(history: list[TickerSnapshot]) -> float | None:
+    """21-trading-day return convenience wrapper."""
+    return compute_return(history, 21)
+
+
+def compute_return_ytd(history: list[TickerSnapshot]) -> float | None:
+    """Return from the first trading day of the current calendar year to the latest close.
+
+    Returns None if history doesn't span back to before January 1 of the current year
+    (i.e., no pre-Jan-1 reference point exists in the data).
+    """
+    if not history:
+        return None
+
+    current_year = date.today().year
+    jan1 = date(current_year, 1, 1)
+
+    # History must contain at least one entry from before the current year
+    # so we can anchor the YTD start at the first trading day of the year.
+    if history[0].date >= jan1:
+        return None
+
+    year_start_snap: TickerSnapshot | None = None
+    for snap in history:
+        if snap.date >= jan1:
+            year_start_snap = snap
+            break
+
+    if year_start_snap is None:
+        return None
+
+    latest_close = history[-1].close
+    start_close = year_start_snap.close
+
+    if start_close == 0:
+        return None
+
+    return (latest_close - start_close) / start_close
+
+
+def compute_return_1y(history: list[TickerSnapshot]) -> float | None:
+    """252-trading-day return convenience wrapper."""
+    return compute_return(history, 252)
+
+
+def compute_rsi_14(history: list[TickerSnapshot]) -> float | None:
+    """14-day RSI using Wilder's smoothing.
+
+    Standard formula: 100 - (100 / (1 + RS))
+    where RS = average_gain / average_loss over 14 periods.
+
+    Returns None if fewer than 15 days of history.
+    Returns 100 if no losses in window (all gains).
+    Returns 0 if no gains in window (all losses).
+    """
+    if len(history) < 15:
+        return None
+
+    closes = [s.close for s in history]
+    changes = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
+
+    # Use the last 14 changes
+    window = changes[-14:]
+
+    gains = [c for c in window if c > 0]
+    losses = [abs(c) for c in window if c < 0]
+
+    avg_gain = sum(gains) / 14
+    avg_loss = sum(losses) / 14
+
+    if avg_loss == 0:
+        return 100.0
+    if avg_gain == 0:
+        return 0.0
+
+    rs = avg_gain / avg_loss
+    return 100.0 - (100.0 / (1.0 + rs))
 
 
 def compute_apewisdom_velocity_24h(

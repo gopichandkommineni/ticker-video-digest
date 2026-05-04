@@ -3,8 +3,15 @@ from datetime import date
 from pathlib import Path
 
 from casino_dashboard.data.apewisdom_client import fetch_apewisdom_universe, filter_to_universe
+from casino_dashboard.data.manual_notes_loader import load_manual_notes_from_yaml
 from casino_dashboard.data.yfinance_client import fetch_universe_snapshot
-from casino_dashboard.db.repository import save_snapshot, save_social_mention
+from casino_dashboard.data.yfinance_metadata import fetch_metadata_for_universe
+from casino_dashboard.db.repository import (
+    save_manual_note,
+    save_snapshot,
+    save_social_mention,
+    save_ticker_metadata,
+)
 from casino_dashboard.signals.orchestrator import compute_and_save_all_signals
 from casino_dashboard.universe import load_universe
 
@@ -12,6 +19,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 _DEFAULT_DB = Path("data/snapshots.db")
+_MANUAL_NOTES_PATH = Path("config/manual_notes.yaml")
 
 
 def main(db_path: Path = _DEFAULT_DB) -> None:
@@ -53,6 +61,46 @@ def main(db_path: Path = _DEFAULT_DB) -> None:
         logger.info("Skipped %d tickers not in ApeWisdom data", skipped)
     except Exception as exc:
         logger.error("ApeWisdom fetch failed (continuing): %s", exc)
+
+    logger.info("Fetching ticker metadata …")
+    try:
+        sorted_tickers = sorted(all_tickers)
+        metadata_list = fetch_metadata_for_universe(sorted_tickers)
+        populated = sum(
+            1 for m in metadata_list
+            if any(
+                v is not None for v in [
+                    m.fifty_two_week_high, m.fifty_two_week_low,
+                    m.short_pct_of_float, m.short_ratio_days,
+                    m.analyst_target_mean, m.held_pct_insiders,
+                    m.held_pct_institutions, m.market_cap,
+                    m.revenue_ttm, m.revenue_growth_yoy,
+                    m.profit_margin, m.beta,
+                    m.next_earnings_date, m.last_earnings_date,
+                ]
+            )
+        )
+        skipped_meta = len(metadata_list) - populated
+        for meta in metadata_list:
+            save_ticker_metadata(meta, db_path)
+        logger.info("Fetched metadata for %d/%d tickers", populated, len(sorted_tickers))
+        logger.info("Skipped %d tickers with no metadata", skipped_meta)
+    except Exception as exc:
+        logger.error("Ticker metadata fetch failed (continuing): %s", exc)
+
+    logger.info("Loading manual notes from YAML …")
+    try:
+        notes = load_manual_notes_from_yaml(_MANUAL_NOTES_PATH)
+        for ticker, note in notes.items():
+            save_manual_note(
+                ticker=ticker,
+                catalyst=note["catalyst"],
+                red_flag=note["red_flag"],
+                db_path=db_path,
+            )
+        logger.info("Loaded %d manual notes from YAML", len(notes))
+    except Exception as exc:
+        logger.error("Manual notes load failed (continuing): %s", exc)
 
     logger.info("Computing signals …")
     compute_and_save_all_signals(universe, db_path)

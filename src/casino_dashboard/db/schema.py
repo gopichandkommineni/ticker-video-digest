@@ -52,4 +52,33 @@ def init_db(db_path: Path = _DEFAULT_DB_PATH) -> None:
                 subreddit         TEXT    NOT NULL DEFAULT '',
                 PRIMARY KEY (ticker, date, source, subreddit)
             );
+
+            CREATE TABLE IF NOT EXISTS ticker_metadata (
+                ticker                  TEXT NOT NULL,
+                date                    TEXT NOT NULL,
+                fifty_two_week_high     REAL,
+                fifty_two_week_low      REAL,
+                short_pct_of_float      REAL,
+                short_ratio_days        REAL,
+                analyst_target_mean     REAL,
+                held_pct_insiders       REAL,
+                held_pct_institutions   REAL,
+                market_cap              REAL,
+                revenue_ttm             REAL,
+                revenue_growth_yoy      REAL,
+                profit_margin           REAL,
+                beta                    REAL,
+                next_earnings_date      TEXT,
+                next_earnings_time      TEXT,
+                last_earnings_date      TEXT,
+                PRIMARY KEY (ticker, date)
+            );
+
+            CREATE TABLE IF NOT EXISTS manual_notes (
+                ticker      TEXT NOT NULL,
+                catalyst    TEXT,
+                red_flag    TEXT,
+                updated_at  TEXT NOT NULL,
+                PRIMARY KEY (ticker)
+            );
         """)
