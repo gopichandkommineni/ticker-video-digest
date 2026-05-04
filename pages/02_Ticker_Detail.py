@@ -107,6 +107,13 @@ with right:
     news_items = load_news_for_ticker(ticker, limit=5)
     if news_items:
         for item in news_items:
-            st.markdown(f"- [{item.title}]({item.link}) — *{item.publisher}*")
+            title = item.title or "Untitled"
+            publisher = item.publisher or "Unknown"
+            if not item.title and not item.publisher and not item.link:
+                continue
+            if item.link:
+                st.markdown(f"- **{publisher}** — [{title}]({item.link})")
+            else:
+                st.markdown(f"- **{publisher}** — {title}")
     else:
         st.info("No recent news available.")

@@ -3,7 +3,10 @@ import math
 
 
 def format_pct(x: float | None) -> str:
-    """Format a float as a percentage string, e.g. '+12.3%' or '—' for None/NaN."""
+    """Format a decimal fraction as a percentage string, e.g. '+12.3%' or '—' for None/NaN.
+
+    Signals are stored as decimals (0.20 = 20%). This function multiplies by 100 for display.
+    """
     if x is None:
         return "—"
     try:
@@ -11,8 +14,7 @@ def format_pct(x: float | None) -> str:
             return "—"
     except (TypeError, ValueError):
         return "—"
-    sign = "+" if x > 0 else ""
-    return f"{sign}{x:.1f}%"
+    return f"{x:+.1%}"
 
 
 def format_ratio(x: float | None) -> str:
