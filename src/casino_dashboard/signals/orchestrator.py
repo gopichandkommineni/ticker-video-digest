@@ -12,6 +12,10 @@ from casino_dashboard.signals.computers import (
     compute_dist_from_extreme,
     compute_mention_velocity_7d,
     compute_return,
+    compute_return_1m,
+    compute_return_1y,
+    compute_return_ytd,
+    compute_rsi_14,
     compute_vol_ratio_30d,
 )
 from casino_dashboard.universe import Universe
@@ -20,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def compute_signals_for_ticker(ticker: str, db_path: Path) -> dict[str, float]:
-    history = get_history(ticker, 60, db_path)
+    history = get_history(ticker, 300, db_path)
     # get_history returns newest-first; reverse to oldest-first for computers
     history = list(reversed(history))
 
@@ -34,6 +38,10 @@ def compute_signals_for_ticker(ticker: str, db_path: Path) -> dict[str, float]:
     _store("return_1d", compute_return(history, 1))
     _store("return_5d", compute_return(history, 5))
     _store("return_20d", compute_return(history, 20))
+    _store("return_1m", compute_return_1m(history))
+    _store("return_ytd", compute_return_ytd(history))
+    _store("return_1y", compute_return_1y(history))
+    _store("rsi_14", compute_rsi_14(history))
     _store("dist_from_30d_high_pct", compute_dist_from_extreme(history, 30, "high"))
     _store("dist_from_30d_low_pct", compute_dist_from_extreme(history, 30, "low"))
 
