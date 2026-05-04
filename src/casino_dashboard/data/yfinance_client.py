@@ -66,12 +66,44 @@ def _parse_news(raw_news: list[dict]) -> list[NewsItem]:
     items: list[NewsItem] = []
     for item in raw_news:
         try:
-            ts = item.get("providerPublishTime") or item.get("published", 0)
-            published_at = datetime.fromtimestamp(int(ts), tz=timezone.utc)
+            if "content" in item:
+                # New yfinance format (2025+): fields nested under "content"
+                content = item["content"]
+                title = content.get("title") or ""
+                link = (
+                    (content.get("canonicalUrl") or {}).get("url")
+                    or (content.get("clickThroughUrl") or {}).get("url")
+                    or ""
+                )
+                publisher = (content.get("provider") or {}).get("displayName") or ""
+                pub_date_str = content.get("pubDate") or ""
+                published_at = (
+                    datetime.fromisoformat(pub_date_str.replace("Z", "+00:00"))
+                    if pub_date_str
+                    else None
+                )
+            else:
+                # Legacy yfinance format: flat dict
+                title = item.get("title") or ""
+                link = item.get("link") or ""
+                publisher = item.get("publisher") or ""
+                ts = item.get("providerPublishTime") or item.get("published")
+                published_at = datetime.fromtimestamp(int(ts), tz=timezone.utc) if ts else None
+
+            if not title:
+                logger.warning("Skipping news item with empty title")
+                continue
+            if not link:
+                logger.warning("Skipping news item with empty link for title=%r", title)
+                continue
+            if published_at is None:
+                logger.warning("Skipping news item with missing publish date for title=%r", title)
+                continue
+
             items.append(NewsItem(
-                title=item.get("title", ""),
-                link=item.get("link", ""),
-                publisher=item.get("publisher", ""),
+                title=title,
+                link=link,
+                publisher=publisher,
                 published_at=published_at,
             ))
         except Exception as exc:

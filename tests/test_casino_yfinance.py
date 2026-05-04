@@ -189,6 +189,78 @@ def test_parse_news_limits_to_five():
     assert len(snaps[-1].news_items) <= 5
 
 
+def _make_news_new_format(n: int = 3) -> list[dict]:
+    """Build news items in the yfinance 2025+ nested format."""
+    return [
+        {
+            "id": f"id-{i}",
+            "content": {
+                "title": f"New Format News {i}",
+                "pubDate": f"2026-05-0{i + 1}T12:00:00Z",
+                "provider": {"displayName": f"Publisher{i}"},
+                "canonicalUrl": {"url": f"https://example.com/new/{i}"},
+                "clickThroughUrl": {"url": f"https://example.com/click/{i}"},
+            },
+        }
+        for i in range(n)
+    ]
+
+
+def test_parse_news_new_format_happy_path():
+    raw = _make_news_new_format(2)
+    items = _parse_news(raw)
+    assert len(items) == 2
+    assert items[0].title == "New Format News 0"
+    assert items[0].publisher == "Publisher0"
+    assert items[0].link == "https://example.com/new/0"
+    assert items[0].published_at.year == 2026
+    assert items[0].published_at.tzinfo is not None
+
+
+def test_parse_news_legacy_format_happy_path():
+    raw = _make_news(2)
+    items = _parse_news(raw)
+    assert len(items) == 2
+    assert items[0].title == "News 0"
+    assert items[0].publisher == "TestPub"
+    assert items[0].link == "https://example.com/0"
+    assert items[0].published_at.tzinfo is not None
+
+
+def test_parse_news_empty_list():
+    items = _parse_news([])
+    assert items == []
+
+
+def test_parse_news_skips_missing_title():
+    raw = [
+        {
+            "content": {
+                "pubDate": "2026-05-01T12:00:00Z",
+                "provider": {"displayName": "Pub"},
+                "canonicalUrl": {"url": "https://example.com/1"},
+            }
+        }
+    ]
+    items = _parse_news(raw)
+    assert items == []
+
+
+def test_parse_news_skips_empty_title():
+    raw = [
+        {
+            "content": {
+                "title": "",
+                "pubDate": "2026-05-01T12:00:00Z",
+                "provider": {"displayName": "Pub"},
+                "canonicalUrl": {"url": "https://example.com/1"},
+            }
+        }
+    ]
+    items = _parse_news(raw)
+    assert items == []
+
+
 # ── universe fetch ────────────────────────────────────────────────────────────
 
 def test_fetch_universe_snapshot_aggregates():
