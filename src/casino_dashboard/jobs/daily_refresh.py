@@ -19,15 +19,17 @@ def main(db_path: Path = _DEFAULT_DB) -> None:
     logger.info("Universe: %d unique tickers across %d sectors", len(all_tickers), len(universe.sectors))
 
     logger.info("Fetching snapshots …")
-    snapshots = fetch_universe_snapshot(universe)
+    snapshots_by_ticker = fetch_universe_snapshot(universe)
 
-    fetched = 0
-    for snap in snapshots:
-        save_snapshot(snap, db_path)
-        fetched += 1
+    total_rows = 0
+    for ticker, snaps in snapshots_by_ticker.items():
+        for snap in snaps:
+            save_snapshot(snap, db_path)
+        total_rows += len(snaps)
 
-    failed = len(all_tickers) - fetched
-    logger.info("Done. %d/%d tickers fetched, %d failed.", fetched, len(all_tickers), failed)
+    fetched_tickers = len(snapshots_by_ticker)
+    failed = len(all_tickers) - fetched_tickers
+    logger.info("Done. Saved %d rows across %d tickers, %d failed.", total_rows, fetched_tickers, failed)
 
     logger.info("Computing signals …")
     compute_and_save_all_signals(universe, db_path)
