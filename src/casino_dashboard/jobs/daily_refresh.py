@@ -3,6 +3,7 @@ from pathlib import Path
 
 from casino_dashboard.data.yfinance_client import fetch_universe_snapshot
 from casino_dashboard.db.repository import save_snapshot
+from casino_dashboard.signals.orchestrator import compute_and_save_all_signals
 from casino_dashboard.universe import load_universe
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -27,6 +28,10 @@ def main(db_path: Path = _DEFAULT_DB) -> None:
 
     failed = len(all_tickers) - fetched
     logger.info("Done. %d/%d tickers fetched, %d failed.", fetched, len(all_tickers), failed)
+
+    logger.info("Computing signals …")
+    compute_and_save_all_signals(universe, db_path)
+    logger.info("Signals computed for %d tickers", len(all_tickers))
 
 
 if __name__ == "__main__":

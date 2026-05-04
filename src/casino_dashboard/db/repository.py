@@ -2,6 +2,8 @@ import sqlite3
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+import pandas as pd
+
 from casino_dashboard.db.schema import _DEFAULT_DB_PATH, init_db
 from casino_dashboard.models import NewsItem, TickerSnapshot
 
@@ -101,6 +103,58 @@ def get_history(
         news = _fetch_news(ticker, snap_date, db_path)
         snapshots.append(_row_to_snapshot(row, news))
     return snapshots
+
+
+def save_signal(
+    ticker: str, signal_date: date, signal_name: str, value: float, db_path: Path = _DEFAULT_DB_PATH
+) -> None:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO signals (ticker, date, signal_name, value)
+            VALUES (?, ?, ?, ?)
+            """,
+            (ticker, signal_date.isoformat(), signal_name, value),
+        )
+
+
+def get_signals(
+    ticker: str, signal_date: date, db_path: Path = _DEFAULT_DB_PATH
+) -> dict[str, float]:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT signal_name, value
+            FROM signals
+            WHERE ticker = ? AND date = ?
+            """,
+            (ticker, signal_date.isoformat()),
+        ).fetchall()
+    return {row[0]: row[1] for row in rows}
+
+
+def get_latest_signals_all_tickers(db_path: Path = _DEFAULT_DB_PATH) -> pd.DataFrame:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT s.ticker, s.signal_name, s.value
+            FROM signals s
+            INNER JOIN (
+                SELECT ticker, MAX(date) AS max_date
+                FROM signals
+                GROUP BY ticker
+            ) latest ON s.ticker = latest.ticker AND s.date = latest.max_date
+            """
+        ).fetchall()
+
+    if not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows, columns=["ticker", "signal_name", "value"])
+    return df.pivot(index="ticker", columns="signal_name", values="value")
 
 
 def _fetch_news(ticker: str, snap_date: date, db_path: Path) -> list[NewsItem]:

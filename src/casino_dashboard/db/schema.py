@@ -31,4 +31,12 @@ def init_db(db_path: Path = _DEFAULT_DB_PATH) -> None:
                 published_at TEXT    NOT NULL,
                 fetched_at   TEXT    NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS signals (
+                ticker       TEXT NOT NULL,
+                date         TEXT NOT NULL,
+                signal_name  TEXT NOT NULL,
+                value        REAL,
+                PRIMARY KEY (ticker, date, signal_name)
+            );
         """)
