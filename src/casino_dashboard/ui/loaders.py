@@ -8,6 +8,7 @@ import streamlit as st
 from casino_dashboard.db.repository import (
     get_history,
     get_latest_signals_all_tickers,
+    get_reddit_mentions_for_ticker,
     get_social_history,
     get_latest_social_mentions,
 )
@@ -93,6 +94,22 @@ def load_social_history(
 def load_latest_social_mentions(db_path: str = str(_DEFAULT_DB_PATH)) -> pd.DataFrame:
     """Return wide-format DataFrame of latest social mention counts, indexed by ticker."""
     return get_latest_social_mentions(Path(db_path))
+
+
+@st.cache_data(ttl=3600)
+def load_reddit_breakdown(
+    ticker: str, db_path: str = str(_DEFAULT_DB_PATH)
+) -> pd.DataFrame:
+    """Return latest Reddit data per subreddit for the given ticker.
+
+    Returns DataFrame[date, subreddit, mention_count, upvote_sum] for the most
+    recent date that has Reddit data, or an empty DataFrame if none exists.
+    """
+    df = get_reddit_mentions_for_ticker(ticker, 2, Path(db_path))
+    if df.empty:
+        return df
+    latest_date = df["date"].max()
+    return df[df["date"] == latest_date].reset_index(drop=True)
 
 
 @st.cache_data(ttl=3600)

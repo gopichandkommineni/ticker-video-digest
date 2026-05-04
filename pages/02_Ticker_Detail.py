@@ -9,6 +9,7 @@ from casino_dashboard.ui.indicators import compute_bollinger, compute_rsi, compu
 from casino_dashboard.ui.loaders import (
     load_news_for_ticker,
     load_price_history,
+    load_reddit_breakdown,
     load_signals_matrix,
     load_social_history,
     load_universe_for_ui,
@@ -288,6 +289,16 @@ else:
         .properties(height=180)
     )
     st.altair_chart(mention_chart, use_container_width=True)
+
+    # Reddit Activity sub-section
+    st.markdown("**Reddit Activity**")
+    reddit_df = load_reddit_breakdown(ticker)
+    if reddit_df.empty:
+        st.info("Not yet collected from Reddit")
+    else:
+        reddit_display = reddit_df[["subreddit", "mention_count", "upvote_sum"]].copy()
+        reddit_display.columns = ["Subreddit", "Mentions", "Upvotes"]
+        st.dataframe(reddit_display, hide_index=True, use_container_width=False)
 
     # Velocity metrics
     latest = social_hist.iloc[0]

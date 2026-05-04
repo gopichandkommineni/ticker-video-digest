@@ -3,6 +3,7 @@ from datetime import date
 from pathlib import Path
 
 from casino_dashboard.data.apewisdom_client import fetch_apewisdom_universe, filter_to_universe
+from casino_dashboard.data.reddit_client import fetch_reddit_mentions_for_universe, get_reddit_client
 from casino_dashboard.data.yfinance_client import fetch_universe_snapshot
 from casino_dashboard.db.repository import save_snapshot, save_social_mention
 from casino_dashboard.signals.orchestrator import compute_and_save_all_signals
@@ -53,6 +54,30 @@ def main(db_path: Path = _DEFAULT_DB) -> None:
         logger.info("Skipped %d tickers not in ApeWisdom data", skipped)
     except Exception as exc:
         logger.error("ApeWisdom fetch failed (continuing): %s", exc)
+
+    logger.info("Fetching Reddit social mentions …")
+    reddit = get_reddit_client()
+    if reddit:
+        try:
+            reddit_mentions = fetch_reddit_mentions_for_universe(reddit, all_tickers)
+            for m in reddit_mentions:
+                save_social_mention(
+                    ticker=m.ticker,
+                    mention_date=today,
+                    source=f"reddit_{m.subreddit}",
+                    mention_count=m.mention_count,
+                    mentions_24h_ago=None,
+                    upvote_sum=m.upvote_sum,
+                    subreddit=m.subreddit,
+                    db_path=db_path,
+                )
+            logger.info(
+                "Saved Reddit mentions for %d ticker-subreddit pairs", len(reddit_mentions)
+            )
+        except Exception as exc:
+            logger.error("Reddit fetch failed (continuing): %s", exc)
+    else:
+        logger.warning("Reddit credentials not configured, skipping Reddit collection")
 
     logger.info("Computing signals …")
     compute_and_save_all_signals(universe, db_path)

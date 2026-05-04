@@ -235,6 +235,34 @@ def get_latest_social_mentions(db_path: Path = _DEFAULT_DB_PATH) -> pd.DataFrame
     return df.set_index("ticker")
 
 
+def get_reddit_mentions_for_ticker(
+    ticker: str,
+    days: int,
+    db_path: Path = _DEFAULT_DB_PATH,
+) -> pd.DataFrame:
+    """Return long-format Reddit mention rows for a ticker (newest-first, up to `days` days).
+
+    Columns: date, subreddit, mention_count, upvote_sum.
+    Covers rows where source LIKE 'reddit_%'.
+    """
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT date, subreddit, mention_count, upvote_sum
+            FROM social_mentions
+            WHERE ticker = ?
+              AND source LIKE 'reddit_%'
+            ORDER BY date DESC, subreddit ASC
+            LIMIT ?
+            """,
+            (ticker, days * len(["wallstreetbets", "stocks", "pennystocks", "Daytrading", "options"])),
+        ).fetchall()
+    if not rows:
+        return pd.DataFrame(columns=["date", "subreddit", "mention_count", "upvote_sum"])
+    return pd.DataFrame(rows, columns=["date", "subreddit", "mention_count", "upvote_sum"])
+
+
 def _fetch_news(ticker: str, snap_date: date, db_path: Path) -> list[NewsItem]:
     with sqlite3.connect(db_path) as conn:
         rows = conn.execute(

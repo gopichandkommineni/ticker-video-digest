@@ -4,6 +4,7 @@ from pathlib import Path
 
 from casino_dashboard.db.repository import (
     get_history,
+    get_reddit_mentions_for_ticker,
     get_social_history,
     save_signal,
 )
@@ -77,6 +78,36 @@ def compute_social_signals_for_ticker(ticker: str, db_path: Path) -> dict[str, f
     return results
 
 
+def compute_reddit_signals_for_ticker(ticker: str, db_path: Path) -> dict[str, float]:
+    """Compute Reddit social signals from accumulated DB history."""
+    results: dict[str, float] = {}
+
+    reddit_df = get_reddit_mentions_for_ticker(ticker, 15, db_path)
+    if reddit_df.empty:
+        return results
+
+    today_str = str(date.today())
+    today_rows = reddit_df[reddit_df["date"] == today_str]
+    if not today_rows.empty:
+        results["reddit_mentions_today"] = float(today_rows["mention_count"].sum())
+
+    # Compute velocity: need 8+ distinct days
+    daily = (
+        reddit_df.groupby("date")["mention_count"]
+        .sum()
+        .reset_index()
+        .sort_values("date", ascending=False)
+    )
+    if len(daily) >= 8:
+        latest_count = float(daily["mention_count"].iloc[0])
+        prior_7 = daily["mention_count"].iloc[1:8]
+        mean_prior = float(prior_7.mean())
+        if mean_prior > 0:
+            results["reddit_velocity_7d"] = latest_count / mean_prior
+
+    return results
+
+
 def compute_and_save_all_signals(universe: Universe, db_path: Path) -> None:
     today = date.today()
     tickers = universe.all_tickers()
@@ -86,6 +117,8 @@ def compute_and_save_all_signals(universe: Universe, db_path: Path) -> None:
         signals = compute_signals_for_ticker(ticker, db_path)
         social_signals = compute_social_signals_for_ticker(ticker, db_path)
         signals.update(social_signals)
+        reddit_signals = compute_reddit_signals_for_ticker(ticker, db_path)
+        signals.update(reddit_signals)
 
         for signal_name, value in signals.items():
             save_signal(ticker, today, signal_name, value, db_path)

@@ -16,6 +16,14 @@ from casino_dashboard.ui.loaders import (
     resolve_sector_default,
 )
 
+def _fmt_reddit_count(val: object) -> str:
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return "—"
+    try:
+        return str(int(val))
+    except (TypeError, ValueError):
+        return "—"
+
 st.set_page_config(page_title="All Tickers — Casino Dashboard", layout="wide")
 st.title("All Tickers")
 
@@ -92,6 +100,7 @@ for ticker in candidate_tickers:
     # Social signal: prefer the pre-computed apewisdom_velocity_24h from signals table;
     # fall back to None if not yet available (first day, before Action runs).
     mention_velocity: float | None = sig.get("apewisdom_velocity_24h")
+    reddit_today: float | None = sig.get("reddit_mentions_today")
 
     rows.append(
         {
@@ -100,6 +109,7 @@ for ticker in candidate_tickers:
             "_close_raw": close,
             "_vol_ratio_raw": sig.get("vol_ratio_30d"),
             "_mention_velocity_raw": mention_velocity,
+            "_reddit_today_raw": reddit_today,
             "_return_1d_raw": sig.get("return_1d"),
             "_return_5d_raw": sig.get("return_5d"),
             "_return_20d_raw": sig.get("return_20d"),
@@ -136,6 +146,7 @@ display_df = pd.DataFrame(
         "Close": df["_close_raw"].apply(format_money),
         "Vol Ratio": df["_vol_ratio_raw"].apply(format_ratio),
         "Mention Vel": df["_mention_velocity_raw"].apply(format_mention_velocity),
+        "Reddit Today": df["_reddit_today_raw"].apply(_fmt_reddit_count),
         "1d": df["_return_1d_raw"].apply(format_pct),
         "5d": df["_return_5d_raw"].apply(format_pct),
         "20d": df["_return_20d_raw"].apply(format_pct),
@@ -153,7 +164,10 @@ event = st.dataframe(
     selection_mode="single-row",
 )
 
-st.caption("Mention Vel: ApeWisdom 24h velocity (today ÷ yesterday). 🟢 >2x · 🟡 >1.5x · gray = normal · — = no data yet")
+st.caption(
+    "Mention Vel: ApeWisdom 24h velocity (today ÷ yesterday). 🟢 >2x · 🟡 >1.5x · gray = normal · — = no data yet  |  "
+    "Reddit Today: combined mention count across wallstreetbets, stocks, pennystocks, Daytrading, options"
+)
 
 # Navigate to detail page when a row is clicked
 if event.selection.rows:
