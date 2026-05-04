@@ -1,0 +1,112 @@
+sectors:
+  space:
+    display_name: "Space & Launch"
+    description: "Launch providers, satellite operators, and space infrastructure plays."
+    stage: "early"
+    speculative: true
+    tickers:
+      - RKLB   # Rocket Lab — multi-mission launch + spacecraft
+      - SPCE   # Virgin Galactic — suborbital tourism
+      - ASTR   # Astra Space — small sat launch
+      - RDW    # Redwire — space infrastructure hardware
+      - MNTS   # Momentus — in-space transportation
+      - BKSY   # BlackSky — geospatial intelligence
+      - ASTS   # AST SpaceMobile — space-based broadband
+
+  defense:
+    display_name: "Defense & Dual-Use"
+    description: "Defense primes, autonomous systems, and national-security tech."
+    stage: "growth"
+    speculative: false
+    tickers:
+      - RKLB   # Rocket Lab — NSSL launch contracts
+      - AXON   # Axon Enterprise — law enforcement tech
+      - CACI   # CACI International — defense IT/intel
+      - PLTR   # Palantir — AI/data for defense
+      - KTOS   # Kratos Defense — unmanned systems
+      - AVAV   # AeroVironment — small UAVs
+      - AI     # C3.ai — enterprise AI with defense contracts
+
+  nuclear:
+    display_name: "Nuclear & Energy"
+    description: "Next-gen fission, SMRs, and uranium supply chain."
+    stage: "early"
+    speculative: true
+    tickers:
+      - NNE    # Nano Nuclear Energy
+      - SMR    # NuScale Power — SMR developer
+      - OKLO   # Oklo — micro-reactor startup
+      - CEG    # Constellation Energy — largest US nuclear operator
+      - CCJ    # Cameco — uranium miner
+      - UEC    # Uranium Energy Corp
+      - DNN    # Denison Mines — uranium developer
+
+  ai_infra:
+    display_name: "AI Infrastructure"
+    description: "Chips, networking, and compute platforms powering the AI build-out."
+    stage: "growth"
+    speculative: false
+    tickers:
+      - NVDA   # Nvidia — GPU leader
+      - AMD    # Advanced Micro Devices — GPU/CPU challenger
+      - SMCI   # Super Micro Computer — AI servers
+      - AVGO   # Broadcom — custom AI ASICs
+      - MRVL   # Marvell Technology — custom silicon
+      - TSM    # TSMC — advanced node fab
+      - ARM    # Arm Holdings — CPU IP licensing
+
+  biotech:
+    display_name: "Biotech & Gene Editing"
+    description: "CRISPR, base editing, RNA therapies, and platform biotechs."
+    stage: "early"
+    speculative: true
+    tickers:
+      - CRSP   # CRISPR Therapeutics
+      - BEAM   # Beam Therapeutics — base editing
+      - EDIT   # Editas Medicine
+      - NTLA   # Intellia Therapeutics
+      - RXRX   # Recursion Pharmaceuticals — AI drug discovery
+      - SANA   # Sana Biotechnology — ex-vivo cell engineering
+      - VERV   # Verve Therapeutics — cardiovascular gene editing
+
+  ev:
+    display_name: "Electric Vehicles"
+    description: "EV OEMs, charging infrastructure, and battery supply chain."
+    stage: "growth"
+    speculative: true
+    tickers:
+      - TSLA   # Tesla — EV market leader
+      - RIVN   # Rivian — EV trucks
+      - LCID   # Lucid Group — luxury EV
+      - NIO    # NIO — Chinese EV
+      - XPEV   # XPeng — Chinese EV
+      - LI     # Li Auto — Chinese EV (extended range)
+      - FSR    # Fisker — EV startup
+
+  quantum:
+    display_name: "Quantum Computing"
+    description: "Trapped ion, superconducting, and photonic qubit platforms."
+    stage: "early"
+    speculative: true
+    tickers:
+      - IONQ   # IonQ — trapped-ion quantum
+      - RGTI   # Rigetti Computing — superconducting
+      - QUBT   # Quantum Computing Inc
+      - QBTS   # D-Wave Quantum — annealing
+      - IBM    # IBM — quantum roadmap leader
+      - MSFT   # Microsoft — topological qubits
+      - GOOGL  # Alphabet — Willow quantum chip
+
+  robotics:
+    display_name: "Robotics & Automation"
+    description: "Industrial robots, collaborative arms, surgical systems, and RPA software."
+    stage: "growth"
+    speculative: false
+    tickers:
+      - IRBT   # iRobot — consumer robots
+      - PATH   # UiPath — RPA software
+      - ABB    # ABB — industrial robots
+      - FANUY  # Fanuc — precision robotics
+      - TER    # Teradyne — test automation + UR robots
+      - ISRG   # Intuitive Surgical — da Vinci surgical robots
+      - YASKF  # Yaskawa Electric — industrial robots
