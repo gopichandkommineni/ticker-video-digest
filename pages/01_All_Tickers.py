@@ -7,6 +7,7 @@ from casino_dashboard.ui.loaders import (
     load_latest_prices,
     load_signals_matrix,
     load_universe_for_ui,
+    resolve_sector_default,
 )
 
 st.set_page_config(page_title="All Tickers — Casino Dashboard", layout="wide")
@@ -18,14 +19,8 @@ universe_data = load_universe_for_ui()
 sectors = universe_data["sectors"]
 ticker_to_sectors = universe_data["ticker_to_sectors"]
 
-# Read pre-selected sector from query params (set by sector card click)
-default_sector = st.query_params.get("sector", None)
 all_sector_ids = list(sectors.keys())
-default_sectors = (
-    [default_sector]
-    if default_sector and default_sector in all_sector_ids
-    else all_sector_ids
-)
+default_sectors = resolve_sector_default(st.session_state, st.query_params, all_sector_ids)
 
 # ── Filters ──────────────────────────────────────────────────────────────────
 col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
