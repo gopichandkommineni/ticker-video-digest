@@ -2,9 +2,15 @@
 import pandas as pd
 import streamlit as st
 
-from casino_dashboard.ui.formatting import format_money, format_pct, format_ratio
+from casino_dashboard.ui.formatting import (
+    format_mention_velocity,
+    format_money,
+    format_pct,
+    format_ratio,
+)
 from casino_dashboard.ui.loaders import (
     load_latest_prices,
+    load_latest_social_mentions,
     load_signals_matrix,
     load_universe_for_ui,
     resolve_sector_default,
@@ -15,6 +21,7 @@ st.title("All Tickers")
 
 signals_df = load_signals_matrix()
 prices_df = load_latest_prices()
+social_df = load_latest_social_mentions()
 universe_data = load_universe_for_ui()
 sectors = universe_data["sectors"]
 ticker_to_sectors = universe_data["ticker_to_sectors"]
@@ -82,12 +89,17 @@ for ticker in candidate_tickers:
         (["BREAKOUT"] if near_bo else []) + (["BREAKDOWN"] if near_bd else [])
     )
 
+    # Social signal: prefer the pre-computed apewisdom_velocity_24h from signals table;
+    # fall back to None if not yet available (first day, before Action runs).
+    mention_velocity: float | None = sig.get("apewisdom_velocity_24h")
+
     rows.append(
         {
             "Ticker": ticker,
             "Sectors": ", ".join(sector_names),
             "_close_raw": close,
             "_vol_ratio_raw": sig.get("vol_ratio_30d"),
+            "_mention_velocity_raw": mention_velocity,
             "_return_1d_raw": sig.get("return_1d"),
             "_return_5d_raw": sig.get("return_5d"),
             "_return_20d_raw": sig.get("return_20d"),
@@ -123,6 +135,7 @@ display_df = pd.DataFrame(
         "Sectors": df["Sectors"],
         "Close": df["_close_raw"].apply(format_money),
         "Vol Ratio": df["_vol_ratio_raw"].apply(format_ratio),
+        "Mention Vel": df["_mention_velocity_raw"].apply(format_mention_velocity),
         "1d": df["_return_1d_raw"].apply(format_pct),
         "5d": df["_return_5d_raw"].apply(format_pct),
         "20d": df["_return_20d_raw"].apply(format_pct),
@@ -139,6 +152,8 @@ event = st.dataframe(
     on_select="rerun",
     selection_mode="single-row",
 )
+
+st.caption("Mention Vel: ApeWisdom 24h velocity (today ÷ yesterday). 🟢 >2x · 🟡 >1.5x · gray = normal · — = no data yet")
 
 # Navigate to detail page when a row is clicked
 if event.selection.rows:

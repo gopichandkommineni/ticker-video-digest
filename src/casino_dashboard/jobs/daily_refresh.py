@@ -1,8 +1,10 @@
 import logging
+from datetime import date
 from pathlib import Path
 
+from casino_dashboard.data.apewisdom_client import fetch_apewisdom_universe, filter_to_universe
 from casino_dashboard.data.yfinance_client import fetch_universe_snapshot
-from casino_dashboard.db.repository import save_snapshot
+from casino_dashboard.db.repository import save_snapshot, save_social_mention
 from casino_dashboard.signals.orchestrator import compute_and_save_all_signals
 from casino_dashboard.universe import load_universe
 
@@ -30,6 +32,27 @@ def main(db_path: Path = _DEFAULT_DB) -> None:
     fetched_tickers = len(snapshots_by_ticker)
     failed = len(all_tickers) - fetched_tickers
     logger.info("Done. Saved %d rows across %d tickers, %d failed.", total_rows, fetched_tickers, failed)
+
+    logger.info("Fetching ApeWisdom social mentions …")
+    today = date.today()
+    try:
+        all_mentions = fetch_apewisdom_universe("all-stocks")
+        universe_mentions = filter_to_universe(all_mentions, set(all_tickers))
+        skipped = len(all_mentions) - len(universe_mentions)
+        for m in universe_mentions:
+            save_social_mention(
+                ticker=m.ticker,
+                mention_date=today,
+                source="apewisdom",
+                mention_count=m.mentions,
+                mentions_24h_ago=m.mentions_24h_ago,
+                upvote_sum=m.upvotes,
+                db_path=db_path,
+            )
+        logger.info("Saved %d social mentions from ApeWisdom", len(universe_mentions))
+        logger.info("Skipped %d tickers not in ApeWisdom data", skipped)
+    except Exception as exc:
+        logger.error("ApeWisdom fetch failed (continuing): %s", exc)
 
     logger.info("Computing signals …")
     compute_and_save_all_signals(universe, db_path)

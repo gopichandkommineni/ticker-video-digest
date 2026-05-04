@@ -3,13 +3,19 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from casino_dashboard.ui.external_links import build_external_links
 from casino_dashboard.ui.formatting import format_money, format_pct, format_ratio
 from casino_dashboard.ui.indicators import compute_bollinger, compute_rsi, compute_sma
 from casino_dashboard.ui.loaders import (
     load_news_for_ticker,
     load_price_history,
     load_signals_matrix,
+    load_social_history,
     load_universe_for_ui,
+)
+from casino_dashboard.signals.computers import (
+    compute_apewisdom_velocity_24h,
+    compute_mention_velocity_7d,
 )
 
 st.set_page_config(page_title="Ticker Detail — Casino Dashboard", layout="wide")
@@ -50,6 +56,16 @@ if sector_ids:
         f"**{sectors[s].display_name}**" for s in sector_ids if s in sectors
     )
     st.markdown(badges)
+
+# ── External research links ───────────────────────────────────────────────────
+_link_pills = "  ".join(
+    f'<a href="{url}" target="_blank" rel="noopener" '
+    f'style="display:inline-block;padding:2px 10px;margin:2px;border-radius:12px;'
+    f'border:1px solid #888;font-size:0.8rem;text-decoration:none;color:inherit;">'
+    f"{label}</a>"
+    for label, url in build_external_links(ticker)
+)
+st.markdown(_link_pills, unsafe_allow_html=True)
 
 # ── Signal dict for this ticker ───────────────────────────────────────────────
 signals_df = load_signals_matrix()
@@ -244,3 +260,52 @@ with right:
                 st.markdown(f"- **{publisher}** — {title}")
     else:
         st.info("No recent news available.")
+
+# ── Social Attention ──────────────────────────────────────────────────────────
+st.subheader("Social Attention")
+
+social_hist = load_social_history(ticker, days=30)
+
+if social_hist.empty:
+    st.info("Not tracked by ApeWisdom — this ticker may be below their mention threshold.")
+else:
+    # Mention count chart (oldest-first for display)
+    chart_df = social_hist.copy()
+    chart_df["date"] = pd.to_datetime(chart_df["date"])
+    chart_df = chart_df.sort_values("date")
+
+    mention_chart = (
+        alt.Chart(chart_df)
+        .mark_line(color="#e377c2", strokeWidth=2, point=True)
+        .encode(
+            x=alt.X("date:T", axis=alt.Axis(title="Date", format="%b %d")),
+            y=alt.Y("mention_count:Q", title="Mentions (ApeWisdom)"),
+            tooltip=[
+                alt.Tooltip("date:T", title="Date", format="%Y-%m-%d"),
+                alt.Tooltip("mention_count:Q", title="Mentions"),
+            ],
+        )
+        .properties(height=180)
+    )
+    st.altair_chart(mention_chart, use_container_width=True)
+
+    # Velocity metrics
+    latest = social_hist.iloc[0]
+    mentions_today = int(latest["mention_count"])
+    mentions_24h = (
+        int(latest["mentions_24h_ago"])
+        if pd.notna(latest["mentions_24h_ago"])
+        else None
+    )
+    v24h = compute_apewisdom_velocity_24h(mentions_today, mentions_24h)
+    v7d = compute_mention_velocity_7d(social_hist)
+
+    mc1, mc2, mc3 = st.columns(3)
+    with mc1:
+        st.metric("Today's Mentions", str(mentions_today))
+    with mc2:
+        st.metric("24h Velocity", f"{v24h:.2f}x" if v24h is not None else "—")
+    with mc3:
+        st.metric("7d Velocity", f"{v7d:.2f}x" if v7d is not None else "—")
+
+    st.caption("Source: ApeWisdom · velocity = today ÷ prior period average")

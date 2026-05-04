@@ -41,6 +41,29 @@ def format_money(x: float | None) -> str:
     return f"${x:,.2f}"
 
 
+def format_mention_velocity(x: float | None) -> str:
+    """Format a mention velocity ratio with a tier indicator.
+
+    >2.0 → 🟢 3.2x  (green / accelerating)
+    >1.5 → 🟡 1.8x  (yellow / elevated)
+    else →    1.1x  (gray / normal)
+    None / NaN → —
+    """
+    if x is None:
+        return "—"
+    try:
+        if math.isnan(float(x)):
+            return "—"
+    except (TypeError, ValueError):
+        return "—"
+    label = f"{x:.1f}x"
+    if x > 2.0:
+        return f"🟢 {label}"
+    if x > 1.5:
+        return f"🟡 {label}"
+    return label
+
+
 def color_for_return(x: float | None) -> str:
     """Return 'green', 'red', or 'gray' based on the sign of x."""
     if x is None:
