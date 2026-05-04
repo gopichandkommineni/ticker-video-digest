@@ -12,11 +12,11 @@ from casino_dashboard.ui.formatting import (
 
 
 def test_format_pct_positive():
-    assert format_pct(12.3) == "+12.3%"
+    assert format_pct(0.20) == "+20.0%"
 
 
 def test_format_pct_negative():
-    assert format_pct(-3.1) == "-3.1%"
+    assert format_pct(-0.516) == "-51.6%"
 
 
 def test_format_pct_none_and_nan():
@@ -25,7 +25,7 @@ def test_format_pct_none_and_nan():
 
 
 def test_format_pct_zero():
-    assert format_pct(0.0) == "0.0%"
+    assert format_pct(0.0) == "+0.0%"
 
 
 def test_format_ratio_gt1_and_lt1():

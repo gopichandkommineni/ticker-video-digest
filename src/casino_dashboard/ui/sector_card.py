@@ -35,7 +35,7 @@ def sector_card(
                 if "near_breakout" in sector_df.columns:
                     vals = sector_df["near_breakout"].dropna()
                     if not vals.empty:
-                        pct_near_breakout = float((vals > 0).mean() * 100)
+                        pct_near_breakout = float((vals > 0).mean())
 
         col1, col2 = st.columns(2)
         with col1:
