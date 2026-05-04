@@ -6,6 +6,14 @@ from zoneinfo import ZoneInfo
 
 import yfinance as yf
 
+try:
+    import lxml  # noqa: F401
+except ImportError as e:
+    raise ImportError(
+        "lxml is required for yfinance earnings_dates parsing. "
+        "Install with: pip install lxml"
+    ) from e
+
 logger = logging.getLogger(__name__)
 
 _ET = ZoneInfo("America/New_York")

@@ -236,3 +236,14 @@ def test_universe_fetch_handles_exceptions():
     assert aaoi.beta == pytest.approx(1.5)
     bad = next(r for r in results if r.ticker == "BAD")
     assert bad.beta is None
+
+
+# ── Test 11: lxml import guard is present in module source ────────────────────
+
+def test_lxml_import_guard_present():
+    """Module must fail loudly if lxml is missing rather than silently."""
+    import inspect
+    import casino_dashboard.data.yfinance_metadata as mod
+    src = inspect.getsource(mod)
+    assert "import lxml" in src
+    assert "ImportError" in src
