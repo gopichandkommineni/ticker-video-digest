@@ -3,6 +3,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from casino_dashboard.ui.external_links import build_external_links
 from casino_dashboard.ui.formatting import format_money, format_pct, format_ratio
 from casino_dashboard.ui.indicators import compute_bollinger, compute_rsi, compute_sma
 from casino_dashboard.ui.loaders import (
@@ -50,6 +51,16 @@ if sector_ids:
         f"**{sectors[s].display_name}**" for s in sector_ids if s in sectors
     )
     st.markdown(badges)
+
+# ── External research links ───────────────────────────────────────────────────
+_link_pills = "  ".join(
+    f'<a href="{url}" target="_blank" rel="noopener" '
+    f'style="display:inline-block;padding:2px 10px;margin:2px;border-radius:12px;'
+    f'border:1px solid #888;font-size:0.8rem;text-decoration:none;color:inherit;">'
+    f"{label}</a>"
+    for label, url in build_external_links(ticker)
+)
+st.markdown(_link_pills, unsafe_allow_html=True)
 
 # ── Signal dict for this ticker ───────────────────────────────────────────────
 signals_df = load_signals_matrix()
