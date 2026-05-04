@@ -199,7 +199,7 @@ def get_social_history(
             """
             SELECT date, mention_count, mentions_24h_ago
             FROM social_mentions
-            WHERE ticker = ? AND source = ? AND subreddit = ''
+            WHERE ticker = ? AND source = ? AND (subreddit = '' OR subreddit IS NULL)
             ORDER BY date DESC
             LIMIT ?
             """,
@@ -221,12 +221,12 @@ def get_latest_social_mentions(db_path: Path = _DEFAULT_DB_PATH) -> pd.DataFrame
             INNER JOIN (
                 SELECT ticker, source, MAX(date) AS max_date
                 FROM social_mentions
-                WHERE subreddit = ''
+                WHERE (subreddit = '' OR subreddit IS NULL)
                 GROUP BY ticker, source
             ) latest ON s.ticker = latest.ticker
                      AND s.source = latest.source
                      AND s.date = latest.max_date
-            WHERE s.subreddit = ''
+            WHERE (s.subreddit = '' OR s.subreddit IS NULL)
             """,
         ).fetchall()
     if not rows:

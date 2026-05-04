@@ -43,3 +43,8 @@ pythonpath = ["src"]
 markers = [
     "integration: marks tests that require real network access (deselect with '-m not integration')",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
