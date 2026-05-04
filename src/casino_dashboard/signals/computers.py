@@ -1,3 +1,5 @@
+import pandas as pd
+
 from casino_dashboard.models import TickerSnapshot
 
 
@@ -59,3 +61,31 @@ def compute_dist_from_extreme(
         return (latest_close - extreme) / extreme
     else:
         raise ValueError(f"kind must be 'high' or 'low', got {kind!r}")
+
+
+def compute_apewisdom_velocity_24h(
+    mentions: int, mentions_24h_ago: int | None
+) -> float | None:
+    """Return mentions / mentions_24h_ago, or None if denominator is None or 0."""
+    if mentions_24h_ago is None or mentions_24h_ago == 0:
+        return None
+    return mentions / mentions_24h_ago
+
+
+def compute_mention_velocity_7d(history: pd.DataFrame) -> float | None:
+    """Return latest_count / mean(prior 7 days count).
+
+    history: DataFrame with columns [date, mention_count] sorted newest-first.
+    Requires at least 8 rows (today + 7 prior days). Returns None if insufficient.
+    NaN mention_count values are dropped before computing the mean.
+    """
+    if history.empty or len(history) < 8:
+        return None
+    latest = history["mention_count"].iloc[0]
+    prior = history["mention_count"].iloc[1:8].dropna()
+    if prior.empty:
+        return None
+    mean_prior = prior.mean()
+    if mean_prior == 0:
+        return None
+    return float(latest) / float(mean_prior)

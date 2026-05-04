@@ -39,4 +39,17 @@ def init_db(db_path: Path = _DEFAULT_DB_PATH) -> None:
                 value        REAL,
                 PRIMARY KEY (ticker, date, signal_name)
             );
+
+            -- subreddit defaults to '' (empty string, not NULL) for the
+            -- apewisdom aggregate row so the PRIMARY KEY constraint works.
+            CREATE TABLE IF NOT EXISTS social_mentions (
+                ticker            TEXT    NOT NULL,
+                date              TEXT    NOT NULL,
+                source            TEXT    NOT NULL,
+                mention_count     INTEGER NOT NULL,
+                mentions_24h_ago  INTEGER,
+                upvote_sum        INTEGER,
+                subreddit         TEXT    NOT NULL DEFAULT '',
+                PRIMARY KEY (ticker, date, source, subreddit)
+            );
         """)

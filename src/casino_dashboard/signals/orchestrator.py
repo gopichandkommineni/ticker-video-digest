@@ -2,9 +2,15 @@ import logging
 from datetime import date
 from pathlib import Path
 
-from casino_dashboard.db.repository import get_history, save_signal
+from casino_dashboard.db.repository import (
+    get_history,
+    get_social_history,
+    save_signal,
+)
 from casino_dashboard.signals.computers import (
+    compute_apewisdom_velocity_24h,
     compute_dist_from_extreme,
+    compute_mention_velocity_7d,
     compute_return,
     compute_vol_ratio_30d,
 )
@@ -40,6 +46,37 @@ def compute_signals_for_ticker(ticker: str, db_path: Path) -> dict[str, float]:
     return results
 
 
+def compute_social_signals_for_ticker(ticker: str, db_path: Path) -> dict[str, float]:
+    """Compute ApeWisdom social signals from accumulated DB history."""
+    results: dict[str, float] = {}
+
+    social_hist = get_social_history(ticker, "apewisdom", 30, db_path)
+    if social_hist.empty:
+        return results
+
+    # Latest row carries today's mention_count and mentions_24h_ago from the API
+    latest_row = social_hist.iloc[0]
+    mentions_today = int(latest_row["mention_count"])
+    mentions_24h_ago = (
+        int(latest_row["mentions_24h_ago"])
+        if latest_row["mentions_24h_ago"] is not None
+        and str(latest_row["mentions_24h_ago"]) not in ("", "None")
+        else None
+    )
+
+    results["apewisdom_mentions_today"] = float(mentions_today)
+
+    v24h = compute_apewisdom_velocity_24h(mentions_today, mentions_24h_ago)
+    if v24h is not None:
+        results["apewisdom_velocity_24h"] = v24h
+
+    v7d = compute_mention_velocity_7d(social_hist)
+    if v7d is not None:
+        results["apewisdom_velocity_7d"] = v7d
+
+    return results
+
+
 def compute_and_save_all_signals(universe: Universe, db_path: Path) -> None:
     today = date.today()
     tickers = universe.all_tickers()
@@ -47,6 +84,9 @@ def compute_and_save_all_signals(universe: Universe, db_path: Path) -> None:
 
     for ticker in sorted(tickers):
         signals = compute_signals_for_ticker(ticker, db_path)
+        social_signals = compute_social_signals_for_ticker(ticker, db_path)
+        signals.update(social_signals)
+
         for signal_name, value in signals.items():
             save_signal(ticker, today, signal_name, value, db_path)
         logger.info("Signals computed for %s: %d signals", ticker, len(signals))

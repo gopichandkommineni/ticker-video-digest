@@ -5,7 +5,12 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from casino_dashboard.db.repository import get_history, get_latest_signals_all_tickers
+from casino_dashboard.db.repository import (
+    get_history,
+    get_latest_signals_all_tickers,
+    get_social_history,
+    get_latest_social_mentions,
+)
 from casino_dashboard.db.schema import _DEFAULT_DB_PATH, init_db
 from casino_dashboard.models import NewsItem
 from casino_dashboard.universe import load_universe
@@ -74,6 +79,20 @@ def load_news_for_ticker(
     if not history:
         return []
     return history[0].news_items[:limit]
+
+
+@st.cache_data(ttl=3600)
+def load_social_history(
+    ticker: str, days: int = 30, db_path: str = str(_DEFAULT_DB_PATH)
+) -> pd.DataFrame:
+    """Return DataFrame[date, mention_count, mentions_24h_ago] for social mentions (newest-first)."""
+    return get_social_history(ticker, "apewisdom", days, Path(db_path))
+
+
+@st.cache_data(ttl=3600)
+def load_latest_social_mentions(db_path: str = str(_DEFAULT_DB_PATH)) -> pd.DataFrame:
+    """Return wide-format DataFrame of latest social mention counts, indexed by ticker."""
+    return get_latest_social_mentions(Path(db_path))
 
 
 @st.cache_data(ttl=3600)

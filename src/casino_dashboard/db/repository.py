@@ -162,6 +162,79 @@ def get_latest_signals_all_tickers(db_path: Path = _DEFAULT_DB_PATH) -> pd.DataF
     return df.pivot(index="ticker", columns="signal_name", values="value")
 
 
+def save_social_mention(
+    ticker: str,
+    mention_date: date,
+    source: str,
+    mention_count: int,
+    mentions_24h_ago: int | None,
+    upvote_sum: int | None,
+    subreddit: str = "",
+    db_path: Path = _DEFAULT_DB_PATH,
+) -> None:
+    """INSERT OR REPLACE for idempotent daily re-runs."""
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO social_mentions
+                (ticker, date, source, mention_count, mentions_24h_ago, upvote_sum, subreddit)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (ticker, mention_date.isoformat(), source, mention_count,
+             mentions_24h_ago, upvote_sum, subreddit),
+        )
+
+
+def get_social_history(
+    ticker: str,
+    source: str,
+    days: int,
+    db_path: Path = _DEFAULT_DB_PATH,
+) -> pd.DataFrame:
+    """Return DataFrame[date, mention_count, mentions_24h_ago] newest-first, up to `days` rows."""
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT date, mention_count, mentions_24h_ago
+            FROM social_mentions
+            WHERE ticker = ? AND source = ? AND subreddit = ''
+            ORDER BY date DESC
+            LIMIT ?
+            """,
+            (ticker, source, days),
+        ).fetchall()
+    if not rows:
+        return pd.DataFrame(columns=["date", "mention_count", "mentions_24h_ago"])
+    return pd.DataFrame(rows, columns=["date", "mention_count", "mentions_24h_ago"])
+
+
+def get_latest_social_mentions(db_path: Path = _DEFAULT_DB_PATH) -> pd.DataFrame:
+    """Return wide-format DataFrame: index=ticker, columns=latest_mention_count, mentions_24h_ago."""
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT s.ticker, s.mention_count, s.mentions_24h_ago
+            FROM social_mentions s
+            INNER JOIN (
+                SELECT ticker, source, MAX(date) AS max_date
+                FROM social_mentions
+                WHERE subreddit = ''
+                GROUP BY ticker, source
+            ) latest ON s.ticker = latest.ticker
+                     AND s.source = latest.source
+                     AND s.date = latest.max_date
+            WHERE s.subreddit = ''
+            """,
+        ).fetchall()
+    if not rows:
+        return pd.DataFrame(columns=["latest_mention_count", "mentions_24h_ago"])
+    df = pd.DataFrame(rows, columns=["ticker", "latest_mention_count", "mentions_24h_ago"])
+    return df.set_index("ticker")
+
+
 def _fetch_news(ticker: str, snap_date: date, db_path: Path) -> list[NewsItem]:
     with sqlite3.connect(db_path) as conn:
         rows = conn.execute(
