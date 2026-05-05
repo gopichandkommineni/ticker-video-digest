@@ -310,23 +310,19 @@ with st_c2:
 
 _section_header("Thesis")
 
-th_c1, th_c2 = st.columns(2)
+render_note_tile(
+    "Catalyst",
+    catalyst,
+    placeholder="+ Add catalyst",
+    tier=1,
+)
 
-with th_c1:
-    render_note_tile(
-        "Catalyst",
-        catalyst,
-        placeholder="+ Add catalyst",
-        tier=1,
-    )
-
-with th_c2:
-    render_note_tile(
-        "Red Flag",
-        red_flag,
-        placeholder="+ Add concern",
-        tier=1,
-    )
+render_note_tile(
+    "Red Flag",
+    red_flag,
+    placeholder="+ Add concern",
+    tier=1,
+)
 
 # ── PRICE ACTION ──────────────────────────────────────────────────────────────
 
@@ -354,9 +350,9 @@ with pa_c2:
 
 _section_header("Market Indicators")
 
-mi_c1, mi_c2, mi_c3 = st.columns(3)
+mi_r1c1, mi_r1c2 = st.columns(2)
 
-with mi_c1:
+with mi_r1c1:
     vol_ratio = sig.get("vol_ratio_30d")
     vol_color = color_for_volume_ratio(vol_ratio)
     vol_primary = f"{vol_ratio:.2f}x" if vol_ratio is not None else "—"
@@ -371,7 +367,7 @@ with mi_c1:
 
     render_tile("Volume", vol_primary, subline=vol_subline, color=vol_color, tier=2)
 
-with mi_c2:
+with mi_r1c2:
     short_pct = meta.get("short_pct_of_float")
     short_ratio = meta.get("short_ratio_days")
     short_color = color_for_short_pct(short_pct)
@@ -391,7 +387,9 @@ with mi_c2:
     else:
         render_empty_tile("Short Interest")
 
-with mi_c3:
+mi_r2c1, mi_r2c2 = st.columns(2)
+
+with mi_r2c1:
     mentions_today = sig.get("apewisdom_mentions_today")
     velocity_24h = sig.get("apewisdom_velocity_24h")
 
@@ -411,9 +409,7 @@ with mi_c3:
     else:
         render_empty_tile("Social Attention", "Not tracked")
 
-mi2_c1, mi2_c2, mi2_c3 = st.columns(3)
-
-with mi2_c1:
+with mi_r2c2:
     rsi_val = sig.get("rsi_14")
     if rsi_val is not None:
         rsi_int = int(round(rsi_val))
@@ -429,7 +425,9 @@ with mi2_c1:
     else:
         render_empty_tile("RSI (14)")
 
-with mi2_c2:
+mi_r3c1, mi_r3c2 = st.columns(2)
+
+with mi_r3c1:
     target = meta.get("analyst_target_mean")
     if target is not None and close_price is not None and close_price > 0:
         upside = (target - close_price) / close_price
@@ -445,7 +443,7 @@ with mi2_c2:
     else:
         render_empty_tile("Analyst Target")
 
-with mi2_c3:
+with mi_r3c2:
     insiders = meta.get("held_pct_insiders")
     institutions = meta.get("held_pct_institutions")
     if insiders is not None or institutions is not None:

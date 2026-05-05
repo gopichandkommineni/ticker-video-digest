@@ -35,8 +35,12 @@ def _tile_html(
     min_height: str | None = None,
 ) -> str:
     hex_color = color_to_hex(color)
-    # Tier 3 is monochrome — primary text follows theme color
-    primary_color = hex_color if tier < 3 else "var(--text-color)"
+    # Gray/uncolored primaries use CSS var for readability in dark mode;
+    # colored tier-1/2 primaries use the accent hex; tier-3 is always monochrome.
+    if tier >= 3 or not color or color == "gray":
+        primary_color = "var(--text-color)"
+    else:
+        primary_color = hex_color
     font_size = _TIER_PRIMARY_SIZE.get(tier, "1.35rem")
 
     if color and color != "gray":
@@ -102,6 +106,15 @@ def render_note_tile(
             f'<div style="font-size:0.9rem;color:{_PLACEHOLDER_COLOR};font-style:italic;">'
             f"{placeholder}</div>"
         )
+    elif "\n" in str(text):
+        items = [line.strip() for line in str(text).strip().split("\n") if line.strip()]
+        bullets = "".join(
+            f'<div style="font-size:0.88rem;color:var(--text-color);line-height:1.6;'
+            f'margin-bottom:4px;display:flex;gap:6px;">'
+            f'<span style="color:#9ca3af;flex-shrink:0;">•</span><span>{item}</span></div>'
+            for item in items
+        )
+        body_html = f"<div>{bullets}</div>"
     else:
         body_html = (
             f'<div style="font-size:0.95rem;color:var(--text-color);line-height:1.55;">'

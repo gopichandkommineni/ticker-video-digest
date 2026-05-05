@@ -42,8 +42,15 @@ COHR:
   catalyst: null
   red_flag: null
 AAOI:
-  catalyst: "Texas grant for AI transceiver manufacturing"
-  red_flag: null
+  catalyst: |
+    Texas grant for AI transceiver manufacturing
+    AI hyperscaler customer expansion — Microsoft & Google sourcing
+    New 400G transceiver design win displacing JDSU
+    Earnings in 2 days — binary event, guidance will move the stock
+  red_flag: |
+    Analyst consensus target $102 vs current $173 — 41% downside
+    High short interest at 13.1% — squeeze risk but also conviction
+    Revenue concentrated in 2 hyperscaler customers — key-man risk
 POET:
   catalyst: null
   red_flag: "Marvell cancelled order over NDA violation"
