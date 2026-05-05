@@ -13,7 +13,6 @@ from casino_dashboard.ui.loaders import (
     load_latest_social_mentions,
     load_signals_matrix,
     load_universe_for_ui,
-    resolve_sector_default,
 )
 
 st.set_page_config(page_title="All Tickers — Stock Dashboard", layout="wide")
@@ -27,7 +26,20 @@ sectors = universe_data["sectors"]
 ticker_to_sectors = universe_data["ticker_to_sectors"]
 
 all_sector_ids = list(sectors.keys())
-default_sectors = resolve_sector_default(st.session_state, st.query_params, all_sector_ids)
+
+# Persist sector selection in session_state so reruns (checkbox ticks, etc.)
+# don't reset it back to the default.  Priority on first visit of a session:
+#   1. preselect_sector set by a homepage sector-card click
+#   2. ?sector= query param (direct URL)
+#   3. all sectors as fallback
+if "preselect_sector" in st.session_state:
+    _pre = st.session_state.pop("preselect_sector")
+    st.session_state["_sector_selection"] = [_pre] if _pre in all_sector_ids else list(all_sector_ids)
+elif "_sector_selection" not in st.session_state:
+    _qp = st.query_params.get("sector")
+    st.session_state["_sector_selection"] = (
+        [_qp] if _qp and _qp in all_sector_ids else list(all_sector_ids)
+    )
 
 # ── Filters ──────────────────────────────────────────────────────────────────
 col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
@@ -36,7 +48,7 @@ with col1:
     selected_sectors = st.multiselect(
         "Sector",
         options=all_sector_ids,
-        default=default_sectors,
+        key="_sector_selection",
         format_func=lambda s: sectors[s].display_name,
     )
 
