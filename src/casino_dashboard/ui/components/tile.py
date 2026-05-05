@@ -32,6 +32,7 @@ def _tile_html(
     color: str | None,
     tier: int,
     edit_mode: bool,
+    min_height: str | None = None,
 ) -> str:
     hex_color = color_to_hex(color)
     # Tier 3 is monochrome — primary text follows theme color
@@ -50,7 +51,7 @@ def _tile_html(
         for s in sublines
     )
 
-    min_h = _TIER_MIN_HEIGHT.get(tier, "130px")
+    min_h = min_height or _TIER_MIN_HEIGHT.get(tier, "130px")
     return (
         f'<div style="border:1px solid rgba(128,128,128,0.2);{border_accent}'
         f"border-radius:8px;padding:16px 14px 14px;"
@@ -71,10 +72,11 @@ def render_tile(
     color: str | None = None,
     tier: int = 2,
     edit_mode: bool = False,
+    min_height: str | None = None,
 ) -> None:
     """Render one tile inside the current Streamlit container."""
     sublines = [subline] if subline else []
-    html = _tile_html(title, _safe_primary(primary), sublines, color, tier, edit_mode)
+    html = _tile_html(title, _safe_primary(primary), sublines, color, tier, edit_mode, min_height)
     st.markdown(html, unsafe_allow_html=True)
 
 
@@ -106,12 +108,11 @@ def render_note_tile(
             f"{text}</div>"
         )
 
-    min_h = _TIER_MIN_HEIGHT.get(tier, "130px")
     html = (
         f'<div style="border:1px solid rgba(128,128,128,0.2);'
         f"border-left:3px solid rgba(128,128,128,0.2);"
         f"border-radius:8px;padding:16px 14px 14px;"
-        f"background:var(--secondary-background-color);min-height:{min_h};\">"
+        f"background:var(--secondary-background-color);min-height:120px;height:auto;\">"
         f'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
         f'color:#9ca3af;font-weight:700;margin-bottom:10px;">{title} ✏️</div>'
         f"{body_html}"
@@ -152,7 +153,7 @@ def render_returns_tile(
         f'<div style="border:1px solid rgba(128,128,128,0.2);'
         f"border-left:3px solid rgba(128,128,128,0.2);"
         f"border-radius:8px;padding:16px 14px 14px;"
-        f"background:var(--secondary-background-color);min-height:130px;\">"
+        f"background:var(--secondary-background-color);min-height:110px;\">"
         f'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
         f'color:#9ca3af;font-weight:700;margin-bottom:10px;">Returns</div>'
         f'<div style="display:flex;gap:16px;overflow-x:auto;padding-bottom:4px;">'
@@ -223,7 +224,7 @@ def render_range_tile(
         f'<div style="border:1px solid rgba(128,128,128,0.2);'
         f"border-left:3px solid rgba(128,128,128,0.2);"
         f"border-radius:8px;padding:16px 14px 14px;"
-        f"background:var(--secondary-background-color);min-height:130px;\">"
+        f"background:var(--secondary-background-color);min-height:140px;\">"
         f'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
         f'color:#9ca3af;font-weight:700;margin-bottom:8px;">52-Week Range</div>'
         f'<div style="font-size:1.35rem;font-weight:700;color:var(--text-color);">{price_str}</div>'
