@@ -98,19 +98,17 @@ def _coerce_note(val: object) -> str | None:
     return None if s.lower() in ("", "nan", "none") else s
 
 
-if not notes_df.empty and ticker in notes_df.index:
-    _n = notes_df.loc[ticker]
-    catalyst = _coerce_note(_n.get("catalyst"))
-    red_flag = _coerce_note(_n.get("red_flag"))
-else:
-    # Fallback: YAML (for local dev / first-run before daily_refresh writes to DB)
-    try:
-        _yaml_notes = load_manual_notes_from_yaml()
-        _ticker_notes = _yaml_notes.get(ticker, {})
-        catalyst = _ticker_notes.get("catalyst")
-        red_flag = _ticker_notes.get("red_flag")
-    except Exception:
-        pass
+# YAML is always the source of truth; DB is a fallback for when YAML is unavailable
+try:
+    _yaml_notes = load_manual_notes_from_yaml()
+    _ticker_notes = _yaml_notes.get(ticker, {})
+    catalyst = _ticker_notes.get("catalyst")
+    red_flag = _ticker_notes.get("red_flag")
+except Exception:
+    if not notes_df.empty and ticker in notes_df.index:
+        _n = notes_df.loc[ticker]
+        catalyst = _coerce_note(_n.get("catalyst"))
+        red_flag = _coerce_note(_n.get("red_flag"))
 
 news_items = load_recent_news_all_dates(ticker, limit=5)
 sector_ids = ticker_to_sectors.get(ticker, [])
