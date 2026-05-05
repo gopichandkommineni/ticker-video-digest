@@ -125,11 +125,23 @@ def _company_name(t: str) -> str:
 
 company_name = _company_name(ticker)
 
+
+def _section_header(label: str) -> None:
+    """Render a subtle uppercase section divider label."""
+    st.markdown(
+        f'<div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.12em;'
+        f'color:#9ca3af;font-weight:700;margin:18px 0 8px;'
+        f'border-bottom:1px solid rgba(128,128,128,0.2);padding-bottom:5px;">'
+        f'{label}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 # ── HEADER ────────────────────────────────────────────────────────────────────
 
 st.markdown(
     f"<h1 style='margin-bottom:2px;font-size:2rem;'>{ticker}"
-    f"<span style='font-size:1.1rem;font-weight:400;color:#6b7280;margin-left:10px;'>"
+    f"<span style='font-size:1.1rem;font-weight:400;color:#9ca3af;margin-left:10px;'>"
     f"{company_name}</span></h1>",
     unsafe_allow_html=True,
 )
@@ -141,8 +153,9 @@ with h_left:
     if sector_ids:
         pills_html = " ".join(
             f'<span style="display:inline-block;padding:2px 10px;margin:2px 4px 2px 0;'
-            f'border-radius:12px;background:#f3f4f6;border:1px solid #d1d5db;'
-            f'font-size:0.78rem;color:#374151;font-weight:500;">'
+            f'border-radius:12px;background:rgba(128,128,128,0.12);'
+            f'border:1px solid rgba(128,128,128,0.3);'
+            f'font-size:0.78rem;color:var(--text-color);font-weight:500;">'
             f"{sectors[s].display_name}</span>"
             for s in sector_ids
             if s in sectors
@@ -158,7 +171,7 @@ with h_right:
         if return_1d is not None:
             change_pct = f"{return_1d:+.1%}"
             change_badge = (
-                f'<span style="background:{change_color}22;color:{change_color};'
+                f'<span style="background:{change_color}33;color:{change_color};'
                 f'padding:2px 10px;border-radius:6px;font-size:1rem;font-weight:600;'
                 f'margin-left:10px;">{arrow} {change_pct}</span>'
             )
@@ -179,8 +192,8 @@ with h_right:
 _links_html = " ".join(
     f'<a href="{url}" target="_blank" rel="noopener" '
     f'style="display:inline-block;padding:2px 10px;margin:2px 4px 2px 0;'
-    f'border-radius:12px;border:1px solid #9ca3af;font-size:0.78rem;'
-    f'text-decoration:none;color:#374151;">{label}</a>'
+    f'border-radius:12px;border:1px solid rgba(128,128,128,0.35);font-size:0.78rem;'
+    f'text-decoration:none;color:var(--text-color);">{label}</a>'
     for label, url in build_external_links(ticker)
 )
 st.markdown(_links_html, unsafe_allow_html=True)
@@ -224,13 +237,13 @@ for col, (label, value, vcolor) in zip(fund_cols, fund_cells):
             unsafe_allow_html=True,
         )
 
-st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+# ── SETUP & TIMING ────────────────────────────────────────────────────────────
 
-# ── TIER 1 TILES (3 columns) ──────────────────────────────────────────────────
+_section_header("Setup & Timing")
 
-t1_c1, t1_c2, t1_c3 = st.columns(3)
+st_c1, st_c2 = st.columns(2)
 
-with t1_c1:
+with st_c1:
     near_breakout = sig.get("near_breakout")
     near_breakdown = sig.get("near_breakdown")
     setup_color = color_for_setup(near_breakout, near_breakdown)
@@ -242,10 +255,7 @@ with t1_c1:
         setup_label = "NEUTRAL"
 
     dist_high = sig.get("dist_from_30d_high_pct")
-    if dist_high is not None:
-        setup_subline = f"{dist_high:+.1%} from 30d high"
-    else:
-        setup_subline = None
+    setup_subline = f"{dist_high:+.1%} from 30d high" if dist_high is not None else None
 
     render_tile(
         "Setup",
@@ -253,14 +263,14 @@ with t1_c1:
         subline=setup_subline,
         color=setup_color,
         tier=1,
+        min_height="120px",
     )
 
-with t1_c2:
+with st_c2:
     next_earnings_date = meta.get("next_earnings_date")
     next_earnings_time = meta.get("next_earnings_time")
     last_earnings_date = meta.get("last_earnings_date")
 
-    # Parse date strings if needed
     def _parse_date(d: object) -> date | None:
         if d is None:
             return None
@@ -293,11 +303,18 @@ with t1_c2:
             subline=sublines_combined,
             color=earn_color,
             tier=1,
+            min_height="160px",
         )
     else:
-        render_tile("Earnings", "TBD", subline="No earnings date available", tier=1)
+        render_tile("Earnings", "TBD", subline="No earnings date available", tier=1, min_height="120px")
 
-with t1_c3:
+# ── THESIS ────────────────────────────────────────────────────────────────────
+
+_section_header("Thesis")
+
+th_c1, th_c2 = st.columns(2)
+
+with th_c1:
     render_note_tile(
         "Catalyst",
         catalyst,
@@ -305,11 +322,21 @@ with t1_c3:
         tier=1,
     )
 
-# ── TIER 2 TILES (5 columns) ──────────────────────────────────────────────────
+with th_c2:
+    render_note_tile(
+        "Red Flag",
+        red_flag,
+        placeholder="+ Add concern",
+        tier=1,
+    )
 
-t2_c1, t2_c2, t2_c3, t2_c4, t2_c5 = st.columns(5)
+# ── PRICE ACTION ──────────────────────────────────────────────────────────────
 
-with t2_c1:
+_section_header("Price Action")
+
+pa_c1, pa_c2 = st.columns(2)
+
+with pa_c1:
     render_returns_tile(
         return_1d=sig.get("return_1d"),
         return_5d=sig.get("return_5d"),
@@ -318,34 +345,20 @@ with t2_c1:
         return_1y=sig.get("return_1y"),
     )
 
-with t2_c2:
+with pa_c2:
     render_range_tile(
         current=close_price,
         high_52w=meta.get("fifty_two_week_high"),
         low_52w=meta.get("fifty_two_week_low"),
     )
 
-with t2_c3:
-    mentions_today = sig.get("apewisdom_mentions_today")
-    velocity_24h = sig.get("apewisdom_velocity_24h")
+# ── MARKET INDICATORS ─────────────────────────────────────────────────────────
 
-    if mentions_today is not None:
-        mentions_int = int(mentions_today)
-        if velocity_24h is not None:
-            vel_color = color_to_hex("green") if velocity_24h >= 2.0 else "inherit"
-            vel_str = f'<span style="color:{vel_color};font-weight:600;">{velocity_24h:.1f}x</span> 24h velocity'
-        else:
-            vel_str = None
-        render_tile(
-            "Social Attention",
-            str(mentions_int),
-            subline=vel_str,
-            tier=2,
-        )
-    else:
-        render_empty_tile("Social Attention", "Not tracked")
+_section_header("Market Indicators")
 
-with t2_c4:
+mi_c1, mi_c2, mi_c3 = st.columns(3)
+
+with mi_c1:
     vol_ratio = sig.get("vol_ratio_30d")
     vol_color = color_for_volume_ratio(vol_ratio)
     vol_primary = f"{vol_ratio:.2f}x" if vol_ratio is not None else "—"
@@ -358,9 +371,9 @@ with t2_c4:
     else:
         vol_subline = None
 
-    render_tile("Volume", vol_primary, subline=vol_subline, color=vol_color, tier=2)
+    render_tile("Volume", vol_primary, subline=vol_subline, color=vol_color, tier=2, min_height="95px")
 
-with t2_c5:
+with mi_c2:
     short_pct = meta.get("short_pct_of_float")
     short_ratio = meta.get("short_ratio_days")
     short_color = color_for_short_pct(short_pct)
@@ -376,15 +389,35 @@ with t2_c5:
             subline=short_subline,
             color=short_color,
             tier=2,
+            min_height="95px",
         )
     else:
         render_empty_tile("Short Interest")
 
-# ── TIER 3 TILES (4 columns) ──────────────────────────────────────────────────
+with mi_c3:
+    mentions_today = sig.get("apewisdom_mentions_today")
+    velocity_24h = sig.get("apewisdom_velocity_24h")
 
-t3_c1, t3_c2, t3_c3, t3_c4 = st.columns(4)
+    if mentions_today is not None:
+        mentions_int = int(mentions_today)
+        if velocity_24h is not None:
+            vel_color = color_to_hex("green") if velocity_24h >= 2.0 else "inherit"
+            vel_str = f'<span style="color:{vel_color};font-weight:600;">{velocity_24h:.1f}x</span> 24h velocity'
+        else:
+            vel_str = None
+        render_tile(
+            "Social Attention",
+            str(mentions_int),
+            subline=vel_str,
+            tier=2,
+            min_height="95px",
+        )
+    else:
+        render_empty_tile("Social Attention", "Not tracked")
 
-with t3_c1:
+mi2_c1, mi2_c2, mi2_c3 = st.columns(3)
+
+with mi2_c1:
     rsi_val = sig.get("rsi_14")
     if rsi_val is not None:
         rsi_int = int(round(rsi_val))
@@ -396,11 +429,11 @@ with t3_c1:
             rsi_label = "Oversold"
         else:
             rsi_label = "Neutral"
-        render_tile("RSI (14)", str(rsi_int), subline=rsi_label, color=color_for_rsi(rsi_val), tier=3)
+        render_tile("RSI (14)", str(rsi_int), subline=rsi_label, color=color_for_rsi(rsi_val), tier=3, min_height="90px")
     else:
         render_empty_tile("RSI (14)")
 
-with t3_c2:
+with mi2_c2:
     target = meta.get("analyst_target_mean")
     if target is not None and close_price is not None and close_price > 0:
         upside = (target - close_price) / close_price
@@ -410,34 +443,25 @@ with t3_c2:
         upside_subline = (
             f'<span style="color:{upside_hex};font-weight:600;">{upside_str}</span>'
         )
-        render_tile("Analyst Target", format_currency(target), subline=upside_subline, tier=3)
+        render_tile("Analyst Target", format_currency(target), subline=upside_subline, tier=3, min_height="90px")
     elif target is not None:
-        render_tile("Analyst Target", format_currency(target), tier=3)
+        render_tile("Analyst Target", format_currency(target), tier=3, min_height="90px")
     else:
         render_empty_tile("Analyst Target")
 
-with t3_c3:
+with mi2_c3:
     insiders = meta.get("held_pct_insiders")
     institutions = meta.get("held_pct_institutions")
     if insiders is not None or institutions is not None:
         ins_str = f"Insiders: {insiders * 100:.2f}%" if insiders is not None else "Insiders: —"
         inst_str = f"Institutions: {institutions * 100:.2f}%" if institutions is not None else "Institutions: —"
-        ownership_subline = f"{ins_str}<br>{inst_str}"
-        render_tile("Ownership", ins_str, subline=inst_str, tier=3)
+        render_tile("Ownership", ins_str, subline=inst_str, tier=3, min_height="90px")
     else:
         render_empty_tile("Ownership")
 
-with t3_c4:
-    render_note_tile(
-        "Red Flag",
-        red_flag,
-        placeholder="+ Add concern",
-        tier=3,
-    )
-
 # ── RECENT NEWS ───────────────────────────────────────────────────────────────
 
-st.markdown("#### Recent News")
+_section_header("Recent News")
 
 if news_items:
     for item in news_items:
