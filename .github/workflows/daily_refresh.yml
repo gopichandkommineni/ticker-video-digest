@@ -2,7 +2,10 @@ name: Daily Refresh
 
 on:
   schedule:
-    - cron: "0 13 * * *"  # 1pm UTC (~9am ET), after market data settles
+    - cron: "0 6 * * *"      # 2am ET — single overnight refresh (market closed)
+    - cron: "0 13 * * 1-5"   # 9am ET — pre-market refresh (before 9:30am open)
+    - cron: "0 17 * * 1-5"   # 1pm ET — mid-session refresh (~4h after open)
+    - cron: "0 21 * * 1-5"   # 5pm ET — post-close refresh (after 4pm close)
   workflow_dispatch:
 
 permissions:
@@ -35,5 +38,5 @@ jobs:
           git config user.name "casino-dashboard-bot"
           git config user.email "bot@users.noreply.github.com"
           git add data/snapshots.db
-          git commit -m "Daily refresh: $(date -u +%Y-%m-%d)" || echo "No changes"
+          git commit -m "Refresh: $(date -u +%Y-%m-%dT%H:%M)Z" || echo "No changes"
           git push
