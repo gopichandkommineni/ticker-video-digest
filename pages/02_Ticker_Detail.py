@@ -164,7 +164,7 @@ with h_right:
             )
         st.markdown(
             f'<div style="text-align:right;">'
-            f'<span style="font-size:1.6rem;font-weight:700;color:#1f2937;">'
+            f'<span style="font-size:1.6rem;font-weight:700;color:var(--text-color);">'
             f"{format_currency(close_price)}</span>"
             f"{change_badge}</div>",
             unsafe_allow_html=True,
@@ -185,6 +185,46 @@ _links_html = " ".join(
 )
 st.markdown(_links_html, unsafe_allow_html=True)
 st.markdown("---")
+
+# ── FUNDAMENTALS STRIP ────────────────────────────────────────────────────────
+
+market_cap = meta.get("market_cap")
+revenue_ttm = meta.get("revenue_ttm")
+revenue_growth = meta.get("revenue_growth_yoy")
+profit_margin = meta.get("profit_margin")
+beta = meta.get("beta")
+
+rev_growth_color = color_to_hex(color_for_revenue_growth(revenue_growth))
+margin_color = color_to_hex(color_for_profit_margin(profit_margin))
+
+fund_label_css = (
+    "font-size:0.68rem;text-transform:uppercase;letter-spacing:0.07em;"
+    "color:#9ca3af;font-weight:600;margin-bottom:4px;"
+)
+fund_value_css = "font-size:1.05rem;font-weight:700;color:{color};"
+
+fund_cells = [
+    ("Market Cap", format_market_cap(market_cap), "var(--text-color)"),
+    ("Revenue TTM", format_market_cap(revenue_ttm), "var(--text-color)"),
+    ("Revenue YoY %", format_pct(revenue_growth), rev_growth_color),
+    ("Profit Margin", format_pct(profit_margin), margin_color),
+    ("Beta", f"{beta:.2f}" if beta is not None else "—", "var(--text-color)"),
+]
+
+fund_cols = st.columns(5)
+for col, (label, value, vcolor) in zip(fund_cols, fund_cells):
+    with col:
+        st.markdown(
+            f'<div style="background:var(--secondary-background-color);'
+            f'border:1px solid rgba(128,128,128,0.2);'
+            f'padding:10px 14px;border-radius:6px;">'
+            f'<div style="{fund_label_css}">{label}</div>'
+            f'<div style="{fund_value_css.format(color=vcolor)}">{value}</div>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
 
 # ── TIER 1 TILES (3 columns) ──────────────────────────────────────────────────
 
@@ -394,44 +434,6 @@ with t3_c4:
         placeholder="+ Add concern",
         tier=3,
     )
-
-# ── FUNDAMENTALS STRIP ────────────────────────────────────────────────────────
-
-st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-
-fund_bg = "#f9fafb"
-fund_border = "#e5e7eb"
-fund_label_css = "font-size:0.68rem;text-transform:uppercase;letter-spacing:0.07em;color:#9ca3af;font-weight:600;margin-bottom:4px;"
-fund_value_css = "font-size:1.05rem;font-weight:700;color:{color};"
-
-market_cap = meta.get("market_cap")
-revenue_ttm = meta.get("revenue_ttm")
-revenue_growth = meta.get("revenue_growth_yoy")
-profit_margin = meta.get("profit_margin")
-beta = meta.get("beta")
-
-rev_growth_color = color_to_hex(color_for_revenue_growth(revenue_growth))
-margin_color = color_to_hex(color_for_profit_margin(profit_margin))
-
-fund_cells = [
-    ("Market Cap", format_market_cap(market_cap), "#1f2937"),
-    ("Revenue TTM", format_market_cap(revenue_ttm), "#1f2937"),
-    ("Revenue YoY %", format_pct(revenue_growth), rev_growth_color),
-    ("Profit Margin", format_pct(profit_margin), margin_color),
-    ("Beta", f"{beta:.2f}" if beta is not None else "—", "#1f2937"),
-]
-
-fund_cols = st.columns(5)
-for col, (label, value, vcolor) in zip(fund_cols, fund_cells):
-    with col:
-        st.markdown(
-            f'<div style="background:{fund_bg};border:1px solid {fund_border};'
-            f'padding:10px 14px;border-radius:6px;">'
-            f'<div style="{fund_label_css}">{label}</div>'
-            f'<div style="{fund_value_css.format(color=vcolor)}">{value}</div>'
-            f"</div>",
-            unsafe_allow_html=True,
-        )
 
 # ── RECENT NEWS ───────────────────────────────────────────────────────────────
 
