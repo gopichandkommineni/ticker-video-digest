@@ -75,7 +75,7 @@ def color_for_earnings_days(days: int | None) -> str:
     """'yellow' if fewer than 7 days until earnings, 'gray' otherwise."""
     if days is None:
         return "gray"
-    return "yellow" if days < 7 else "gray"
+    return "yellow" if 0 <= days < 7 else "gray"
 
 
 def color_for_analyst_upside(x: float | None) -> str:
