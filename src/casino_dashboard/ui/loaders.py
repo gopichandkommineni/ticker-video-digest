@@ -1,5 +1,6 @@
 """Cached data loaders for the Casino Dashboard UI."""
 import sqlite3
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -7,9 +8,11 @@ import streamlit as st
 
 from casino_dashboard.db.repository import (
     get_history,
+    get_latest_metadata_all_tickers,
     get_latest_signals_all_tickers,
-    get_social_history,
     get_latest_social_mentions,
+    get_manual_notes_all_tickers,
+    get_social_history,
 )
 from casino_dashboard.db.schema import _DEFAULT_DB_PATH, init_db
 from casino_dashboard.models import NewsItem
@@ -115,3 +118,70 @@ def load_latest_prices(db_path: str = str(_DEFAULT_DB_PATH)) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame(columns=["close"])
     return pd.DataFrame(rows, columns=["ticker", "close"]).set_index("ticker")
+
+
+# ── Per-ticker detail page loaders (5-minute TTL) ─────────────────────────────
+
+
+@st.cache_data(ttl=300)
+def load_latest_snapshot_for_ticker(
+    ticker: str, db_path: str = str(_DEFAULT_DB_PATH)
+) -> dict | None:
+    """Return the most recent snapshot fields for a single ticker, or None."""
+    history = get_history(ticker, 1, Path(db_path))
+    if not history:
+        return None
+    snap = history[0]
+    return {
+        "close": snap.close,
+        "volume": snap.volume,
+        "avg_volume_30d": snap.avg_volume_30d,
+        "date": snap.date,
+    }
+
+
+@st.cache_data(ttl=300)
+def load_ticker_metadata_all(db_path: str = str(_DEFAULT_DB_PATH)) -> pd.DataFrame:
+    """Return ticker metadata DataFrame indexed by ticker (5-min TTL for detail page)."""
+    return get_latest_metadata_all_tickers(Path(db_path))
+
+
+@st.cache_data(ttl=300)
+def load_manual_notes_all(db_path: str = str(_DEFAULT_DB_PATH)) -> pd.DataFrame:
+    """Return manual notes DataFrame indexed by ticker (5-min TTL for detail page)."""
+    return get_manual_notes_all_tickers(Path(db_path))
+
+
+@st.cache_data(ttl=300)
+def load_signals_for_detail(db_path: str = str(_DEFAULT_DB_PATH)) -> pd.DataFrame:
+    """Return signals matrix with 5-min TTL for use by the per-ticker detail page."""
+    return get_latest_signals_all_tickers(Path(db_path))
+
+
+@st.cache_data(ttl=300)
+def load_recent_news_all_dates(
+    ticker: str, limit: int = 5, db_path: str = str(_DEFAULT_DB_PATH)
+) -> list[NewsItem]:
+    """Return the most recent news items for a ticker across all stored snapshot dates."""
+    path = Path(db_path)
+    init_db(path)
+    with sqlite3.connect(path) as conn:
+        rows = conn.execute(
+            """
+            SELECT title, link, publisher, published_at
+            FROM news_items
+            WHERE ticker = ?
+            ORDER BY published_at DESC
+            LIMIT ?
+            """,
+            (ticker, limit),
+        ).fetchall()
+    return [
+        NewsItem(
+            title=r[0],
+            link=r[1],
+            publisher=r[2],
+            published_at=datetime.fromisoformat(r[3]),
+        )
+        for r in rows
+    ]
