@@ -263,7 +263,6 @@ with st_c1:
         subline=setup_subline,
         color=setup_color,
         tier=1,
-        min_height="120px",
     )
 
 with st_c2:
@@ -303,10 +302,9 @@ with st_c2:
             subline=sublines_combined,
             color=earn_color,
             tier=1,
-            min_height="160px",
         )
     else:
-        render_tile("Earnings", "TBD", subline="No earnings date available", tier=1, min_height="120px")
+        render_tile("Earnings", "TBD", subline="No earnings date available", tier=1)
 
 # ── THESIS ────────────────────────────────────────────────────────────────────
 
@@ -371,7 +369,7 @@ with mi_c1:
     else:
         vol_subline = None
 
-    render_tile("Volume", vol_primary, subline=vol_subline, color=vol_color, tier=2, min_height="95px")
+    render_tile("Volume", vol_primary, subline=vol_subline, color=vol_color, tier=2)
 
 with mi_c2:
     short_pct = meta.get("short_pct_of_float")
@@ -389,7 +387,6 @@ with mi_c2:
             subline=short_subline,
             color=short_color,
             tier=2,
-            min_height="95px",
         )
     else:
         render_empty_tile("Short Interest")
@@ -410,7 +407,6 @@ with mi_c3:
             str(mentions_int),
             subline=vel_str,
             tier=2,
-            min_height="95px",
         )
     else:
         render_empty_tile("Social Attention", "Not tracked")
@@ -429,7 +425,7 @@ with mi2_c1:
             rsi_label = "Oversold"
         else:
             rsi_label = "Neutral"
-        render_tile("RSI (14)", str(rsi_int), subline=rsi_label, color=color_for_rsi(rsi_val), tier=3, min_height="90px")
+        render_tile("RSI (14)", str(rsi_int), subline=rsi_label, color=color_for_rsi(rsi_val), tier=3)
     else:
         render_empty_tile("RSI (14)")
 
@@ -443,9 +439,9 @@ with mi2_c2:
         upside_subline = (
             f'<span style="color:{upside_hex};font-weight:600;">{upside_str}</span>'
         )
-        render_tile("Analyst Target", format_currency(target), subline=upside_subline, tier=3, min_height="90px")
+        render_tile("Analyst Target", format_currency(target), subline=upside_subline, tier=3)
     elif target is not None:
-        render_tile("Analyst Target", format_currency(target), tier=3, min_height="90px")
+        render_tile("Analyst Target", format_currency(target), tier=3)
     else:
         render_empty_tile("Analyst Target")
 
@@ -455,7 +451,7 @@ with mi2_c3:
     if insiders is not None or institutions is not None:
         ins_str = f"Insiders: {insiders * 100:.2f}%" if insiders is not None else "Insiders: —"
         inst_str = f"Institutions: {institutions * 100:.2f}%" if institutions is not None else "Institutions: —"
-        render_tile("Ownership", ins_str, subline=inst_str, tier=3, min_height="90px")
+        render_tile("Ownership", ins_str, subline=inst_str, tier=3)
     else:
         render_empty_tile("Ownership")
 
