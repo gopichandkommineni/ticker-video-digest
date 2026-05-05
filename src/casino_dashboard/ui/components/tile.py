@@ -4,6 +4,7 @@ import streamlit as st
 from casino_dashboard.ui.components.colors import color_for_returns, color_to_hex
 
 _TIER_PRIMARY_SIZE: dict[int, str] = {1: "1.75rem", 2: "1.35rem", 3: "1.1rem"}
+_TIER_MIN_HEIGHT: dict[int, str] = {1: "160px", 2: "130px", 3: "100px"}
 _PLACEHOLDER_COLOR = "#9ca3af"
 
 
@@ -37,7 +38,7 @@ def _tile_html(
     primary_color = hex_color if tier < 3 else "var(--text-color)"
     font_size = _TIER_PRIMARY_SIZE.get(tier, "1.35rem")
 
-    if tier == 1 and color and color != "gray":
+    if color and color != "gray":
         border_accent = f"border-left:3px solid {hex_color};"
     else:
         border_accent = "border-left:3px solid rgba(128,128,128,0.2);"
@@ -49,10 +50,11 @@ def _tile_html(
         for s in sublines
     )
 
+    min_h = _TIER_MIN_HEIGHT.get(tier, "130px")
     return (
         f'<div style="border:1px solid rgba(128,128,128,0.2);{border_accent}'
         f"border-radius:8px;padding:16px 14px 14px;"
-        f"background:var(--secondary-background-color);min-height:110px;\">"
+        f"background:var(--secondary-background-color);min-height:{min_h};\">"
         f'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
         f'color:#9ca3af;font-weight:700;margin-bottom:10px;">{title}{edit_icon}</div>'
         f'<div style="font-size:{font_size};font-weight:700;color:{primary_color};line-height:1.15;">'
@@ -104,11 +106,12 @@ def render_note_tile(
             f"{text}</div>"
         )
 
+    min_h = _TIER_MIN_HEIGHT.get(tier, "130px")
     html = (
         f'<div style="border:1px solid rgba(128,128,128,0.2);'
         f"border-left:3px solid rgba(128,128,128,0.2);"
         f"border-radius:8px;padding:16px 14px 14px;"
-        f"background:var(--secondary-background-color);min-height:110px;\">"
+        f"background:var(--secondary-background-color);min-height:{min_h};\">"
         f'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
         f'color:#9ca3af;font-weight:700;margin-bottom:10px;">{title} ✏️</div>'
         f"{body_html}"
@@ -124,40 +127,35 @@ def render_returns_tile(
     return_ytd: float | None,
     return_1y: float | None,
 ) -> None:
-    """Render the 5-row Returns tile."""
-
-    def _row(label: str, val: float | None) -> str:
-        if val is None:
-            return (
-                f'<tr><td style="color:#6b7280;font-size:0.8rem;padding:2px 8px 2px 0;">{label}</td>'
-                f'<td style="font-size:0.85rem;font-weight:600;color:#6b7280;">—</td></tr>'
-            )
-        c = color_to_hex(color_for_returns(val))
-        pct = f"{val:+.1%}"
-        return (
-            f'<tr><td style="color:#6b7280;font-size:0.8rem;padding:2px 8px 2px 0;">{label}</td>'
-            f'<td style="font-size:0.85rem;font-weight:600;color:{c};">{pct}</td></tr>'
+    """Render the Returns tile as a radio-toggle with a single prominent value."""
+    val_map = {
+        "1d": return_1d,
+        "5d": return_5d,
+        "1M": return_1m,
+        "YTD": return_ytd,
+        "1Y": return_1y,
+    }
+    with st.container(border=True):
+        st.markdown(
+            '<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
+            'color:#9ca3af;font-weight:700;margin-bottom:2px;">Returns</div>',
+            unsafe_allow_html=True,
         )
-
-    rows = (
-        _row("1d", return_1d)
-        + _row("5d", return_5d)
-        + _row("1M", return_1m)
-        + _row("YTD", return_ytd)
-        + _row("1Y", return_1y)
-    )
-
-    html = (
-        f'<div style="border:1px solid rgba(128,128,128,0.2);'
-        f"border-left:3px solid rgba(128,128,128,0.2);"
-        f"border-radius:8px;padding:16px 14px 14px;"
-        f"background:var(--secondary-background-color);min-height:110px;\">"
-        f'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
-        f'color:#9ca3af;font-weight:700;margin-bottom:10px;">Returns</div>'
-        f'<table style="width:100%;border-collapse:collapse;">{rows}</table>'
-        f"</div>"
-    )
-    st.markdown(html, unsafe_allow_html=True)
+        period = st.radio(
+            "Returns period",
+            options=list(val_map.keys()),
+            horizontal=True,
+            label_visibility="collapsed",
+            key="returns_period",
+        )
+        val = val_map[period]
+        hex_color = color_to_hex(color_for_returns(val))
+        pct = f"{val:+.1%}" if val is not None else "—"
+        st.markdown(
+            f'<div style="font-size:1.75rem;font-weight:700;color:{hex_color};line-height:1.15;">'
+            f"{pct}</div>",
+            unsafe_allow_html=True,
+        )
 
 
 def render_range_tile(
@@ -220,7 +218,7 @@ def render_range_tile(
         f'<div style="border:1px solid rgba(128,128,128,0.2);'
         f"border-left:3px solid rgba(128,128,128,0.2);"
         f"border-radius:8px;padding:16px 14px 14px;"
-        f"background:var(--secondary-background-color);min-height:110px;\">"
+        f"background:var(--secondary-background-color);min-height:130px;\">"
         f'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
         f'color:#9ca3af;font-weight:700;margin-bottom:8px;">52-Week Range</div>'
         f'<div style="font-size:1.35rem;font-weight:700;color:var(--text-color);">{price_str}</div>'
