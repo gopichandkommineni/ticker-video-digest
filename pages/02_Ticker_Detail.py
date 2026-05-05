@@ -40,7 +40,7 @@ from casino_dashboard.ui.loaders import (
     load_universe_for_ui,
 )
 
-st.set_page_config(page_title="Ticker Detail — Casino Dashboard", layout="wide")
+st.set_page_config(page_title="Ticker Detail — Stock Dashboard", layout="wide")
 
 # ── Universe & ticker resolution ─────────────────────────────────────────────
 universe_data = load_universe_for_ui()
