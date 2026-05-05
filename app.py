@@ -1,12 +1,12 @@
-"""Casino-Coherent Momentum Dashboard — Sectors Overview (root page)."""
+"""Stock Momentum Dashboard — Sectors Overview (root page)."""
 import streamlit as st
 
-st.set_page_config(page_title="Casino Dashboard", layout="wide")
+st.set_page_config(page_title="Stock Dashboard", layout="wide")
 
 from casino_dashboard.ui.loaders import load_signals_matrix, load_universe_for_ui  # noqa: E402
 from casino_dashboard.ui.sector_card import sector_card  # noqa: E402
 
-st.title("Casino-Coherent Momentum Dashboard")
+st.title("Stock Momentum Dashboard")
 st.caption(
     "Daily refreshed signals across 8 narrative themes. "
     "Read STRATEGY.md for thesis. Not investment advice."

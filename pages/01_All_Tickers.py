@@ -16,7 +16,7 @@ from casino_dashboard.ui.loaders import (
     resolve_sector_default,
 )
 
-st.set_page_config(page_title="All Tickers — Casino Dashboard", layout="wide")
+st.set_page_config(page_title="All Tickers — Stock Dashboard", layout="wide")
 st.title("All Tickers")
 
 signals_df = load_signals_matrix()
