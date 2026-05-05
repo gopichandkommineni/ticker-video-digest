@@ -84,6 +84,34 @@ def render_tile(
     st.markdown(html, unsafe_allow_html=True)
 
 
+def get_tile_html(
+    title: str,
+    primary: str | None,
+    subline: str | None = None,
+    color: str | None = None,
+    tier: int = 2,
+    edit_mode: bool = False,
+) -> str:
+    """Return tile HTML string for embedding in a CSS grid layout."""
+    sublines = [subline] if subline else []
+    return _tile_html(title, _safe_primary(primary), sublines, color, tier, edit_mode)
+
+
+def get_empty_tile_html(title: str, message: str = "—") -> str:
+    """Return empty-state tile HTML string for embedding in a CSS grid layout."""
+    return _tile_html(title, message, [], None, 2, False)
+
+
+def render_grid(tile_html_list: list[str], cols: int = 2) -> None:
+    """Render a list of tile HTML strings in a CSS grid (always cols-per-row on mobile)."""
+    cells = "".join(f"<div>{h}</div>" for h in tile_html_list)
+    col_def = " ".join(["1fr"] * cols)
+    st.markdown(
+        f'<div style="display:grid;grid-template-columns:{col_def};gap:8px;">{cells}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_empty_tile(title: str, message: str = "—") -> None:
     """Render a tile with empty/null data state."""
     html = _tile_html(title, message, [], None, 2, False)
