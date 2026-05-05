@@ -285,7 +285,7 @@ if ned is not None:
     earn_color = color_for_earnings_days(days_until)
     earn_primary = f"{days_until} day{'s' if days_until != 1 else ''}"
     time_label = (next_earnings_time or "").upper() if next_earnings_time else ""
-    subline1 = ned.strftime("%b %-d, %Y")
+    subline1 = f"{ned.strftime('%b')} {ned.day}, {ned.year}"
     if time_label:
         subline1 += f" · {time_label}"
     subline2 = f"{(today - led).days} days since last" if led else None

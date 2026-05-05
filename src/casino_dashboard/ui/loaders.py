@@ -176,12 +176,13 @@ def load_recent_news_all_dates(
             """,
             (ticker, limit),
         ).fetchall()
-    return [
-        NewsItem(
-            title=r[0],
-            link=r[1],
-            publisher=r[2],
-            published_at=datetime.fromisoformat(r[3]),
-        )
-        for r in rows
-    ]
+    items = []
+    for r in rows:
+        try:
+            pub = datetime.fromisoformat(r[3]) if r[3] else None
+        except (ValueError, TypeError):
+            pub = None
+        if pub is None:
+            continue
+        items.append(NewsItem(title=r[0], link=r[1], publisher=r[2], published_at=pub))
+    return items
