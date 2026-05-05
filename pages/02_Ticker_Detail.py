@@ -20,7 +20,10 @@ from casino_dashboard.ui.components.colors import (
     color_to_hex,
 )
 from casino_dashboard.ui.components.tile import (
+    get_empty_tile_html,
+    get_tile_html,
     render_empty_tile,
+    render_grid,
     render_note_tile,
     render_range_tile,
     render_returns_tile,
@@ -224,87 +227,78 @@ fund_cells = [
     ("Beta", f"{beta:.2f}" if beta is not None else "—", "var(--text-color)"),
 ]
 
-fund_cols = st.columns(5)
-for col, (label, value, vcolor) in zip(fund_cols, fund_cells):
-    with col:
-        st.markdown(
-            f'<div style="background:var(--secondary-background-color);'
-            f'border:1px solid rgba(128,128,128,0.2);'
-            f'padding:10px 14px;border-radius:6px;">'
-            f'<div style="{fund_label_css}">{label}</div>'
-            f'<div style="{fund_value_css.format(color=vcolor)}">{value}</div>'
-            f"</div>",
-            unsafe_allow_html=True,
-        )
+fund_item_htmls = [
+    (
+        f'<div style="background:var(--secondary-background-color);'
+        f'border:1px solid rgba(128,128,128,0.2);'
+        f'padding:10px 14px;border-radius:6px;">'
+        f'<div style="{fund_label_css}">{label}</div>'
+        f'<div style="{fund_value_css.format(color=vcolor)}">{value}</div>'
+        f"</div>"
+    )
+    for label, value, vcolor in fund_cells
+]
+fund_cells_html = "".join(f"<div>{h}</div>" for h in fund_item_htmls)
+st.markdown(
+    f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">{fund_cells_html}</div>',
+    unsafe_allow_html=True,
+)
 
 # ── SETUP & TIMING ────────────────────────────────────────────────────────────
 
 _section_header("Setup & Timing")
 
-st_c1, st_c2 = st.columns(2)
+near_breakout = sig.get("near_breakout")
+near_breakdown = sig.get("near_breakdown")
+setup_color = color_for_setup(near_breakout, near_breakdown)
+if near_breakout:
+    setup_label = "BREAKOUT"
+elif near_breakdown:
+    setup_label = "BREAKDOWN"
+else:
+    setup_label = "NEUTRAL"
 
-with st_c1:
-    near_breakout = sig.get("near_breakout")
-    near_breakdown = sig.get("near_breakdown")
-    setup_color = color_for_setup(near_breakout, near_breakdown)
-    if near_breakout:
-        setup_label = "BREAKOUT"
-    elif near_breakdown:
-        setup_label = "BREAKDOWN"
-    else:
-        setup_label = "NEUTRAL"
+dist_high = sig.get("dist_from_30d_high_pct")
+setup_subline = f"{dist_high:+.1%} from 30d high" if dist_high is not None else None
+setup_html = get_tile_html("Setup", setup_label, subline=setup_subline, color=setup_color, tier=1)
 
-    dist_high = sig.get("dist_from_30d_high_pct")
-    setup_subline = f"{dist_high:+.1%} from 30d high" if dist_high is not None else None
+next_earnings_date = meta.get("next_earnings_date")
+next_earnings_time = meta.get("next_earnings_time")
+last_earnings_date = meta.get("last_earnings_date")
 
-    render_tile(
-        "Setup",
-        setup_label,
-        subline=setup_subline,
-        color=setup_color,
-        tier=1,
-    )
 
-with st_c2:
-    next_earnings_date = meta.get("next_earnings_date")
-    next_earnings_time = meta.get("next_earnings_time")
-    last_earnings_date = meta.get("last_earnings_date")
+def _parse_date(d: object) -> date | None:
+    if d is None:
+        return None
+    if isinstance(d, date):
+        return d
+    try:
+        return date.fromisoformat(str(d))
+    except (ValueError, TypeError):
+        return None
 
-    def _parse_date(d: object) -> date | None:
-        if d is None:
-            return None
-        if isinstance(d, date):
-            return d
-        try:
-            return date.fromisoformat(str(d))
-        except (ValueError, TypeError):
-            return None
 
-    ned = _parse_date(next_earnings_date)
-    led = _parse_date(last_earnings_date)
-    today = date.today()
+ned = _parse_date(next_earnings_date)
+led = _parse_date(last_earnings_date)
+today = date.today()
 
-    if ned is not None:
-        days_until = (ned - today).days
-        earn_color = color_for_earnings_days(days_until)
-        earn_primary = f"{days_until} day{'s' if days_until != 1 else ''}"
-        time_label = (next_earnings_time or "").upper() if next_earnings_time else ""
-        subline1 = ned.strftime("%b %-d, %Y")
-        if time_label:
-            subline1 += f" · {time_label}"
-        subline2 = f"{(today - led).days} days since last" if led else None
-        sublines_combined = subline1
-        if subline2:
-            sublines_combined += f"<br>{subline2}"
-        render_tile(
-            "Earnings",
-            earn_primary,
-            subline=sublines_combined,
-            color=earn_color,
-            tier=1,
-        )
-    else:
-        render_tile("Earnings", "TBD", subline="No earnings date available", tier=1)
+if ned is not None:
+    days_until = (ned - today).days
+    earn_color = color_for_earnings_days(days_until)
+    earn_primary = f"{days_until} day{'s' if days_until != 1 else ''}"
+    time_label = (next_earnings_time or "").upper() if next_earnings_time else ""
+    subline1 = ned.strftime("%b %-d, %Y")
+    if time_label:
+        subline1 += f" · {time_label}"
+    subline2 = f"{(today - led).days} days since last" if led else None
+    sublines_combined = subline1
+    if subline2:
+        sublines_combined += f"<br>{subline2}"
+    earn_html = get_tile_html("Earnings", earn_primary, subline=sublines_combined, color=earn_color, tier=1)
+else:
+    earn_html = get_tile_html("Earnings", "TBD", subline="No earnings date available", tier=1)
+
+render_grid([setup_html, earn_html])
 
 # ── THESIS ────────────────────────────────────────────────────────────────────
 
@@ -350,108 +344,87 @@ with pa_c2:
 
 _section_header("Market Indicators")
 
-mi_r1c1, mi_r1c2 = st.columns(2)
+# Build all 6 indicator tile HTML strings, then render in a single 2-col CSS grid.
 
-with mi_r1c1:
-    vol_ratio = sig.get("vol_ratio_30d")
-    vol_color = color_for_volume_ratio(vol_ratio)
-    vol_primary = f"{vol_ratio:.2f}x" if vol_ratio is not None else "—"
+vol_ratio = sig.get("vol_ratio_30d")
+vol_color = color_for_volume_ratio(vol_ratio)
+vol_primary = f"{vol_ratio:.2f}x" if vol_ratio is not None else "—"
+if today_volume is not None and avg_volume_30d is not None and avg_volume_30d > 0:
+    vol_subline = (
+        f"Today: {today_volume / 1_000_000:.1f}M / "
+        f"30d avg: {avg_volume_30d / 1_000_000:.1f}M"
+    )
+else:
+    vol_subline = None
+vol_html = get_tile_html("Volume", vol_primary, subline=vol_subline, color=vol_color, tier=2)
 
-    if today_volume is not None and avg_volume_30d is not None and avg_volume_30d > 0:
-        vol_subline = (
-            f"Today: {today_volume / 1_000_000:.1f}M / "
-            f"30d avg: {avg_volume_30d / 1_000_000:.1f}M"
-        )
+short_pct = meta.get("short_pct_of_float")
+short_ratio = meta.get("short_ratio_days")
+if short_pct is not None:
+    short_html = get_tile_html(
+        "Short Interest",
+        f"{short_pct * 100:.1f}%",
+        subline=f"{short_ratio:.2f} days to cover" if short_ratio is not None else None,
+        color=color_for_short_pct(short_pct),
+        tier=2,
+    )
+else:
+    short_html = get_empty_tile_html("Short Interest")
+
+mentions_today = sig.get("apewisdom_mentions_today")
+velocity_24h = sig.get("apewisdom_velocity_24h")
+if mentions_today is not None:
+    mentions_int = int(mentions_today)
+    if velocity_24h is not None:
+        vel_color = color_to_hex("green") if velocity_24h >= 2.0 else "inherit"
+        vel_str = f'<span style="color:{vel_color};font-weight:600;">{velocity_24h:.1f}x</span> 24h velocity'
     else:
-        vol_subline = None
+        vel_str = None
+    social_html = get_tile_html("Social Attention", str(mentions_int), subline=vel_str, tier=2)
+else:
+    social_html = get_empty_tile_html("Social Attention")
 
-    render_tile("Volume", vol_primary, subline=vol_subline, color=vol_color, tier=2)
-
-with mi_r1c2:
-    short_pct = meta.get("short_pct_of_float")
-    short_ratio = meta.get("short_ratio_days")
-    short_color = color_for_short_pct(short_pct)
-
-    if short_pct is not None:
-        short_primary = f"{short_pct * 100:.1f}%"
-        short_subline = (
-            f"{short_ratio:.2f} days to cover" if short_ratio is not None else None
-        )
-        render_tile(
-            "Short Interest",
-            short_primary,
-            subline=short_subline,
-            color=short_color,
-            tier=2,
-        )
+rsi_val = sig.get("rsi_14")
+if rsi_val is not None:
+    rsi_int = int(round(rsi_val))
+    if rsi_val > 70:
+        rsi_label = "Overbought"
+    elif rsi_val >= 60:
+        rsi_label = "Approaching overbought"
+    elif rsi_val < 30:
+        rsi_label = "Oversold"
     else:
-        render_empty_tile("Short Interest")
+        rsi_label = "Neutral"
+    rsi_html = get_tile_html("RSI (14)", str(rsi_int), subline=rsi_label, color=color_for_rsi(rsi_val), tier=3)
+else:
+    rsi_html = get_empty_tile_html("RSI (14)")
 
-mi_r2c1, mi_r2c2 = st.columns(2)
+target = meta.get("analyst_target_mean")
+if target is not None and close_price is not None and close_price > 0:
+    upside = (target - close_price) / close_price
+    upside_hex = color_to_hex(color_for_analyst_upside(upside))
+    upside_str = f"{upside:+.1%} upside" if upside >= 0 else f"{upside:.1%} from current"
+    analyst_html = get_tile_html(
+        "Analyst Target",
+        format_currency(target),
+        subline=f'<span style="color:{upside_hex};font-weight:600;">{upside_str}</span>',
+        tier=3,
+    )
+elif target is not None:
+    analyst_html = get_tile_html("Analyst Target", format_currency(target), tier=3)
+else:
+    analyst_html = get_empty_tile_html("Analyst Target")
 
-with mi_r2c1:
-    mentions_today = sig.get("apewisdom_mentions_today")
-    velocity_24h = sig.get("apewisdom_velocity_24h")
+insiders = meta.get("held_pct_insiders")
+institutions = meta.get("held_pct_institutions")
+if insiders is not None or institutions is not None:
+    ins_str = f"Insiders: {insiders * 100:.2f}%" if insiders is not None else "Insiders: —"
+    inst_str = f"Institutions: {institutions * 100:.2f}%" if institutions is not None else "Institutions: —"
+    ownership_html = get_tile_html("Ownership", ins_str, subline=inst_str, tier=3)
+else:
+    ownership_html = get_empty_tile_html("Ownership")
 
-    if mentions_today is not None:
-        mentions_int = int(mentions_today)
-        if velocity_24h is not None:
-            vel_color = color_to_hex("green") if velocity_24h >= 2.0 else "inherit"
-            vel_str = f'<span style="color:{vel_color};font-weight:600;">{velocity_24h:.1f}x</span> 24h velocity'
-        else:
-            vel_str = None
-        render_tile(
-            "Social Attention",
-            str(mentions_int),
-            subline=vel_str,
-            tier=2,
-        )
-    else:
-        render_empty_tile("Social Attention", "Not tracked")
-
-with mi_r2c2:
-    rsi_val = sig.get("rsi_14")
-    if rsi_val is not None:
-        rsi_int = int(round(rsi_val))
-        if rsi_val > 70:
-            rsi_label = "Overbought"
-        elif rsi_val >= 60:
-            rsi_label = "Approaching overbought"
-        elif rsi_val < 30:
-            rsi_label = "Oversold"
-        else:
-            rsi_label = "Neutral"
-        render_tile("RSI (14)", str(rsi_int), subline=rsi_label, color=color_for_rsi(rsi_val), tier=3)
-    else:
-        render_empty_tile("RSI (14)")
-
-mi_r3c1, mi_r3c2 = st.columns(2)
-
-with mi_r3c1:
-    target = meta.get("analyst_target_mean")
-    if target is not None and close_price is not None and close_price > 0:
-        upside = (target - close_price) / close_price
-        upside_color = color_for_analyst_upside(upside)
-        upside_hex = color_to_hex(upside_color)
-        upside_str = f"{upside:+.1%} upside" if upside >= 0 else f"{upside:.1%} from current"
-        upside_subline = (
-            f'<span style="color:{upside_hex};font-weight:600;">{upside_str}</span>'
-        )
-        render_tile("Analyst Target", format_currency(target), subline=upside_subline, tier=3)
-    elif target is not None:
-        render_tile("Analyst Target", format_currency(target), tier=3)
-    else:
-        render_empty_tile("Analyst Target")
-
-with mi_r3c2:
-    insiders = meta.get("held_pct_insiders")
-    institutions = meta.get("held_pct_institutions")
-    if insiders is not None or institutions is not None:
-        ins_str = f"Insiders: {insiders * 100:.2f}%" if insiders is not None else "Insiders: —"
-        inst_str = f"Institutions: {institutions * 100:.2f}%" if institutions is not None else "Institutions: —"
-        render_tile("Ownership", ins_str, subline=inst_str, tier=3)
-    else:
-        render_empty_tile("Ownership")
+render_grid([vol_html, short_html, social_html, rsi_html, analyst_html, ownership_html])
 
 # ── RECENT NEWS ───────────────────────────────────────────────────────────────
 
