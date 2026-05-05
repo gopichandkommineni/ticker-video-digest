@@ -127,35 +127,40 @@ def render_returns_tile(
     return_ytd: float | None,
     return_1y: float | None,
 ) -> None:
-    """Render the Returns tile as a radio-toggle with a single prominent value."""
-    val_map = {
-        "1d": return_1d,
-        "5d": return_5d,
-        "1M": return_1m,
-        "YTD": return_ytd,
-        "1Y": return_1y,
-    }
-    with st.container(border=True):
-        st.markdown(
-            '<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
-            'color:#9ca3af;font-weight:700;margin-bottom:2px;">Returns</div>',
-            unsafe_allow_html=True,
-        )
-        period = st.radio(
-            "Returns period",
-            options=list(val_map.keys()),
-            horizontal=True,
-            label_visibility="collapsed",
-            key="returns_period",
-        )
-        val = val_map[period]
+    """Render the Returns tile as a horizontally scrollable period card strip."""
+    periods = [
+        ("1d", return_1d),
+        ("5d", return_5d),
+        ("1M", return_1m),
+        ("YTD", return_ytd),
+        ("1Y", return_1y),
+    ]
+
+    def _card(label: str, val: float | None) -> str:
         hex_color = color_to_hex(color_for_returns(val))
         pct = f"{val:+.1%}" if val is not None else "—"
-        st.markdown(
-            f'<div style="font-size:1.75rem;font-weight:700;color:{hex_color};line-height:1.15;">'
-            f"{pct}</div>",
-            unsafe_allow_html=True,
+        return (
+            f'<div style="flex:0 0 auto;text-align:center;min-width:52px;">'
+            f'<div style="font-size:0.72rem;color:#9ca3af;margin-bottom:5px;">{label}</div>'
+            f'<div style="font-size:1.15rem;font-weight:700;color:{hex_color};">{pct}</div>'
+            f"</div>"
         )
+
+    cards_html = "".join(_card(label, val) for label, val in periods)
+
+    html = (
+        f'<div style="border:1px solid rgba(128,128,128,0.2);'
+        f"border-left:3px solid rgba(128,128,128,0.2);"
+        f"border-radius:8px;padding:16px 14px 14px;"
+        f"background:var(--secondary-background-color);min-height:130px;\">"
+        f'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
+        f'color:#9ca3af;font-weight:700;margin-bottom:10px;">Returns</div>'
+        f'<div style="display:flex;gap:16px;overflow-x:auto;padding-bottom:4px;">'
+        f"{cards_html}"
+        f"</div>"
+        f"</div>"
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def render_range_tile(
