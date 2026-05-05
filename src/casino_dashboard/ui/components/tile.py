@@ -4,7 +4,7 @@ import streamlit as st
 from casino_dashboard.ui.components.colors import color_for_returns, color_to_hex
 
 _TIER_PRIMARY_SIZE: dict[int, str] = {1: "1.75rem", 2: "1.35rem", 3: "1.1rem"}
-_TIER_MIN_HEIGHT: dict[int, str] = {1: "160px", 2: "130px", 3: "100px"}
+_TIER_MIN_HEIGHT: dict[int, str] = {1: "130px", 2: "100px", 3: "90px"}
 _PLACEHOLDER_COLOR = "#9ca3af"
 
 

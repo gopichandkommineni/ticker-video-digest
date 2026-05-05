@@ -306,33 +306,33 @@ def test_render_tile_gray_border_stays_neutral(mocker):
 # ── Tier-varied min-heights ───────────────────────────────────────────────────
 
 def test_render_tile_tier1_min_height(mocker):
-    """Tier-1 tile should use 160px min-height."""
+    """Tier-1 tile should use 130px min-height (tighter default)."""
     calls = []
     mocker.patch("streamlit.markdown", side_effect=lambda html, **kw: calls.append(html))
     from casino_dashboard.ui.components.tile import render_tile
 
     render_tile("Setup", "BREAKOUT", tier=1)
     assert calls
-    assert "min-height:160px" in calls[0]
+    assert "min-height:130px" in calls[0]
 
 
 def test_render_tile_tier2_min_height(mocker):
-    """Tier-2 tile should use 130px min-height."""
+    """Tier-2 tile should use 100px min-height (tighter default)."""
     calls = []
     mocker.patch("streamlit.markdown", side_effect=lambda html, **kw: calls.append(html))
     from casino_dashboard.ui.components.tile import render_tile
 
     render_tile("Vol Ratio", "1.5x", tier=2)
     assert calls
-    assert "min-height:130px" in calls[0]
+    assert "min-height:100px" in calls[0]
 
 
 def test_render_tile_tier3_min_height(mocker):
-    """Tier-3 tile should use 100px min-height."""
+    """Tier-3 tile should use 90px min-height (tighter default)."""
     calls = []
     mocker.patch("streamlit.markdown", side_effect=lambda html, **kw: calls.append(html))
     from casino_dashboard.ui.components.tile import render_tile
 
     render_tile("RSI (14)", "68", tier=3)
     assert calls
-    assert "min-height:100px" in calls[0]
+    assert "min-height:90px" in calls[0]
