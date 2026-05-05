@@ -78,8 +78,8 @@ def test_render_tile_tier1_colored_border_in_html(mocker):
     assert "#16a34a" in calls[0]
 
 
-def test_render_tile_tier3_monochrome_no_color_in_primary(mocker):
-    """Tier-3 tiles are monochrome; primary uses var(--text-color), not the accent color hex."""
+def test_render_tile_tier3_monochrome_primary_uses_css_var(mocker):
+    """Tier-3 tiles: primary value uses var(--text-color); border accent uses color hex."""
     calls = []
     mocker.patch("streamlit.markdown", side_effect=lambda html, **kw: calls.append(html))
     from casino_dashboard.ui.components.tile import render_tile
@@ -87,9 +87,12 @@ def test_render_tile_tier3_monochrome_no_color_in_primary(mocker):
     render_tile("RSI (14)", "68", color="yellow", tier=3)
     assert calls
     html = calls[0]
-    # Theme-aware neutral color must appear; yellow hex must NOT be on the primary value
+    # Theme-aware neutral color must appear in the primary value div
     assert "var(--text-color)" in html
-    assert "#ca8a04" not in html  # yellow hex absent from monochrome tier-3
+    # Yellow hex now appears on the border accent (not on the primary value)
+    assert "#ca8a04" in html
+    # The primary value div uses the CSS var, not the color hex
+    assert 'color:var(--text-color)' in html
 
 
 # ── render_empty_tile ─────────────────────────────────────────────────────────
@@ -262,3 +265,74 @@ def test_note_tile_html_uses_css_var_background(mocker):
     render_note_tile("Catalyst", "some note")
     assert calls
     assert "var(--secondary-background-color)" in calls[0]
+
+
+# ── Border accent: all non-gray tiers now get colored left border ─────────────
+
+def test_render_tile_tier2_colored_border_in_html(mocker):
+    """Tier-2 tile with non-gray color should include the color hex as border accent."""
+    calls = []
+    mocker.patch("streamlit.markdown", side_effect=lambda html, **kw: calls.append(html))
+    from casino_dashboard.ui.components.tile import render_tile
+
+    render_tile("Vol Ratio", "2.31x", color="green", tier=2)
+    assert calls
+    assert "#16a34a" in calls[0]
+
+
+def test_render_tile_tier3_colored_border_in_html(mocker):
+    """Tier-3 tile with non-gray color should include the color hex as border accent."""
+    calls = []
+    mocker.patch("streamlit.markdown", side_effect=lambda html, **kw: calls.append(html))
+    from casino_dashboard.ui.components.tile import render_tile
+
+    render_tile("Short %", "18%", color="yellow", tier=3)
+    assert calls
+    assert "#ca8a04" in calls[0]
+
+
+def test_render_tile_gray_border_stays_neutral(mocker):
+    """Gray-colored tiles must use neutral (rgba) left-border accent, not a solid color."""
+    calls = []
+    mocker.patch("streamlit.markdown", side_effect=lambda html, **kw: calls.append(html))
+    from casino_dashboard.ui.components.tile import render_tile
+
+    render_tile("Setup", "NEUTRAL", color="gray", tier=1)
+    assert calls
+    html = calls[0]
+    assert "border-left:3px solid rgba(128,128,128,0.2);" in html
+
+
+# ── Tier-varied min-heights ───────────────────────────────────────────────────
+
+def test_render_tile_tier1_min_height(mocker):
+    """Tier-1 tile should use 160px min-height."""
+    calls = []
+    mocker.patch("streamlit.markdown", side_effect=lambda html, **kw: calls.append(html))
+    from casino_dashboard.ui.components.tile import render_tile
+
+    render_tile("Setup", "BREAKOUT", tier=1)
+    assert calls
+    assert "min-height:160px" in calls[0]
+
+
+def test_render_tile_tier2_min_height(mocker):
+    """Tier-2 tile should use 130px min-height."""
+    calls = []
+    mocker.patch("streamlit.markdown", side_effect=lambda html, **kw: calls.append(html))
+    from casino_dashboard.ui.components.tile import render_tile
+
+    render_tile("Vol Ratio", "1.5x", tier=2)
+    assert calls
+    assert "min-height:130px" in calls[0]
+
+
+def test_render_tile_tier3_min_height(mocker):
+    """Tier-3 tile should use 100px min-height."""
+    calls = []
+    mocker.patch("streamlit.markdown", side_effect=lambda html, **kw: calls.append(html))
+    from casino_dashboard.ui.components.tile import render_tile
+
+    render_tile("RSI (14)", "68", tier=3)
+    assert calls
+    assert "min-height:100px" in calls[0]
