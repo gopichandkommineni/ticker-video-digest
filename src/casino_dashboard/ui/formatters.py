@@ -31,10 +31,16 @@ def format_pct(x: float | None) -> str:
     """Format a decimal fraction as a 2dp percentage string, e.g. '+82.75%' or '—' for None/NaN.
 
     Signals are stored as decimals (0.8275 = 82.75%). Multiplies by 100 for display.
+    When the value rounds to exactly zero at display precision, the sign is suppressed
+    so that tiny negatives don't produce '-0.00%'.
     """
     if _is_null(x):
         return "—"
-    return f"{float(x):+.2%}"
+    val = float(x)
+    # Round at display precision first; if zero, suppress sign
+    if round(val * 100, 2) == 0.0:
+        return "0.00%"
+    return f"{val:+.2%}"
 
 
 def format_currency(x: float | None) -> str:

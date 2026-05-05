@@ -57,7 +57,8 @@ def test_format_pct_nan():
 
 
 def test_format_pct_zero():
-    assert format_pct(0.0) == "+0.00%"
+    # Exact zero: sign is suppressed ('+0.00%' would be misleading)
+    assert format_pct(0.0) == "0.00%"
 
 
 def test_format_pct_positive_small():
@@ -92,3 +93,28 @@ def test_format_currency_nan():
 
 def test_format_currency_large():
     assert format_currency(12345.67) == "$12345.67"
+
+
+# ── format_pct sign-suppression for near-zero values ─────────────────────────
+
+def test_format_pct_exact_zero_no_sign():
+    """Exact zero should show '0.00%', not '+0.00%'."""
+    assert format_pct(0.0) == "0.00%"
+
+
+def test_format_pct_tiny_negative_rounds_to_zero():
+    """Value that rounds to 0.00% at display precision must not show '-0.00%'."""
+    assert format_pct(-0.0000001) == "0.00%"
+
+
+def test_format_pct_tiny_positive_rounds_to_zero():
+    assert format_pct(0.0000001) == "0.00%"
+
+
+def test_format_pct_small_negative_does_not_round_to_zero():
+    """A value large enough to show at 2dp should keep its sign."""
+    assert format_pct(-0.001) == "-0.10%"
+
+
+def test_format_pct_small_positive_keeps_sign():
+    assert format_pct(0.001) == "+0.10%"

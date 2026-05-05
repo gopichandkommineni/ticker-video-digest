@@ -83,10 +83,22 @@ if not metadata_df.empty and ticker in metadata_df.index:
 notes_df = load_manual_notes_all()
 catalyst: str | None = None
 red_flag: str | None = None
+
+
+def _coerce_note(val: object) -> str | None:
+    """Coerce pandas NaN / empty-string / literal 'nan' → None at read time."""
+    if val is None:
+        return None
+    if isinstance(val, float) and val != val:  # NaN
+        return None
+    s = str(val).strip()
+    return None if s.lower() in ("", "nan", "none") else s
+
+
 if not notes_df.empty and ticker in notes_df.index:
     _n = notes_df.loc[ticker]
-    catalyst = _n.get("catalyst") or None
-    red_flag = _n.get("red_flag") or None
+    catalyst = _coerce_note(_n.get("catalyst"))
+    red_flag = _coerce_note(_n.get("red_flag"))
 else:
     # Fallback: YAML (for local dev / first-run before daily_refresh writes to DB)
     try:

@@ -79,7 +79,7 @@ def test_render_tile_tier1_colored_border_in_html(mocker):
 
 
 def test_render_tile_tier3_monochrome_no_color_in_primary(mocker):
-    """Tier-3 tiles are monochrome; primary text uses neutral color regardless of color param."""
+    """Tier-3 tiles are monochrome; primary uses var(--text-color), not the accent color hex."""
     calls = []
     mocker.patch("streamlit.markdown", side_effect=lambda html, **kw: calls.append(html))
     from casino_dashboard.ui.components.tile import render_tile
@@ -87,8 +87,9 @@ def test_render_tile_tier3_monochrome_no_color_in_primary(mocker):
     render_tile("RSI (14)", "68", color="yellow", tier=3)
     assert calls
     html = calls[0]
-    # Neutral primary color should appear (not yellow hex) for the primary value
-    assert "#1f2937" in html
+    # Theme-aware neutral color must appear; yellow hex must NOT be on the primary value
+    assert "var(--text-color)" in html
+    assert "#ca8a04" not in html  # yellow hex absent from monochrome tier-3
 
 
 # ── render_empty_tile ─────────────────────────────────────────────────────────
@@ -143,3 +144,121 @@ def test_render_tile_yellow_color_in_html(mocker):
     render_tile("Earnings", "3 days", color="yellow", tier=1)
     assert calls
     assert "#ca8a04" in calls[0]
+
+
+# ── _is_empty_note ────────────────────────────────────────────────────────────
+
+def test_is_empty_note_none():
+    from casino_dashboard.ui.components.tile import _is_empty_note
+    assert _is_empty_note(None) is True
+
+
+def test_is_empty_note_float_nan():
+    from casino_dashboard.ui.components.tile import _is_empty_note
+    assert _is_empty_note(float("nan")) is True
+
+
+def test_is_empty_note_string_nan():
+    from casino_dashboard.ui.components.tile import _is_empty_note
+    assert _is_empty_note("nan") is True
+    assert _is_empty_note("NaN") is True
+
+
+def test_is_empty_note_empty_string():
+    from casino_dashboard.ui.components.tile import _is_empty_note
+    assert _is_empty_note("") is True
+    assert _is_empty_note("   ") is True
+
+
+def test_is_empty_note_string_none():
+    from casino_dashboard.ui.components.tile import _is_empty_note
+    assert _is_empty_note("none") is True
+    assert _is_empty_note("None") is True
+
+
+def test_is_empty_note_real_text():
+    from casino_dashboard.ui.components.tile import _is_empty_note
+    assert _is_empty_note("Texas grant for AI transceiver manufacturing") is False
+
+
+# ── render_note_tile NaN / empty state handling ───────────────────────────────
+
+def test_render_note_tile_nan_shows_placeholder(mocker):
+    """NaN (from pandas/SQLite NULL) must show placeholder, not 'nan'."""
+    calls = []
+    mocker.patch("streamlit.markdown", side_effect=lambda html, **kw: calls.append(html))
+    from casino_dashboard.ui.components.tile import render_note_tile
+
+    render_note_tile("Catalyst", float("nan"), placeholder="+ Add catalyst")
+    assert calls
+    html = calls[0]
+    assert "nan" not in html.lower().replace("+ Add catalyst", "")
+    assert "+ Add catalyst" in html
+
+
+def test_render_note_tile_none_shows_placeholder(mocker):
+    calls = []
+    mocker.patch("streamlit.markdown", side_effect=lambda html, **kw: calls.append(html))
+    from casino_dashboard.ui.components.tile import render_note_tile
+
+    render_note_tile("Red Flag", None, placeholder="+ Add concern")
+    assert calls
+    assert "+ Add concern" in calls[0]
+
+
+def test_render_note_tile_string_nan_shows_placeholder(mocker):
+    """The literal string 'nan' (pandas repr of NaN) must show placeholder."""
+    calls = []
+    mocker.patch("streamlit.markdown", side_effect=lambda html, **kw: calls.append(html))
+    from casino_dashboard.ui.components.tile import render_note_tile
+
+    render_note_tile("Catalyst", "nan", placeholder="+ Add catalyst")
+    assert calls
+    assert "+ Add catalyst" in calls[0]
+
+
+def test_render_note_tile_empty_string_shows_placeholder(mocker):
+    calls = []
+    mocker.patch("streamlit.markdown", side_effect=lambda html, **kw: calls.append(html))
+    from casino_dashboard.ui.components.tile import render_note_tile
+
+    render_note_tile("Catalyst", "", placeholder="+ Add catalyst")
+    assert calls
+    assert "+ Add catalyst" in calls[0]
+
+
+def test_render_note_tile_real_text_shows_content(mocker):
+    """A real catalyst note must be rendered as content, not the placeholder."""
+    calls = []
+    mocker.patch("streamlit.markdown", side_effect=lambda html, **kw: calls.append(html))
+    from casino_dashboard.ui.components.tile import render_note_tile
+
+    render_note_tile("Catalyst", "Texas grant for AI transceiver manufacturing")
+    assert calls
+    assert "Texas grant for AI transceiver manufacturing" in calls[0]
+    assert "+ Add" not in calls[0]
+
+
+# ── Dark mode: tiles use CSS vars, not hardcoded light backgrounds ────────────
+
+def test_tile_html_uses_css_var_background(mocker):
+    """Tile HTML must use var(--secondary-background-color), not a hardcoded light color."""
+    calls = []
+    mocker.patch("streamlit.markdown", side_effect=lambda html, **kw: calls.append(html))
+    from casino_dashboard.ui.components.tile import render_tile
+
+    render_tile("Volume", "1.5x")
+    assert calls
+    assert "var(--secondary-background-color)" in calls[0]
+    assert "#fafafa" not in calls[0]
+    assert "background:#fff" not in calls[0]
+
+
+def test_note_tile_html_uses_css_var_background(mocker):
+    calls = []
+    mocker.patch("streamlit.markdown", side_effect=lambda html, **kw: calls.append(html))
+    from casino_dashboard.ui.components.tile import render_note_tile
+
+    render_note_tile("Catalyst", "some note")
+    assert calls
+    assert "var(--secondary-background-color)" in calls[0]

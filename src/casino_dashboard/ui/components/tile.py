@@ -4,11 +4,24 @@ import streamlit as st
 from casino_dashboard.ui.components.colors import color_for_returns, color_to_hex
 
 _TIER_PRIMARY_SIZE: dict[int, str] = {1: "1.75rem", 2: "1.35rem", 3: "1.1rem"}
-_PLACEHOLDER_COLOR = "#d1d5db"
+_PLACEHOLDER_COLOR = "#9ca3af"
 
 
 def _safe_primary(primary: str | None) -> str:
     return primary if primary is not None else "—"
+
+
+def _is_empty_note(value: object) -> bool:
+    """Return True for values that should show the empty-state placeholder.
+
+    Handles None, float NaN, empty string, and the literal strings 'nan' / 'none'
+    that pandas produces when reading NULL from SQLite.
+    """
+    if value is None:
+        return True
+    if isinstance(value, float) and value != value:  # NaN: only value not equal to itself
+        return True
+    return str(value).strip().lower() in ("", "nan", "none")
 
 
 def _tile_html(
@@ -20,25 +33,26 @@ def _tile_html(
     edit_mode: bool,
 ) -> str:
     hex_color = color_to_hex(color)
-    # Tier 3 is monochrome — primary text stays neutral
-    primary_color = hex_color if tier < 3 else "#1f2937"
+    # Tier 3 is monochrome — primary text follows theme color
+    primary_color = hex_color if tier < 3 else "var(--text-color)"
     font_size = _TIER_PRIMARY_SIZE.get(tier, "1.35rem")
 
     if tier == 1 and color and color != "gray":
         border_accent = f"border-left:3px solid {hex_color};"
     else:
-        border_accent = "border-left:3px solid #e5e7eb;"
+        border_accent = "border-left:3px solid rgba(128,128,128,0.2);"
 
     edit_icon = " ✏️" if edit_mode else ""
 
     sublines_html = "".join(
-        f'<div style="font-size:0.8rem;color:#6b7280;margin-top:3px;line-height:1.4;">{s}</div>'
+        f'<div style="font-size:0.8rem;color:#9ca3af;margin-top:3px;line-height:1.4;">{s}</div>'
         for s in sublines
     )
 
     return (
-        f'<div style="border:1px solid #e5e7eb;{border_accent}'
-        f"border-radius:8px;padding:16px 14px 14px;background:#fafafa;min-height:110px;\">"
+        f'<div style="border:1px solid rgba(128,128,128,0.2);{border_accent}'
+        f"border-radius:8px;padding:16px 14px 14px;"
+        f"background:var(--secondary-background-color);min-height:110px;\">"
         f'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
         f'color:#9ca3af;font-weight:700;margin-bottom:10px;">{title}{edit_icon}</div>'
         f'<div style="font-size:{font_size};font-weight:700;color:{primary_color};line-height:1.15;">'
@@ -74,20 +88,27 @@ def render_note_tile(
     placeholder: str = "+ Add note",
     tier: int = 1,
 ) -> None:
-    """Render a free-text catalyst or red-flag note tile."""
-    if text:
-        body_html = (
-            f'<div style="font-size:0.95rem;color:#1f2937;line-height:1.55;">{text}</div>'
-        )
-    else:
+    """Render a free-text catalyst or red-flag note tile.
+
+    Guards against pandas NaN / empty-string / literal 'nan' values that SQLite
+    NULLs produce at read time, showing the empty-state placeholder instead.
+    """
+    if _is_empty_note(text):
         body_html = (
             f'<div style="font-size:0.9rem;color:{_PLACEHOLDER_COLOR};font-style:italic;">'
             f"{placeholder}</div>"
         )
+    else:
+        body_html = (
+            f'<div style="font-size:0.95rem;color:var(--text-color);line-height:1.55;">'
+            f"{text}</div>"
+        )
 
     html = (
-        f'<div style="border:1px solid #e5e7eb;border-left:3px solid #e5e7eb;'
-        f"border-radius:8px;padding:16px 14px 14px;background:#fafafa;min-height:110px;\">"
+        f'<div style="border:1px solid rgba(128,128,128,0.2);'
+        f"border-left:3px solid rgba(128,128,128,0.2);"
+        f"border-radius:8px;padding:16px 14px 14px;"
+        f"background:var(--secondary-background-color);min-height:110px;\">"
         f'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
         f'color:#9ca3af;font-weight:700;margin-bottom:10px;">{title} ✏️</div>'
         f"{body_html}"
@@ -127,8 +148,10 @@ def render_returns_tile(
     )
 
     html = (
-        f'<div style="border:1px solid #e5e7eb;border-left:3px solid #e5e7eb;'
-        f"border-radius:8px;padding:16px 14px 14px;background:#fafafa;min-height:110px;\">"
+        f'<div style="border:1px solid rgba(128,128,128,0.2);'
+        f"border-left:3px solid rgba(128,128,128,0.2);"
+        f"border-radius:8px;padding:16px 14px 14px;"
+        f"background:var(--secondary-background-color);min-height:110px;\">"
         f'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
         f'color:#9ca3af;font-weight:700;margin-bottom:10px;">Returns</div>'
         f'<table style="width:100%;border-collapse:collapse;">{rows}</table>'
@@ -184,24 +207,26 @@ def render_range_tile(
     if pos is not None:
         dot_left = pos * 100
         bar_html = (
-            f'<div style="position:relative;width:100%;height:4px;background:#e5e7eb;'
-            f'border-radius:2px;margin:10px 0 6px;">'
+            f'<div style="position:relative;width:100%;height:4px;'
+            f'background:rgba(128,128,128,0.2);border-radius:2px;margin:10px 0 6px;">'
             f'<div style="position:absolute;top:-4px;left:calc({dot_left:.1f}% - 6px);'
-            f'width:12px;height:12px;background:#374151;border-radius:50%;"></div>'
+            f'width:12px;height:12px;background:var(--text-color);border-radius:50%;opacity:0.7;"></div>'
             f"</div>"
         )
     else:
         bar_html = ""
 
     html = (
-        f'<div style="border:1px solid #e5e7eb;border-left:3px solid #e5e7eb;'
-        f"border-radius:8px;padding:16px 14px 14px;background:#fafafa;min-height:110px;\">"
+        f'<div style="border:1px solid rgba(128,128,128,0.2);'
+        f"border-left:3px solid rgba(128,128,128,0.2);"
+        f"border-radius:8px;padding:16px 14px 14px;"
+        f"background:var(--secondary-background-color);min-height:110px;\">"
         f'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
         f'color:#9ca3af;font-weight:700;margin-bottom:8px;">52-Week Range</div>'
-        f'<div style="font-size:1.35rem;font-weight:700;color:#1f2937;">{price_str}</div>'
+        f'<div style="font-size:1.35rem;font-weight:700;color:var(--text-color);">{price_str}</div>'
         f"{bar_html}"
         f'<div style="display:flex;justify-content:space-between;font-size:0.78rem;'
-        f'color:#6b7280;margin-top:2px;">'
+        f'color:#9ca3af;margin-top:2px;">'
         f"<span>L: {low_str}{low_pct_html}</span>"
         f"<span>H: {high_str}{high_pct_html}</span>"
         f"</div>"
