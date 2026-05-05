@@ -145,19 +145,20 @@ display_df = pd.DataFrame(
     }
 )
 
-event = st.dataframe(
+display_df["Ticker"] = display_df["Ticker"].apply(
+    lambda t: f"/Ticker_Detail?ticker={t}"
+)
+
+st.dataframe(
     display_df,
     use_container_width=True,
     hide_index=True,
-    on_select="rerun",
-    selection_mode="single-row",
+    column_config={
+        "Ticker": st.column_config.LinkColumn(
+            "Ticker",
+            display_text=r"ticker=([A-Za-z]+)",
+        )
+    },
 )
 
 st.caption("Mention Vel: ApeWisdom 24h velocity (today ÷ yesterday). 🟢 >2x · 🟡 >1.5x · gray = normal · — = no data yet")
-
-# Navigate to detail page when a row is clicked
-if event.selection.rows:
-    selected_idx = event.selection.rows[0]
-    selected_ticker = display_df.iloc[selected_idx]["Ticker"]
-    st.query_params["ticker"] = selected_ticker
-    st.switch_page("pages/02_Ticker_Detail.py")
