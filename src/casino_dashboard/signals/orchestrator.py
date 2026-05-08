@@ -2,6 +2,8 @@ import logging
 from datetime import date
 from pathlib import Path
 
+import pandas as pd
+
 from casino_dashboard.db.repository import (
     get_history,
     get_social_history,
@@ -64,11 +66,12 @@ def compute_social_signals_for_ticker(ticker: str, db_path: Path) -> dict[str, f
 
     # Latest row carries today's mention_count and mentions_24h_ago from the API
     latest_row = social_hist.iloc[0]
+    if pd.isna(latest_row["mention_count"]):
+        return results
     mentions_today = int(latest_row["mention_count"])
     mentions_24h_ago = (
         int(latest_row["mentions_24h_ago"])
-        if latest_row["mentions_24h_ago"] is not None
-        and str(latest_row["mentions_24h_ago"]) not in ("", "None")
+        if not pd.isna(latest_row["mentions_24h_ago"])
         else None
     )
 
