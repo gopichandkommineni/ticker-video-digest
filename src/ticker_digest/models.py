@@ -1,8 +1,9 @@
-"""Pydantic models: VideoMetadata, Transcript, VideoInsights, DigestReport."""
+"""Pydantic models: VideoMetadata, Transcript, VideoInsights, DigestReport,
+MarketIndicator, MarketSnapshot, RealityScore, MarketThesis."""
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, Field, computed_field
 
 
 class VideoMetadata(BaseModel):
@@ -72,3 +73,54 @@ class DigestReport(BaseModel):
     overall_sentiment: Sentiment
     synthesis: str
     video_insights: list[VideoInsights]
+
+
+# ---------------------------------------------------------------------------
+# Broader Market Dashboard models
+# ---------------------------------------------------------------------------
+
+IndicatorSource = Literal["fred", "yfinance", "computed", "scrape"]
+IndicatorBucket = Literal["market", "economy", "context"]
+RealityBand = Literal[
+    "market_discounting_weakness",
+    "aligned",
+    "stretched",
+    "severe_decoupling",
+]
+MarketRegime = Literal["risk_on", "risk_off", "neutral", "fragile"]
+
+
+class MarketIndicator(BaseModel):
+    name: str
+    series_id: str
+    source: IndicatorSource
+    bucket: IndicatorBucket
+    value: float | None = None
+    z_score: float | None = None
+    as_of: datetime | None = None
+    history: dict[str, float] = Field(default_factory=dict)
+    error: str | None = None
+
+
+class MarketSnapshot(BaseModel):
+    generated_at: datetime
+    indicators: dict[str, MarketIndicator]
+
+
+class RealityScore(BaseModel):
+    score: float
+    band: RealityBand
+    market_z: float | None
+    economy_z: float | None
+    contributions: dict[str, float] = Field(default_factory=dict)
+    used_indicators: list[str] = Field(default_factory=list)
+    skipped_indicators: list[str] = Field(default_factory=list)
+
+
+class MarketThesis(BaseModel):
+    narrative: str
+    bull_case: list[str]
+    bear_case: list[str]
+    key_watch_items: list[str]
+    regime: MarketRegime
+    generated_at: datetime
