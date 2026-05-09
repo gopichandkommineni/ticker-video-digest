@@ -191,8 +191,9 @@ cython_debug/
 # Ruff stuff:
 .ruff_cache/
 
-# Casino Dashboard SQLite databases
+# Casino Dashboard SQLite databases — ignore local DBs but track production snapshot
 data/*.db
+!data/snapshots.db
 
 # PyPI configuration file
 .pypirc

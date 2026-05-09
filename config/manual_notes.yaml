@@ -1,0 +1,188 @@
+# Manual catalyst and red flag notes per ticker
+# Edit this file, commit, deploy. Read by daily_refresh.
+# Both fields are optional - leave as null if no note exists.
+
+# Nuclear
+SMR:
+  catalyst: null
+  red_flag: null
+OKLO:
+  catalyst: null
+  red_flag: null
+NNE:
+  catalyst: null
+  red_flag: null
+BWXT:
+  catalyst: null
+  red_flag: null
+NXE:
+  catalyst: null
+  red_flag: null
+CCJ:
+  catalyst: null
+  red_flag: null
+UEC:
+  catalyst: null
+  red_flag: null
+UUUU:
+  catalyst: null
+  red_flag: null
+DNN:
+  catalyst: null
+  red_flag: null
+LEU:
+  catalyst: null
+  red_flag: null
+
+# Photonics & Optical
+LITE:
+  catalyst: null
+  red_flag: null
+COHR:
+  catalyst: null
+  red_flag: null
+AAOI:
+  catalyst: |
+    Texas grant for AI transceiver manufacturing
+    AI hyperscaler customer expansion — Microsoft & Google sourcing
+    New 400G transceiver design win displacing JDSU
+    Earnings in 2 days — binary event, guidance will move the stock
+  red_flag: |
+    Analyst consensus target $102 vs current $173 — 41% downside
+    High short interest at 13.1% — squeeze risk but also conviction
+    Revenue concentrated in 2 hyperscaler customers — key-man risk
+POET:
+  catalyst: null
+  red_flag: "Marvell cancelled order over NDA violation"
+FN:
+  catalyst: null
+  red_flag: null
+MRVL:
+  catalyst: null
+  red_flag: null
+CIEN:
+  catalyst: null
+  red_flag: null
+
+# Quantum Computing
+IONQ:
+  catalyst: null
+  red_flag: null
+RGTI:
+  catalyst: null
+  red_flag: null
+QBTS:
+  catalyst: null
+  red_flag: null
+QUBT:
+  catalyst: null
+  red_flag: null
+ARQQ:
+  catalyst: null
+  red_flag: null
+
+# Drones & Autonomous Defense
+KTOS:
+  catalyst: null
+  red_flag: null
+AVAV:
+  catalyst: null
+  red_flag: null
+ONDS:
+  catalyst: null
+  red_flag: null
+RCAT:
+  catalyst: null
+  red_flag: null
+UMAC:
+  catalyst: null
+  red_flag: null
+RKLB:
+  catalyst: null
+  red_flag: null
+
+# Space Economy
+ASTS:
+  catalyst: null
+  red_flag: null
+PL:
+  catalyst: null
+  red_flag: null
+IRDM:
+  catalyst: null
+  red_flag: null
+INTU:
+  catalyst: null
+  red_flag: null
+LUNR:
+  catalyst: null
+  red_flag: null
+
+# Critical Minerals
+MP:
+  catalyst: null
+  red_flag: null
+USAR:
+  catalyst: null
+  red_flag: null
+CDE:
+  catalyst: null
+  red_flag: null
+AG:
+  catalyst: null
+  red_flag: null
+NB:
+  catalyst: null
+  red_flag: null
+UAMY:
+  catalyst: null
+  red_flag: null
+REMX:
+  catalyst: null
+  red_flag: null
+
+# AI Infrastructure
+VRT:
+  catalyst: null
+  red_flag: null
+ETN:
+  catalyst: null
+  red_flag: null
+PWR:
+  catalyst: null
+  red_flag: null
+SMCI:
+  catalyst: null
+  red_flag: null
+ANET:
+  catalyst: null
+  red_flag: null
+DELL:
+  catalyst: null
+  red_flag: null
+NTAP:
+  catalyst: null
+  red_flag: null
+POWL:
+  catalyst: null
+  red_flag: null
+
+# Crypto Infrastructure
+COIN:
+  catalyst: null
+  red_flag: null
+CRCL:
+  catalyst: null
+  red_flag: null
+BMNR:
+  catalyst: null
+  red_flag: null
+BTBT:
+  catalyst: null
+  red_flag: null
+CIFR:
+  catalyst: null
+  red_flag: null
+IREN:
+  catalyst: null
+  red_flag: null

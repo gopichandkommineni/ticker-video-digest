@@ -2,6 +2,9 @@ import sqlite3
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+import pandas as pd
+
+from casino_dashboard.data.yfinance_metadata import TickerMetadata
 from casino_dashboard.db.schema import _DEFAULT_DB_PATH, init_db
 from casino_dashboard.models import NewsItem, TickerSnapshot
 
@@ -37,25 +40,30 @@ def save_snapshot(snap: TickerSnapshot, db_path: Path = _DEFAULT_DB_PATH) -> Non
                 snap.avg_volume_30d,
             ),
         )
-        conn.executemany(
-            """
-            INSERT OR IGNORE INTO news_items
-                (ticker, snap_date, title, link, publisher, published_at, fetched_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                (
-                    snap.ticker,
-                    snap.date.isoformat(),
-                    item.title,
-                    item.link,
-                    item.publisher,
-                    item.published_at.isoformat(),
-                    fetched_at,
-                )
-                for item in snap.news_items
-            ],
-        )
+        if snap.news_items:
+            existing_links = {row[0] for row in conn.execute(
+                "SELECT link FROM news_items WHERE ticker = ?", (snap.ticker,)
+            ).fetchall()}
+            new_news = [item for item in snap.news_items if item.link not in existing_links]
+            conn.executemany(
+                """
+                INSERT INTO news_items
+                    (ticker, snap_date, title, link, publisher, published_at, fetched_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        snap.ticker,
+                        snap.date.isoformat(),
+                        item.title,
+                        item.link,
+                        item.publisher,
+                        item.published_at.isoformat(),
+                        fetched_at,
+                    )
+                    for item in new_news
+                ],
+            )
 
 
 def get_snapshot(
@@ -103,6 +111,236 @@ def get_history(
     return snapshots
 
 
+def save_signal(
+    ticker: str, signal_date: date, signal_name: str, value: float, db_path: Path = _DEFAULT_DB_PATH
+) -> None:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO signals (ticker, date, signal_name, value)
+            VALUES (?, ?, ?, ?)
+            """,
+            (ticker, signal_date.isoformat(), signal_name, value),
+        )
+
+
+def get_signals(
+    ticker: str, signal_date: date, db_path: Path = _DEFAULT_DB_PATH
+) -> dict[str, float]:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT signal_name, value
+            FROM signals
+            WHERE ticker = ? AND date = ?
+            """,
+            (ticker, signal_date.isoformat()),
+        ).fetchall()
+    return {row[0]: row[1] for row in rows}
+
+
+def get_latest_signals_all_tickers(db_path: Path = _DEFAULT_DB_PATH) -> pd.DataFrame:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT s.ticker, s.signal_name, s.value
+            FROM signals s
+            INNER JOIN (
+                SELECT ticker, MAX(date) AS max_date
+                FROM signals
+                GROUP BY ticker
+            ) latest ON s.ticker = latest.ticker AND s.date = latest.max_date
+            """
+        ).fetchall()
+
+    if not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows, columns=["ticker", "signal_name", "value"])
+    return df.pivot(index="ticker", columns="signal_name", values="value")
+
+
+def save_social_mention(
+    ticker: str,
+    mention_date: date,
+    source: str,
+    mention_count: int,
+    mentions_24h_ago: int | None,
+    upvote_sum: int | None,
+    subreddit: str = "",
+    db_path: Path = _DEFAULT_DB_PATH,
+) -> None:
+    """INSERT OR REPLACE for idempotent daily re-runs."""
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO social_mentions
+                (ticker, date, source, mention_count, mentions_24h_ago, upvote_sum, subreddit)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (ticker, mention_date.isoformat(), source, mention_count,
+             mentions_24h_ago, upvote_sum, subreddit),
+        )
+
+
+def get_social_history(
+    ticker: str,
+    source: str,
+    days: int,
+    db_path: Path = _DEFAULT_DB_PATH,
+) -> pd.DataFrame:
+    """Return DataFrame[date, mention_count, mentions_24h_ago] newest-first, up to `days` rows."""
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT date, mention_count, mentions_24h_ago
+            FROM social_mentions
+            WHERE ticker = ? AND source = ? AND (subreddit = '' OR subreddit IS NULL)
+            ORDER BY date DESC
+            LIMIT ?
+            """,
+            (ticker, source, days),
+        ).fetchall()
+    if not rows:
+        return pd.DataFrame(columns=["date", "mention_count", "mentions_24h_ago"])
+    return pd.DataFrame(rows, columns=["date", "mention_count", "mentions_24h_ago"])
+
+
+def get_latest_social_mentions(db_path: Path = _DEFAULT_DB_PATH) -> pd.DataFrame:
+    """Return wide-format DataFrame: index=ticker, columns=latest_mention_count, mentions_24h_ago."""
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT s.ticker, s.mention_count, s.mentions_24h_ago
+            FROM social_mentions s
+            INNER JOIN (
+                SELECT ticker, source, MAX(date) AS max_date
+                FROM social_mentions
+                WHERE (subreddit = '' OR subreddit IS NULL)
+                GROUP BY ticker, source
+            ) latest ON s.ticker = latest.ticker
+                     AND s.source = latest.source
+                     AND s.date = latest.max_date
+            WHERE (s.subreddit = '' OR s.subreddit IS NULL)
+            """,
+        ).fetchall()
+    if not rows:
+        return pd.DataFrame(columns=["latest_mention_count", "mentions_24h_ago"])
+    df = pd.DataFrame(rows, columns=["ticker", "latest_mention_count", "mentions_24h_ago"])
+    return df.set_index("ticker")
+
+
+def save_ticker_metadata(metadata: TickerMetadata, db_path: Path = _DEFAULT_DB_PATH) -> None:
+    """INSERT OR REPLACE on (ticker, date) for idempotent re-runs."""
+    init_db(db_path)
+    today = date.today().isoformat()
+
+    def _to_str(d: date | None) -> str | None:
+        return d.isoformat() if d is not None else None
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO ticker_metadata (
+                ticker, date,
+                fifty_two_week_high, fifty_two_week_low,
+                short_pct_of_float, short_ratio_days,
+                analyst_target_mean,
+                held_pct_insiders, held_pct_institutions,
+                market_cap, revenue_ttm, revenue_growth_yoy,
+                profit_margin, beta,
+                next_earnings_date, next_earnings_time, last_earnings_date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                metadata.ticker,
+                today,
+                metadata.fifty_two_week_high,
+                metadata.fifty_two_week_low,
+                metadata.short_pct_of_float,
+                metadata.short_ratio_days,
+                metadata.analyst_target_mean,
+                metadata.held_pct_insiders,
+                metadata.held_pct_institutions,
+                metadata.market_cap,
+                metadata.revenue_ttm,
+                metadata.revenue_growth_yoy,
+                metadata.profit_margin,
+                metadata.beta,
+                _to_str(metadata.next_earnings_date),
+                metadata.next_earnings_time,
+                _to_str(metadata.last_earnings_date),
+            ),
+        )
+
+
+def get_latest_metadata_all_tickers(db_path: Path = _DEFAULT_DB_PATH) -> pd.DataFrame:
+    """Return wide-format DataFrame indexed by ticker with all metadata fields.
+
+    Uses the most recent date per ticker. This is the primary read path for the UI.
+    """
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT m.*
+            FROM ticker_metadata m
+            INNER JOIN (
+                SELECT ticker, MAX(date) AS max_date
+                FROM ticker_metadata
+                GROUP BY ticker
+            ) latest ON m.ticker = latest.ticker AND m.date = latest.max_date
+            """
+        ).fetchall()
+        col_names = [desc[0] for desc in conn.execute(
+            "SELECT * FROM ticker_metadata LIMIT 0"
+        ).description or []]
+
+    if not rows:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows, columns=col_names)
+    return df.set_index("ticker")
+
+
+def save_manual_note(
+    ticker: str,
+    catalyst: str | None,
+    red_flag: str | None,
+    db_path: Path = _DEFAULT_DB_PATH,
+) -> None:
+    """INSERT OR REPLACE on ticker. Sets updated_at to now (UTC ISO timestamp)."""
+    init_db(db_path)
+    updated_at = datetime.now(tz=timezone.utc).isoformat()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO manual_notes (ticker, catalyst, red_flag, updated_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (ticker, catalyst, red_flag, updated_at),
+        )
+
+
+def get_manual_notes_all_tickers(db_path: Path = _DEFAULT_DB_PATH) -> pd.DataFrame:
+    """Return DataFrame indexed by ticker with catalyst and red_flag columns."""
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT ticker, catalyst, red_flag FROM manual_notes"
+        ).fetchall()
+    if not rows:
+        return pd.DataFrame(columns=["catalyst", "red_flag"])
+    df = pd.DataFrame(rows, columns=["ticker", "catalyst", "red_flag"])
+    return df.set_index("ticker")
+
+
 def _fetch_news(ticker: str, snap_date: date, db_path: Path) -> list[NewsItem]:
     with sqlite3.connect(db_path) as conn:
         rows = conn.execute(
@@ -115,15 +353,16 @@ def _fetch_news(ticker: str, snap_date: date, db_path: Path) -> list[NewsItem]:
             """,
             (ticker, snap_date.isoformat()),
         ).fetchall()
-    return [
-        NewsItem(
-            title=r[0],
-            link=r[1],
-            publisher=r[2],
-            published_at=datetime.fromisoformat(r[3]),
-        )
-        for r in rows
-    ]
+    items = []
+    for r in rows:
+        try:
+            pub = datetime.fromisoformat(r[3]) if r[3] else None
+        except (ValueError, TypeError):
+            pub = None
+        if pub is None:
+            continue
+        items.append(NewsItem(title=r[0], link=r[1], publisher=r[2], published_at=pub))
+    return items
 
 
 def _row_to_snapshot(row: tuple, news: list[NewsItem]) -> TickerSnapshot:
