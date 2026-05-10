@@ -49,14 +49,14 @@ def render_tradingview_technicals(ticker: str, theme: str = "light") -> None:
     "interval": "1D",
     "width": "100%",
     "isTransparent": false,
-    "height": 450,
+    "height": 550,
     "symbol": "{symbol}",
     "showIntervalTabs": true,
-    "displayMode": "single",
+    "displayMode": "multiple",
     "locale": "en",
     "colorTheme": "{theme}"
   }}
   </script>
 </div>
 """
-    components.html(widget_html, height=480)
+    components.html(widget_html, height=580)
