@@ -81,7 +81,7 @@ def _render_indicator_table(snapshot: MarketSnapshot, bucket: str, title: str) -
         st.write("_no data_")
         return
     df = pd.DataFrame(rows).set_index("id")
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(df, width="stretch")
 
     for sid, ind in snapshot.indicators.items():
         if ind.bucket != bucket or not ind.history:

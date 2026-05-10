@@ -186,11 +186,18 @@ def fetch_margin_debt() -> MarketIndicator:
 
 def fetch_put_call() -> MarketIndicator:
     name, sid = "CBOE Put/Call Ratio", "PUT_CALL"
-    try:
-        return _build(name, sid, "yfinance", "market", _yf_history("^CPC", period="5y"))
-    except Exception as exc:  # noqa: BLE001
-        log.warning("Put/Call failed: %s", exc)
-        return _error(name, sid, "yfinance", "market", exc)
+    # ^CPC was delisted on Yahoo Finance; ^CPCE (equity-only) is the closest
+    # available substitute. Fall back gracefully if that also disappears.
+    for symbol in ("^CPCE", "^CPC"):
+        try:
+            data = _yf_history(symbol, period="5y")
+            if data is not None and not data.empty:
+                return _build(name, sid, "yfinance", "market", data)
+        except Exception:  # noqa: BLE001
+            continue
+    exc = ValueError("No put/call data available from Yahoo Finance (^CPCE, ^CPC both failed)")
+    log.warning("Put/Call failed: %s", exc)
+    return _error(name, sid, "yfinance", "market", exc)
 
 
 def fetch_mag7_concentration() -> MarketIndicator:

@@ -156,7 +156,7 @@ display_df.index = df["_ticker"].values
 
 edited_df = st.data_editor(
     display_df,
-    use_container_width=True,
+    width="stretch",
     hide_index=True,
     column_config={
         "Ticker": st.column_config.LinkColumn(
