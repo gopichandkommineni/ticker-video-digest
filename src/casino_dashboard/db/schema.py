@@ -78,7 +78,15 @@ def init_db(db_path: Path = _DEFAULT_DB_PATH) -> None:
                 ticker      TEXT NOT NULL,
                 catalyst    TEXT,
                 red_flag    TEXT,
+                notes       TEXT,
+                tags        TEXT,
                 updated_at  TEXT NOT NULL,
                 PRIMARY KEY (ticker)
             );
         """)
+        # Migrate existing DBs that predate notes/tags columns
+        for col in ("notes", "tags"):
+            try:
+                conn.execute(f"ALTER TABLE manual_notes ADD COLUMN {col} TEXT")
+            except Exception:
+                pass  # column already exists

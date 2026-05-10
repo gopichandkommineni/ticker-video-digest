@@ -315,29 +315,56 @@ def save_manual_note(
     red_flag: str | None,
     db_path: Path = _DEFAULT_DB_PATH,
 ) -> None:
-    """INSERT OR REPLACE on ticker. Sets updated_at to now (UTC ISO timestamp)."""
+    """Upsert catalyst/red_flag for a ticker, preserving any existing notes/tags."""
     init_db(db_path)
     updated_at = datetime.now(tz=timezone.utc).isoformat()
     with sqlite3.connect(db_path) as conn:
         conn.execute(
             """
-            INSERT OR REPLACE INTO manual_notes (ticker, catalyst, red_flag, updated_at)
+            INSERT INTO manual_notes (ticker, catalyst, red_flag, updated_at)
             VALUES (?, ?, ?, ?)
+            ON CONFLICT(ticker) DO UPDATE SET
+                catalyst   = excluded.catalyst,
+                red_flag   = excluded.red_flag,
+                updated_at = excluded.updated_at
             """,
             (ticker, catalyst, red_flag, updated_at),
         )
 
 
+def save_user_annotations(
+    ticker: str,
+    notes: str | None,
+    tags: str | None,
+    db_path: Path = _DEFAULT_DB_PATH,
+) -> None:
+    """Upsert user-editable notes/tags for a ticker, preserving catalyst/red_flag."""
+    init_db(db_path)
+    updated_at = datetime.now(tz=timezone.utc).isoformat()
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO manual_notes (ticker, notes, tags, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(ticker) DO UPDATE SET
+                notes      = excluded.notes,
+                tags       = excluded.tags,
+                updated_at = excluded.updated_at
+            """,
+            (ticker, notes or None, tags or None, updated_at),
+        )
+
+
 def get_manual_notes_all_tickers(db_path: Path = _DEFAULT_DB_PATH) -> pd.DataFrame:
-    """Return DataFrame indexed by ticker with catalyst and red_flag columns."""
+    """Return DataFrame indexed by ticker with catalyst, red_flag, notes, tags columns."""
     init_db(db_path)
     with sqlite3.connect(db_path) as conn:
         rows = conn.execute(
-            "SELECT ticker, catalyst, red_flag FROM manual_notes"
+            "SELECT ticker, catalyst, red_flag, notes, tags FROM manual_notes"
         ).fetchall()
     if not rows:
-        return pd.DataFrame(columns=["catalyst", "red_flag"])
-    df = pd.DataFrame(rows, columns=["ticker", "catalyst", "red_flag"])
+        return pd.DataFrame(columns=["catalyst", "red_flag", "notes", "tags"])
+    df = pd.DataFrame(rows, columns=["ticker", "catalyst", "red_flag", "notes", "tags"])
     return df.set_index("ticker")
 
 

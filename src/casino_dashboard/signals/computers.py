@@ -144,6 +144,33 @@ def compute_rsi_14(history: list[TickerSnapshot]) -> float | None:
     return 100.0 - (100.0 / (1.0 + rs))
 
 
+def compute_vol_rsi_14(history: list[TickerSnapshot]) -> float | None:
+    """14-period RSI applied to the volume series (volume treated as a price series).
+
+    Returns None if fewer than 15 days of history.
+    """
+    if len(history) < 15:
+        return None
+
+    volumes = [s.volume for s in history]
+    changes = [volumes[i] - volumes[i - 1] for i in range(1, len(volumes))]
+
+    window = changes[-14:]
+    gains = [c for c in window if c > 0]
+    losses = [abs(c) for c in window if c < 0]
+
+    avg_gain = sum(gains) / 14
+    avg_loss = sum(losses) / 14
+
+    if avg_loss == 0:
+        return 100.0
+    if avg_gain == 0:
+        return 0.0
+
+    rs = avg_gain / avg_loss
+    return 100.0 - (100.0 / (1.0 + rs))
+
+
 def compute_apewisdom_velocity_24h(
     mentions: int, mentions_24h_ago: int | None
 ) -> float | None:

@@ -64,6 +64,18 @@ def format_mention_velocity(x: float | None) -> str:
     return label
 
 
+def format_rsi(x: float | None) -> str:
+    """Format an RSI value as a one-decimal number, e.g. '62.4' or '—' for None/NaN."""
+    if x is None:
+        return "—"
+    try:
+        if math.isnan(float(x)):
+            return "—"
+    except (TypeError, ValueError):
+        return "—"
+    return f"{x:.1f}"
+
+
 def color_for_return(x: float | None) -> str:
     """Return 'green', 'red', or 'gray' based on the sign of x."""
     if x is None:
