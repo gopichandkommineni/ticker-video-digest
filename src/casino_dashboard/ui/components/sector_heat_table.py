@@ -301,7 +301,7 @@ def render_constituent_table(
             "SMA50": breadth_display,
             "Setup": setup,
             "Social": _fmt_multiplier(_sig("apewisdom_velocity_24h")),
-            "News 7d": news_7d if news_7d > 0 else "—",
+            "News 7d": str(news_7d) if news_7d > 0 else "—",
         })
 
     display_df = pd.DataFrame(display_rows).set_index("Ticker")
