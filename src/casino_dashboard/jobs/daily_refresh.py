@@ -3,11 +3,21 @@ from datetime import date
 from pathlib import Path
 
 from casino_dashboard.data.apewisdom_client import fetch_apewisdom_universe, filter_to_universe
+from casino_dashboard.data.deal_log_loader import load_deal_log_from_yaml
+from casino_dashboard.data.etf_flows_fetcher import (
+    calculate_implied_flow,
+    fetch_etf_snapshot_today,
+    load_etf_mapping_from_yaml,
+)
 from casino_dashboard.data.manual_notes_loader import load_manual_notes_from_yaml
 from casino_dashboard.data.yfinance_client import fetch_universe_snapshot
 from casino_dashboard.data.yfinance_metadata import fetch_metadata_for_universe
 from casino_dashboard.db.repository import (
+    get_etf_flows,
+    save_deal_log_entries,
+    save_etf_flow,
     save_manual_note,
+    save_sector_etf_mapping,
     save_snapshot,
     save_social_mention,
     save_ticker_metadata,
@@ -20,6 +30,8 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_DB = Path("data/snapshots.db")
 _MANUAL_NOTES_PATH = Path("config/manual_notes.yaml")
+_ETF_MAPPING_PATH = Path("config/etf_mapping.yaml")
+_DEAL_LOG_PATH = Path("config/deal_log.yaml")
 
 
 def main(db_path: Path = _DEFAULT_DB) -> None:
@@ -105,6 +117,66 @@ def main(db_path: Path = _DEFAULT_DB) -> None:
     logger.info("Computing signals …")
     compute_and_save_all_signals(universe, db_path)
     logger.info("Signals computed for %d tickers", len(all_tickers))
+
+    logger.info("Fetching ETF flows …")
+    try:
+        etf_mapping = load_etf_mapping_from_yaml(_ETF_MAPPING_PATH)
+        all_etfs: set[str] = set()
+        for sector, tickers in etf_mapping.items():
+            for etf_ticker in tickers:
+                all_etfs.add(etf_ticker)
+                save_sector_etf_mapping(sector, etf_ticker, is_primary=True, db_path=db_path)
+
+        for etf_ticker in sorted(all_etfs):
+            snapshot = fetch_etf_snapshot_today(etf_ticker)
+            if snapshot is None:
+                logger.warning("No ETF snapshot for %s — skipping", etf_ticker)
+                continue
+
+            # Calculate implied net flow vs previous stored day
+            prior_df = get_etf_flows(etf_ticker, days=2, db_path=db_path)
+            net_flow: float | None = None
+            if not prior_df.empty and len(prior_df) >= 1:
+                prior_row = prior_df.iloc[0]
+                if (
+                    prior_row["aum_usd"] is not None
+                    and prior_row["price"] is not None
+                    and snapshot.aum_usd is not None
+                ):
+                    net_flow = calculate_implied_flow(
+                        today_aum=snapshot.aum_usd,
+                        yesterday_aum=float(prior_row["aum_usd"]),
+                        today_price=snapshot.price,
+                        yesterday_price=float(prior_row["price"]),
+                    )
+
+            save_etf_flow(
+                etf_ticker=etf_ticker,
+                flow_date=snapshot.date,
+                net_flow_usd=net_flow,
+                aum_usd=snapshot.aum_usd,
+                price=snapshot.price,
+                db_path=db_path,
+            )
+            logger.info(
+                "ETF flow saved for %s: aum=%.0f, net_flow=%s",
+                etf_ticker,
+                snapshot.aum_usd or 0,
+                f"{net_flow:+.0f}" if net_flow is not None else "n/a (first day)",
+            )
+        logger.info("ETF flows saved for %d ETFs", len(all_etfs))
+    except Exception as exc:
+        logger.error("ETF flow fetch failed (continuing): %s", exc)
+
+    logger.info("Loading deal log from YAML …")
+    try:
+        deal_entries = load_deal_log_from_yaml(_DEAL_LOG_PATH)
+        save_deal_log_entries(deal_entries, db_path)
+        logger.info("Deal log: saved %d entries", len(deal_entries))
+    except FileNotFoundError:
+        logger.warning("Deal log YAML not found at %s — skipping", _DEAL_LOG_PATH)
+    except Exception as exc:
+        logger.error("Deal log load failed (continuing): %s", exc)
 
 
 if __name__ == "__main__":

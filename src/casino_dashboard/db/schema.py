@@ -83,6 +83,50 @@ def init_db(db_path: Path = _DEFAULT_DB_PATH) -> None:
                 updated_at  TEXT NOT NULL,
                 PRIMARY KEY (ticker)
             );
+
+            CREATE TABLE IF NOT EXISTS etf_flows (
+                etf_ticker   TEXT NOT NULL,
+                date         TEXT NOT NULL,
+                net_flow_usd REAL,
+                aum_usd      REAL,
+                price        REAL,
+                PRIMARY KEY (etf_ticker, date)
+            );
+
+            CREATE TABLE IF NOT EXISTS sector_etf_mapping (
+                sector      TEXT    NOT NULL,
+                etf_ticker  TEXT    NOT NULL,
+                is_primary  INTEGER NOT NULL DEFAULT 1,
+                PRIMARY KEY (sector, etf_ticker)
+            );
+
+            CREATE TABLE IF NOT EXISTS deal_log (
+                deal_id        TEXT PRIMARY KEY,
+                date           TEXT NOT NULL,
+                sector         TEXT NOT NULL,
+                amount_usd     REAL,
+                deal_type      TEXT,
+                primary_ticker TEXT,
+                source_url     TEXT,
+                summary        TEXT NOT NULL,
+                loaded_at      TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS sector_heat (
+                sector                 TEXT NOT NULL,
+                date                   TEXT NOT NULL,
+                etf_flow_5d_30d_ratio  REAL,
+                deal_log_30d_total_usd REAL,
+                deal_log_30d_count     INTEGER,
+                days_since_last_deal   INTEGER,
+                agg_social_velocity    REAL,
+                news_heat_ratio        REAL,
+                agg_return_30d         REAL,
+                pct_above_sma50        REAL,
+                agg_atr_pct_change_30d REAL,
+                constituent_count      INTEGER NOT NULL,
+                PRIMARY KEY (sector, date)
+            );
         """)
         # Migrate existing DBs that predate notes/tags columns
         for col in ("notes", "tags"):

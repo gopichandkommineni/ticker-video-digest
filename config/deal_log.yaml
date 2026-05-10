@@ -1,0 +1,72 @@
+# Manual deal log — Capital Flows dimension (Dimension 1b)
+# Maintained manually at ~2-5 entries/week.
+# Required fields: date, sector, summary
+# Optional fields: amount_usd (null if unspecified), deal_type, primary_ticker, source_url
+#
+# Valid deal_type values: capex_announcement, contract_award, funding, m&a, deal
+# Valid sector keys: nuclear, photonics, quantum, drones_defense, space,
+#                    critical_minerals, ai_infrastructure, crypto_equities
+
+- date: "2026-05-03"
+  sector: ai_infrastructure
+  amount_usd: 80_000_000_000
+  deal_type: capex_announcement
+  primary_ticker: MSFT
+  source_url: "https://www.microsoft.com/en-us/investor/earnings/fy-2026-q2/press-release-highlights"
+  summary: "Microsoft announces $80B AI datacenter capex plan for FY26, with more than half in the US"
+
+- date: "2026-04-28"
+  sector: nuclear
+  amount_usd: 1_500_000_000
+  deal_type: contract_award
+  primary_ticker: OKLO
+  source_url: "https://www.oklo.com/news-releases"
+  summary: "OKLO awarded DOE loan guarantee for advanced fission reactor deployment"
+
+- date: "2026-04-21"
+  sector: photonics
+  amount_usd: null
+  deal_type: deal
+  primary_ticker: AAOI
+  source_url: "https://www.appliedoptoelectronics.com/news"
+  summary: "AAOI receives Texas state grant for AI transceiver manufacturing expansion"
+
+- date: "2026-04-18"
+  sector: ai_infrastructure
+  amount_usd: 500_000_000_000
+  deal_type: capex_announcement
+  primary_ticker: null
+  source_url: "https://www.whitehouse.gov/briefing-room/statements-releases/2026/01/21/joint-statement"
+  summary: "Stargate JV (OpenAI + SoftBank + Oracle) commits $500B to US AI infrastructure buildout"
+
+- date: "2026-04-15"
+  sector: quantum
+  amount_usd: 200_000_000
+  deal_type: funding
+  primary_ticker: IONQ
+  source_url: "https://ionq.com/news"
+  summary: "IonQ secures $200M government contract for quantum computing research and deployment"
+
+- date: "2026-04-10"
+  sector: drones_defense
+  amount_usd: 990_000_000
+  deal_type: contract_award
+  primary_ticker: KTOS
+  source_url: "https://www.kratos.com/news"
+  summary: "Kratos Defense awarded $990M USAF contract for autonomous drone systems"
+
+- date: "2026-04-05"
+  sector: space
+  amount_usd: null
+  deal_type: deal
+  primary_ticker: ASTS
+  source_url: "https://www.ast-science.com/news"
+  summary: "AST SpaceMobile announces commercial service launch for direct-to-device satellite broadband"
+
+- date: "2026-03-28"
+  sector: critical_minerals
+  amount_usd: 400_000_000
+  deal_type: capex_announcement
+  primary_ticker: MP
+  source_url: "https://www.mpmaterials.com/news"
+  summary: "MP Materials receives $400M DoD investment to expand rare earth magnet manufacturing at Mountain Pass"
