@@ -111,6 +111,78 @@ def color_for_profit_margin(x: float | None) -> str:
     return "gray"
 
 
+def tercile_bg_for_series(series: "pd.Series", invert: bool = False) -> "pd.Series":
+    """Return a pandas Series of CSS background-color strings for one column.
+
+    Splits the column into thirds by value (ignoring NaN):
+      top third    → light green  (invert=False means higher=better)
+      middle third → light yellow
+      bottom third → light red
+    NaN values get an empty string (no background).
+
+    invert=True flips the mapping so that lower values get green (e.g.
+    days_since_last_deal where fewer days = more recent = better).
+
+    Requires pandas to be imported by the caller.
+    """
+    import math
+    import pandas as pd
+
+    def _is_na(v: object) -> bool:
+        if v is None:
+            return True
+        try:
+            return math.isnan(float(v))
+        except (TypeError, ValueError):
+            return True
+
+    valid = series.dropna()
+    # Need at least 3 distinct values for meaningful terciles
+    if len(valid) < 3:
+        return pd.Series([""] * len(series), index=series.index)
+
+    q1 = float(valid.quantile(1 / 3))
+    q2 = float(valid.quantile(2 / 3))
+
+    green_bg = "background-color: #bbf7d0; color: #14532d"
+    yellow_bg = "background-color: #fef9c3; color: #713f12"
+    red_bg = "background-color: #fecaca; color: #7f1d1d"
+
+    def _style(v: object) -> str:
+        if _is_na(v):
+            return ""
+        fv = float(v)
+        if not invert:
+            if fv >= q2:
+                return green_bg
+            if fv >= q1:
+                return yellow_bg
+            return red_bg
+        else:
+            if fv <= q1:
+                return green_bg
+            if fv <= q2:
+                return yellow_bg
+            return red_bg
+
+    return series.map(_style)
+
+
+def vol_exp_arrow(x: float | None) -> str:
+    """Convert agg_atr_pct_change_30d to a direction arrow.
+
+    Per rip-pattern-analysis: rips occur in expanding vol regimes.
+    Positive change = vol expanding = ↑ (bullish per spec).
+    """
+    if x is None or (isinstance(x, float) and (x != x)):  # NaN check
+        return "—"
+    if x > 0.002:
+        return "↑"
+    if x < -0.002:
+        return "↓"
+    return "→"
+
+
 _COLOR_HEX_MAP: dict[str, str] = {
     "green": "#16a34a",
     "red": "#dc2626",
