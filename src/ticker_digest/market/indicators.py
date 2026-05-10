@@ -121,7 +121,7 @@ def fetch_vix() -> MarketIndicator:
 def fetch_buffett_indicator() -> MarketIndicator:
     name, sid = "Buffett Indicator (Mkt Cap / GDP)", "BUFFETT"
     try:
-        wilshire = fred_client.fetch_series("WILL5000PRFC")
+        wilshire = fred_client.fetch_series("WILL5000INDFC")
         gdp = fred_client.fetch_series("GDP")
         if wilshire.empty or gdp.empty:
             raise ValueError("missing component series")
