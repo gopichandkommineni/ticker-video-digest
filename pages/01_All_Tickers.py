@@ -2,15 +2,17 @@
 import pandas as pd
 import streamlit as st
 
+from casino_dashboard.db.repository import save_user_annotations
 from casino_dashboard.ui.formatting import (
     format_mention_velocity,
     format_money,
-    format_pct,
     format_ratio,
+    format_rsi,
 )
 from casino_dashboard.ui.loaders import (
     load_latest_prices,
     load_latest_social_mentions,
+    load_manual_notes_all,
     load_signals_matrix,
     load_universe_for_ui,
     resolve_sector_default,
@@ -25,6 +27,7 @@ social_df = load_latest_social_mentions()
 universe_data = load_universe_for_ui()
 sectors = universe_data["sectors"]
 ticker_to_sectors = universe_data["ticker_to_sectors"]
+notes_df = load_manual_notes_all()
 
 all_sector_ids = list(sectors.keys())
 default_sectors = resolve_sector_default(st.session_state, st.query_params, all_sector_ids)
@@ -89,25 +92,30 @@ for ticker in candidate_tickers:
         (["BREAKOUT"] if near_bo else []) + (["BREAKDOWN"] if near_bd else [])
     )
 
-    # Social signal: prefer the pre-computed apewisdom_velocity_24h from signals table;
-    # fall back to None if not yet available (first day, before Action runs).
     mention_velocity: float | None = sig.get("apewisdom_velocity_24h")
+
+    if not notes_df.empty and ticker in notes_df.index:
+        note_row = notes_df.loc[ticker]
+        user_notes = str(note_row.get("notes") or "")
+        user_tags = str(note_row.get("tags") or "")
+    else:
+        user_notes = ""
+        user_tags = ""
 
     rows.append(
         {
-            "Ticker": ticker,
+            "_ticker": ticker,
+            "Ticker": f"/Ticker_Detail?ticker={ticker}",
             "Sectors": ", ".join(sector_names),
             "_close_raw": close,
             "_vol_ratio_raw": sig.get("vol_ratio_30d"),
             "_mention_velocity_raw": mention_velocity,
-            "_return_1d_raw": sig.get("return_1d"),
-            "_return_5d_raw": sig.get("return_5d"),
-            "_return_20d_raw": sig.get("return_20d"),
-            "_dist_high_raw": sig.get("dist_from_30d_high_pct"),
-            "_dist_low_raw": sig.get("dist_from_30d_low_pct"),
+            "_vol_rsi_raw": sig.get("vol_rsi_14"),
             "_near_breakout": near_bo,
             "_near_breakdown": near_bd,
             "Flags": flags,
+            "Notes": user_notes,
+            "Tags": user_tags,
         }
     )
 
@@ -136,20 +144,15 @@ display_df = pd.DataFrame(
         "Close": df["_close_raw"].apply(format_money),
         "Vol Ratio": df["_vol_ratio_raw"].apply(format_ratio),
         "Mention Vel": df["_mention_velocity_raw"].apply(format_mention_velocity),
-        "1d": df["_return_1d_raw"].apply(format_pct),
-        "5d": df["_return_5d_raw"].apply(format_pct),
-        "20d": df["_return_20d_raw"].apply(format_pct),
-        "Dist from High": df["_dist_high_raw"].apply(format_pct),
-        "Dist from Low": df["_dist_low_raw"].apply(format_pct),
+        "Vol RSI": df["_vol_rsi_raw"].apply(format_rsi),
+        "Notes": df["Notes"],
+        "Tags": df["Tags"],
         "Flags": df["Flags"],
     }
 )
+display_df.index = df["_ticker"].values
 
-display_df["Ticker"] = display_df["Ticker"].apply(
-    lambda t: f"/Ticker_Detail?ticker={t}"
-)
-
-st.dataframe(
+edited_df = st.data_editor(
     display_df,
     use_container_width=True,
     hide_index=True,
@@ -157,8 +160,31 @@ st.dataframe(
         "Ticker": st.column_config.LinkColumn(
             "Ticker",
             display_text=r"ticker=([A-Za-z]+)",
-        )
+        ),
+        "Notes": st.column_config.TextColumn("Notes", help="Your private notes for this ticker"),
+        "Tags": st.column_config.TextColumn("Tags", help="Comma-separated tags, e.g. watchlist, earnings"),
     },
+    disabled=["Ticker", "Sectors", "Close", "Vol Ratio", "Mention Vel", "Vol RSI", "Flags"],
+    key="tickers_editor",
 )
 
+# ── Persist edits ─────────────────────────────────────────────────────────────
+changed: list[tuple[str, str, str]] = []
+for ticker in display_df.index:
+    if ticker not in edited_df.index:
+        continue
+    orig_notes = display_df.loc[ticker, "Notes"]
+    orig_tags = display_df.loc[ticker, "Tags"]
+    new_notes = edited_df.loc[ticker, "Notes"]
+    new_tags = edited_df.loc[ticker, "Tags"]
+    if new_notes != orig_notes or new_tags != orig_tags:
+        changed.append((ticker, new_notes, new_tags))
+
+if changed:
+    for ticker, notes, tags in changed:
+        save_user_annotations(ticker, notes or None, tags or None)
+    load_manual_notes_all.clear()
+    st.rerun()
+
 st.caption("Mention Vel: ApeWisdom 24h velocity (today ÷ yesterday). 🟢 >2x · 🟡 >1.5x · gray = normal · — = no data yet")
+st.caption("Vol RSI: 14-period RSI applied to the volume series. >70 = high volume momentum · <30 = low volume momentum.")

@@ -19,6 +19,7 @@ from casino_dashboard.signals.computers import (
     compute_return_ytd,
     compute_rsi_14,
     compute_vol_ratio_30d,
+    compute_vol_rsi_14,
 )
 from casino_dashboard.universe import Universe
 
@@ -44,6 +45,7 @@ def compute_signals_for_ticker(ticker: str, db_path: Path) -> dict[str, float]:
     _store("return_ytd", compute_return_ytd(history))
     _store("return_1y", compute_return_1y(history))
     _store("rsi_14", compute_rsi_14(history))
+    _store("vol_rsi_14", compute_vol_rsi_14(history))
     _store("dist_from_30d_high_pct", compute_dist_from_extreme(history, 30, "high"))
     _store("dist_from_30d_low_pct", compute_dist_from_extreme(history, 30, "low"))
 

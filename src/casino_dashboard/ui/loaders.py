@@ -13,6 +13,7 @@ from casino_dashboard.db.repository import (
     get_latest_social_mentions,
     get_manual_notes_all_tickers,
     get_social_history,
+    save_user_annotations,
 )
 from casino_dashboard.db.schema import _DEFAULT_DB_PATH, init_db
 from casino_dashboard.models import NewsItem
