@@ -43,10 +43,14 @@ def fetch_series(series_id: str, start: date | None = None) -> pd.Series:
         with urlopen(req, timeout=30) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
     except HTTPError as exc:
-        if exc.code == 400:
+        if exc.code in (400, 403):
+            try:
+                body = json.loads(exc.read().decode("utf-8"))
+                fred_msg = body.get("error_message", exc.reason)
+            except Exception:
+                fred_msg = exc.reason
             raise FredUnavailable(
-                f"FRED API key appears to be invalid (HTTP 400 for {series_id}). "
-                "Check the key at https://fred.stlouisfed.org/docs/api/api_key.html"
+                f"FRED API error ({exc.code}) for {series_id}: {fred_msg}"
             ) from exc
         raise
 
