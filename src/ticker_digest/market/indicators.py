@@ -98,15 +98,34 @@ def _error(name: str, series_id: str, source: IndicatorSource, bucket: Indicator
 # ---------------------------------------------------------------------------
 
 
+_YF_RETRY_DELAYS = (5, 15)  # seconds; Yahoo Finance rate-limits are short-lived
+
+
 def _yf_history(ticker: str, period: str = "10y", interval: str = "1d") -> pd.Series:
+    import time
+
     import yfinance as yf
 
-    df = yf.Ticker(ticker).history(period=period, interval=interval, auto_adjust=False)
-    if df.empty or "Close" not in df.columns:
-        return pd.Series(dtype=float)
-    series = df["Close"].dropna()
-    series.index = pd.DatetimeIndex(series.index).tz_localize(None)
-    return series
+    last_exc: Exception | None = None
+    for attempt, delay in enumerate((-1,) + _YF_RETRY_DELAYS):
+        if delay >= 0:
+            log.debug("yfinance %s: retrying after %ss (attempt %d)", ticker, delay, attempt)
+            time.sleep(delay)
+        try:
+            df = yf.Ticker(ticker).history(period=period, interval=interval, auto_adjust=False)
+            if df.empty or "Close" not in df.columns:
+                return pd.Series(dtype=float)
+            series = df["Close"].dropna()
+            series.index = pd.DatetimeIndex(series.index).tz_localize(None)
+            return series
+        except Exception as exc:  # noqa: BLE001
+            msg = str(exc).lower()
+            if "too many requests" in msg or "rate limit" in msg or "429" in msg:
+                log.warning("yfinance %s rate-limited, will retry: %s", ticker, exc)
+                last_exc = exc
+            else:
+                raise
+    raise RuntimeError(f"yfinance {ticker} rate-limited after retries") from last_exc
 
 
 def fetch_vix() -> MarketIndicator:
@@ -121,7 +140,7 @@ def fetch_vix() -> MarketIndicator:
 def fetch_buffett_indicator() -> MarketIndicator:
     name, sid = "Buffett Indicator (Mkt Cap / GDP)", "BUFFETT"
     try:
-        wilshire = fred_client.fetch_series("WILL5000INDFC")
+        wilshire = fred_client.fetch_series("WILL5000IND")
         gdp = fred_client.fetch_series("GDP")
         if wilshire.empty or gdp.empty:
             raise ValueError("missing component series")
