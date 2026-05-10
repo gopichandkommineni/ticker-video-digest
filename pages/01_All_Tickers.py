@@ -110,6 +110,7 @@ for ticker in candidate_tickers:
             "_close_raw": close,
             "_vol_ratio_raw": sig.get("vol_ratio_30d"),
             "_mention_velocity_raw": mention_velocity,
+            "_rsi_raw": sig.get("rsi_14"),
             "_vol_rsi_raw": sig.get("vol_rsi_14"),
             "_near_breakout": near_bo,
             "_near_breakdown": near_bd,
@@ -144,6 +145,7 @@ display_df = pd.DataFrame(
         "Close": df["_close_raw"].apply(format_money),
         "Vol Ratio": df["_vol_ratio_raw"].apply(format_ratio),
         "Mention Vel": df["_mention_velocity_raw"].apply(format_mention_velocity),
+        "RSI": df["_rsi_raw"].apply(format_rsi),
         "Vol RSI": df["_vol_rsi_raw"].apply(format_rsi),
         "Notes": df["Notes"],
         "Tags": df["Tags"],
@@ -164,7 +166,7 @@ edited_df = st.data_editor(
         "Notes": st.column_config.TextColumn("Notes", help="Your private notes for this ticker"),
         "Tags": st.column_config.TextColumn("Tags", help="Comma-separated tags, e.g. watchlist, earnings"),
     },
-    disabled=["Ticker", "Sectors", "Close", "Vol Ratio", "Mention Vel", "Vol RSI", "Flags"],
+    disabled=["Ticker", "Sectors", "Close", "Vol Ratio", "Mention Vel", "RSI", "Vol RSI", "Flags"],
     key="tickers_editor",
 )
 
@@ -187,4 +189,4 @@ if changed:
     st.rerun()
 
 st.caption("Mention Vel: ApeWisdom 24h velocity (today ÷ yesterday). 🟢 >2x · 🟡 >1.5x · gray = normal · — = no data yet")
-st.caption("Vol RSI: 14-period RSI applied to the volume series. >70 = high volume momentum · <30 = low volume momentum.")
+st.caption("RSI: 14-period price RSI. Vol RSI: 14-period RSI on the volume series. >70 = overbought/high momentum · <30 = oversold/low momentum.")
