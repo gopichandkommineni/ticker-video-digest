@@ -23,6 +23,7 @@ from casino_dashboard.db.repository import (
     save_ticker_metadata,
 )
 from casino_dashboard.signals.orchestrator import compute_and_save_all_signals
+from casino_dashboard.signals.sector_aggregator import compute_and_save_all_sector_heat
 from casino_dashboard.universe import load_universe
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -177,6 +178,13 @@ def main(db_path: Path = _DEFAULT_DB) -> None:
         logger.warning("Deal log YAML not found at %s — skipping", _DEAL_LOG_PATH)
     except Exception as exc:
         logger.error("Deal log load failed (continuing): %s", exc)
+
+    logger.info("Computing sector heat …")
+    try:
+        compute_and_save_all_sector_heat(universe, db_path)
+        logger.info("Sector heat computed for %d sectors", len(universe.sectors))
+    except Exception as exc:
+        logger.error("Sector heat computation failed (continuing): %s", exc)
 
 
 if __name__ == "__main__":
