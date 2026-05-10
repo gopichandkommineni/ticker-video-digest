@@ -638,6 +638,86 @@ def get_sector_heat_latest(db_path: Path = _DEFAULT_DB_PATH) -> pd.DataFrame:
     return df.set_index("sector")
 
 
+# ---------------------------------------------------------------------------
+# Helpers for sector aggregation
+# ---------------------------------------------------------------------------
+
+
+def get_signal_for_ticker_on_date(
+    ticker: str,
+    signal_name: str,
+    target_date: date,
+    db_path: Path = _DEFAULT_DB_PATH,
+) -> float | None:
+    """Return the signal value for a ticker on or before target_date (latest available)."""
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT value FROM signals
+            WHERE ticker = ? AND signal_name = ? AND date <= ?
+            ORDER BY date DESC
+            LIMIT 1
+            """,
+            (ticker, signal_name, target_date.isoformat()),
+        ).fetchone()
+    return row[0] if row else None
+
+
+def get_latest_signal_for_tickers(
+    tickers: list[str],
+    signal_name: str,
+    db_path: Path = _DEFAULT_DB_PATH,
+) -> dict[str, float]:
+    """Return {ticker: latest_value} for signal_name across a list of tickers.
+
+    Only tickers that have a value are included in the result.
+    """
+    if not tickers:
+        return {}
+    init_db(db_path)
+    placeholders = ",".join("?" * len(tickers))
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT s.ticker, s.value
+            FROM signals s
+            INNER JOIN (
+                SELECT ticker, MAX(date) AS max_date
+                FROM signals
+                WHERE ticker IN ({placeholders}) AND signal_name = ?
+                GROUP BY ticker
+            ) latest ON s.ticker = latest.ticker AND s.date = latest.max_date
+            WHERE s.signal_name = ?
+            """,
+            (*tickers, signal_name, signal_name),
+        ).fetchall()
+    return {row[0]: row[1] for row in rows if row[1] is not None}
+
+
+def get_news_count_for_tickers(
+    tickers: list[str],
+    days: int,
+    db_path: Path = _DEFAULT_DB_PATH,
+) -> int:
+    """Count news_items rows for a list of tickers within the trailing N days."""
+    if not tickers:
+        return 0
+    init_db(db_path)
+    placeholders = ",".join("?" * len(tickers))
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM news_items
+            WHERE ticker IN ({placeholders})
+              AND snap_date >= date('now', ? || ' days')
+            """,
+            (*tickers, f"-{days}"),
+        ).fetchone()
+    return row[0] if row else 0
+
+
 def _fetch_news(ticker: str, snap_date: date, db_path: Path) -> list[NewsItem]:
     with sqlite3.connect(db_path) as conn:
         rows = conn.execute(
