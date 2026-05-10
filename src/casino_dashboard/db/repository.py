@@ -700,7 +700,11 @@ def get_news_count_for_tickers(
     days: int,
     db_path: Path = _DEFAULT_DB_PATH,
 ) -> int:
-    """Count news_items rows for a list of tickers within the trailing N days."""
+    """Count news_items rows for a list of tickers within the trailing N days.
+
+    Filters by published_at (when the article was published) so that the
+    count reflects actual news cadence, not scrape timing.
+    """
     if not tickers:
         return 0
     init_db(db_path)
@@ -711,7 +715,7 @@ def get_news_count_for_tickers(
             SELECT COUNT(*)
             FROM news_items
             WHERE ticker IN ({placeholders})
-              AND snap_date >= date('now', ? || ' days')
+              AND date(published_at) >= date('now', ? || ' days')
             """,
             (*tickers, f"-{days}"),
         ).fetchone()
