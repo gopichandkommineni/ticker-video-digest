@@ -29,6 +29,7 @@ from casino_dashboard.ui.components.tile import (
     render_returns_tile,
     render_tile,
 )
+from casino_dashboard.ui.components.tradingview import render_tradingview_technicals
 from casino_dashboard.ui.external_links import build_external_links
 from casino_dashboard.ui.formatters import format_currency, format_market_cap, format_pct
 from casino_dashboard.ui.loaders import (
@@ -425,6 +426,17 @@ else:
     ownership_html = get_empty_tile_html("Ownership")
 
 render_grid([vol_html, short_html, social_html, rsi_html, analyst_html, ownership_html])
+
+# ── TECHNICAL ANALYSIS ────────────────────────────────────────────────────────
+
+_section_header("Technical Analysis")
+st.caption("Across 27+ indicators and 11 timeframes, via TradingView")
+render_tradingview_technicals(ticker)
+st.markdown(
+    '<p style="font-size:0.78rem;color:#9ca3af;font-style:italic;margin-top:4px;">'
+    "Updates in real-time during market hours. Source: TradingView.</p>",
+    unsafe_allow_html=True,
+)
 
 # ── RECENT NEWS ───────────────────────────────────────────────────────────────
 
