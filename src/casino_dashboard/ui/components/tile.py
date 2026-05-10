@@ -162,6 +162,130 @@ def render_note_tile(
     st.markdown(html, unsafe_allow_html=True)
 
 
+def render_analyst_target_tile(
+    target_mean: float | None,
+    target_high: float | None,
+    target_low: float | None,
+    analyst_count: int | None,
+    current_price: float | None,
+) -> None:
+    """Render the Analyst Target tile with a min/avg/max range bar."""
+    from casino_dashboard.ui.formatters import format_currency
+
+    green_hex = color_to_hex("green")
+    red_hex = color_to_hex("red")
+
+    # ── fallback: no data ──────────────────────────────────────────────────────
+    if target_mean is None:
+        st.markdown(
+            _tile_html("Analyst Target", "—", [], None, 3, False),
+            unsafe_allow_html=True,
+        )
+        return
+
+    # ── upside / downside vs current ──────────────────────────────────────────
+    if current_price and current_price > 0:
+        upside = (target_mean - current_price) / current_price
+        upside_color = green_hex if upside >= 0 else red_hex
+        upside_label = f"{upside:+.2%} upside" if upside >= 0 else f"{upside:.2%} from current"
+    else:
+        upside_color = "#9ca3af"
+        upside_label = ""
+
+    # ── analyst count badge ────────────────────────────────────────────────────
+    count_html = (
+        f'<span style="font-size:0.72rem;color:#9ca3af;background:rgba(128,128,128,0.1);'
+        f'padding:2px 8px;border-radius:10px;">'
+        f"{int(analyst_count)} analyst{'s' if int(analyst_count) != 1 else ''}</span>"
+        if analyst_count is not None
+        else ""
+    )
+
+    # ── range bar with current-price dot and avg-target marker ────────────────
+    range_html = ""
+    if target_low is not None and target_high is not None and target_high > target_low:
+        span = target_high - target_low
+
+        def _pos(val: float) -> float:
+            return max(0.0, min(100.0, (val - target_low) / span * 100))
+
+        avg_pos = _pos(target_mean)
+        cur_pos = _pos(current_price) if current_price else None
+
+        avg_pct_from_low = (target_mean - target_low) / target_low if target_low else None
+        high_pct = (target_high - current_price) / current_price if current_price and current_price > 0 else None
+        low_pct = (target_low - current_price) / current_price if current_price and current_price > 0 else None
+
+        high_pct_html = (
+            f'<span style="color:{green_hex};font-size:0.7rem;"> ({high_pct:+.1%})</span>'
+            if high_pct is not None else ""
+        )
+        low_pct_html = (
+            f'<span style="color:{red_hex};font-size:0.7rem;"> ({low_pct:+.1%})</span>'
+            if low_pct is not None else ""
+        )
+
+        # Current price dot (dark circle)
+        dot_html = (
+            f'<div style="position:absolute;top:-5px;left:calc({cur_pos:.1f}% - 6px);'
+            f'width:12px;height:12px;background:var(--text-color);border-radius:50%;'
+            f'border:2px solid var(--secondary-background-color);opacity:0.8;z-index:2;"></div>'
+            if cur_pos is not None else ""
+        )
+        # Avg target tick (colored vertical bar)
+        avg_tick_html = (
+            f'<div style="position:absolute;top:-4px;left:calc({avg_pos:.1f}% - 1px);'
+            f'width:2px;height:10px;background:{upside_color};opacity:0.9;z-index:1;"></div>'
+        )
+
+        range_html = f"""
+<div style="margin:12px 0 6px;">
+  <div style="position:relative;width:100%;height:4px;
+              background:rgba(128,128,128,0.18);border-radius:2px;">
+    {dot_html}{avg_tick_html}
+  </div>
+  <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:0.75rem;">
+    <div>
+      <div style="color:#9ca3af;margin-bottom:2px;">Low</div>
+      <div style="font-weight:600;color:var(--text-color);">{format_currency(target_low)}</div>
+      <div>{low_pct_html}</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="color:#9ca3af;margin-bottom:2px;">High</div>
+      <div style="font-weight:600;color:var(--text-color);">{format_currency(target_high)}</div>
+      <div>{high_pct_html}</div>
+    </div>
+  </div>
+</div>
+"""
+
+    html = (
+        f'<div style="border:1px solid rgba(128,128,128,0.2);'
+        f"border-left:3px solid {upside_color};"
+        f"border-radius:8px;padding:16px 14px 14px;"
+        f"background:var(--secondary-background-color);\">"
+        # title row
+        f'<div style="display:flex;justify-content:space-between;align-items:center;'
+        f'margin-bottom:10px;">'
+        f'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
+        f'color:#9ca3af;font-weight:700;">Analyst Target</div>'
+        f"{count_html}"
+        f"</div>"
+        # primary: avg price + upside
+        f'<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;">'
+        f'<div style="font-size:1.35rem;font-weight:700;color:var(--text-color);">'
+        f"{format_currency(target_mean)}</div>"
+        f'<div style="font-size:0.85rem;font-weight:600;color:{upside_color};">'
+        f"{upside_label}</div>"
+        f"</div>"
+        f'<div style="font-size:0.72rem;color:#9ca3af;margin-bottom:0;">avg 1-year target</div>'
+        # range bar
+        f"{range_html}"
+        f"</div>"
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def render_returns_tile(
     return_1d: float | None,
     return_5d: float | None,
