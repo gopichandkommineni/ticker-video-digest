@@ -138,9 +138,10 @@ def fetch_vix() -> MarketIndicator:
 
 
 def fetch_buffett_indicator() -> MarketIndicator:
+    # WILL5000IND was removed from FRED on June 3, 2024; use Yahoo Finance ^W5000 instead.
     name, sid = "Buffett Indicator (Mkt Cap / GDP)", "BUFFETT"
     try:
-        wilshire = fred_client.fetch_series("WILL5000IND")
+        wilshire = _yf_history("^W5000", period="max", interval="1mo")
         gdp = fred_client.fetch_series("GDP")
         if wilshire.empty or gdp.empty:
             raise ValueError("missing component series")
