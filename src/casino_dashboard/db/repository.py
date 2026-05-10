@@ -258,12 +258,13 @@ def save_ticker_metadata(metadata: TickerMetadata, db_path: Path = _DEFAULT_DB_P
                 ticker, date,
                 fifty_two_week_high, fifty_two_week_low,
                 short_pct_of_float, short_ratio_days,
-                analyst_target_mean,
+                analyst_target_mean, analyst_target_high,
+                analyst_target_low, analyst_count,
                 held_pct_insiders, held_pct_institutions,
                 market_cap, revenue_ttm, revenue_growth_yoy,
                 profit_margin, beta,
                 next_earnings_date, next_earnings_time, last_earnings_date
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 metadata.ticker,
@@ -273,6 +274,9 @@ def save_ticker_metadata(metadata: TickerMetadata, db_path: Path = _DEFAULT_DB_P
                 metadata.short_pct_of_float,
                 metadata.short_ratio_days,
                 metadata.analyst_target_mean,
+                metadata.analyst_target_high,
+                metadata.analyst_target_low,
+                metadata.analyst_count,
                 metadata.held_pct_insiders,
                 metadata.held_pct_institutions,
                 metadata.market_cap,

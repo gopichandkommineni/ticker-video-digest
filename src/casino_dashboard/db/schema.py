@@ -61,6 +61,9 @@ def init_db(db_path: Path = _DEFAULT_DB_PATH) -> None:
                 short_pct_of_float      REAL,
                 short_ratio_days        REAL,
                 analyst_target_mean     REAL,
+                analyst_target_high     REAL,
+                analyst_target_low      REAL,
+                analyst_count           REAL,
                 held_pct_insiders       REAL,
                 held_pct_institutions   REAL,
                 market_cap              REAL,
@@ -132,5 +135,16 @@ def init_db(db_path: Path = _DEFAULT_DB_PATH) -> None:
         for col in ("notes", "tags"):
             try:
                 conn.execute(f"ALTER TABLE manual_notes ADD COLUMN {col} TEXT")
+            except Exception:
+                pass  # column already exists
+
+        # Migrate existing DBs that predate analyst high/low/count columns
+        for col in (
+            "analyst_target_high REAL",
+            "analyst_target_low REAL",
+            "analyst_count REAL",
+        ):
+            try:
+                conn.execute(f"ALTER TABLE ticker_metadata ADD COLUMN {col}")
             except Exception:
                 pass  # column already exists

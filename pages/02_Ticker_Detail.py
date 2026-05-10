@@ -8,7 +8,6 @@ import streamlit as st
 
 from casino_dashboard.data.manual_notes_loader import load_manual_notes_from_yaml
 from casino_dashboard.ui.components.colors import (
-    color_for_analyst_upside,
     color_for_earnings_days,
     color_for_profit_margin,
     color_for_returns,
@@ -22,6 +21,7 @@ from casino_dashboard.ui.components.colors import (
 from casino_dashboard.ui.components.tile import (
     get_empty_tile_html,
     get_tile_html,
+    render_analyst_target_tile,
     render_empty_tile,
     render_grid,
     render_note_tile,
@@ -400,22 +400,6 @@ if rsi_val is not None:
 else:
     rsi_html = get_empty_tile_html("RSI (14)")
 
-target = meta.get("analyst_target_mean")
-if target is not None and close_price is not None and close_price > 0:
-    upside = (target - close_price) / close_price
-    upside_hex = color_to_hex(color_for_analyst_upside(upside))
-    upside_str = f"{upside:+.1%} upside" if upside >= 0 else f"{upside:.1%} from current"
-    analyst_html = get_tile_html(
-        "Analyst Target",
-        format_currency(target),
-        subline=f'<span style="color:{upside_hex};font-weight:600;">{upside_str}</span>',
-        tier=3,
-    )
-elif target is not None:
-    analyst_html = get_tile_html("Analyst Target", format_currency(target), tier=3)
-else:
-    analyst_html = get_empty_tile_html("Analyst Target")
-
 insiders = meta.get("held_pct_insiders")
 institutions = meta.get("held_pct_institutions")
 if insiders is not None or institutions is not None:
@@ -425,7 +409,21 @@ if insiders is not None or institutions is not None:
 else:
     ownership_html = get_empty_tile_html("Ownership")
 
-render_grid([vol_html, short_html, social_html, rsi_html, analyst_html, ownership_html])
+render_grid([vol_html, short_html, social_html, rsi_html])
+
+_analyst_count_raw = meta.get("analyst_count")
+_analyst_count = int(_analyst_count_raw) if _analyst_count_raw is not None else None
+at_col, own_col = st.columns(2)
+with at_col:
+    render_analyst_target_tile(
+        target_mean=meta.get("analyst_target_mean"),
+        target_high=meta.get("analyst_target_high"),
+        target_low=meta.get("analyst_target_low"),
+        analyst_count=_analyst_count,
+        current_price=close_price,
+    )
+with own_col:
+    st.markdown(ownership_html, unsafe_allow_html=True)
 
 # ── TECHNICAL ANALYSIS ────────────────────────────────────────────────────────
 

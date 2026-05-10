@@ -29,6 +29,9 @@ class TickerMetadata:
     short_pct_of_float: float | None
     short_ratio_days: float | None
     analyst_target_mean: float | None
+    analyst_target_high: float | None
+    analyst_target_low: float | None
+    analyst_count: float | None
     held_pct_insiders: float | None
     held_pct_institutions: float | None
     market_cap: float | None
@@ -141,6 +144,9 @@ def fetch_ticker_metadata(ticker: str) -> TickerMetadata:
     short_pct_of_float = _get("shortPercentOfFloat")
     short_ratio_days = _get("shortRatio")
     analyst_target_mean = _get("targetMeanPrice")
+    analyst_target_high = _get("targetHighPrice")
+    analyst_target_low = _get("targetLowPrice")
+    analyst_count = _get("numberOfAnalystOpinions")
     held_pct_insiders = _get("heldPercentInsiders")
     held_pct_institutions = _get("heldPercentInstitutions")
     market_cap = _get("marketCap")
@@ -162,6 +168,9 @@ def fetch_ticker_metadata(ticker: str) -> TickerMetadata:
         short_pct_of_float=short_pct_of_float,
         short_ratio_days=short_ratio_days,
         analyst_target_mean=analyst_target_mean,
+        analyst_target_high=analyst_target_high,
+        analyst_target_low=analyst_target_low,
+        analyst_count=analyst_count,
         held_pct_insiders=held_pct_insiders,
         held_pct_institutions=held_pct_institutions,
         market_cap=market_cap,
@@ -194,6 +203,9 @@ def fetch_metadata_for_universe(tickers: list[str]) -> list[TickerMetadata]:
                 short_pct_of_float=None,
                 short_ratio_days=None,
                 analyst_target_mean=None,
+                analyst_target_high=None,
+                analyst_target_low=None,
+                analyst_count=None,
                 held_pct_insiders=None,
                 held_pct_institutions=None,
                 market_cap=None,
