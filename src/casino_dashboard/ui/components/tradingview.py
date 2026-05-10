@@ -1,5 +1,5 @@
 """TradingView widget helpers for the Casino Dashboard."""
-import streamlit.components.v1 as components
+import streamlit as st
 
 # Exchange prefix mapping for the 54-ticker universe.
 # NYSE tickers confirmed; everything else defaults to NASDAQ.
@@ -59,4 +59,4 @@ def render_tradingview_technicals(ticker: str, theme: str = "light") -> None:
   </script>
 </div>
 """
-    components.html(widget_html, height=580)
+    st.iframe(widget_html, height=580)

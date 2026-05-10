@@ -26,11 +26,11 @@ def test_render_tradingview_technicals_contains_symbol(monkeypatch):
     """render_tradingview_technicals builds HTML containing the correct symbol."""
     captured: list[str] = []
 
-    def _fake_html(html: str, height: int = 0) -> None:
+    def _fake_iframe(html: str, height: int = 0) -> None:
         captured.append(html)
 
-    import streamlit.components.v1 as components_module
-    monkeypatch.setattr(components_module, "html", _fake_html)
+    import streamlit as st_module
+    monkeypatch.setattr(st_module, "iframe", _fake_iframe)
 
     render_tradingview_technicals("AAOI")
 
