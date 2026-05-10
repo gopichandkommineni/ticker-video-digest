@@ -1,0 +1,5 @@
+# Treat the production SQLite snapshot as a binary file.
+# This prevents git from attempting text diffs or 3-way merges on it,
+# which avoids pull failures when the file is modified locally by the app.
+data/snapshots.db binary
+data/snapshots.db -diff

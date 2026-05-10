@@ -1,4 +1,14 @@
 """Stock Momentum Dashboard — Sectors Overview (root page)."""
+import sys
+from pathlib import Path
+
+# Ensure src/ is on sys.path before any project imports.  This guards against
+# broken editable-install states (e.g. after a partial git pull on Streamlit
+# Cloud) where the .pth finder is present but sub-package lookup fails.
+_src = Path(__file__).parent / "src"
+if str(_src) not in sys.path:
+    sys.path.insert(0, str(_src))
+
 import streamlit as st
 
 st.set_page_config(page_title="Stock Dashboard", layout="wide")
