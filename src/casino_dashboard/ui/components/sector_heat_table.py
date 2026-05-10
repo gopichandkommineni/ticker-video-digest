@@ -326,11 +326,31 @@ def render_constituent_table(
             .map(_setup_style, subset=["Setup"])
             .map(_mom_style, subset=["Mom 30d"])
         )
-        st.dataframe(styled, width="stretch")
+        event = st.dataframe(
+            styled,
+            width="stretch",
+            on_select="rerun",
+            selection_mode="single-row",
+        )
     except Exception:
-        st.dataframe(display_df, width="stretch")
+        event = st.dataframe(
+            display_df,
+            width="stretch",
+            on_select="rerun",
+            selection_mode="single-row",
+        )
+
+    # Navigate to the ticker detail page when a row is selected
+    selected_rows = (event.selection.get("rows") or []) if hasattr(event, "selection") else []
+    if selected_rows:
+        selected_ticker = display_df.index[selected_rows[0]]
+        st.page_link(
+            "pages/02_Ticker_Detail.py",
+            label=f"Open {selected_ticker} detail page →",
+            icon="📈",
+        )
 
     st.caption(
-        "Click any ticker to view its full detail page via the sidebar navigation. "
+        "Select a row to open the ticker detail page. "
         "SMA50 = whether the stock is currently above its 50-day moving average."
     )

@@ -42,6 +42,8 @@ from casino_dashboard.ui.loaders import (
 
 st.set_page_config(page_title="Ticker Detail — Stock Dashboard", layout="wide")
 
+st.page_link("pages/00_Sector_Heat.py", label="← Sector Heat", icon="🏠")
+
 # ── Universe & ticker resolution ─────────────────────────────────────────────
 universe_data = load_universe_for_ui()
 sectors = universe_data["sectors"]
