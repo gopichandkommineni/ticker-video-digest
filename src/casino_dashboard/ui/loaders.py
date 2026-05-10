@@ -7,11 +7,15 @@ import pandas as pd
 import streamlit as st
 
 from casino_dashboard.db.repository import (
+    get_deal_log_for_sector,
     get_history,
     get_latest_metadata_all_tickers,
+    get_latest_signal_for_tickers,
     get_latest_signals_all_tickers,
     get_latest_social_mentions,
     get_manual_notes_all_tickers,
+    get_news_count_for_tickers,
+    get_sector_heat_latest,
     get_social_history,
     save_user_annotations,
 )
@@ -119,6 +123,59 @@ def load_latest_prices(db_path: str = str(_DEFAULT_DB_PATH)) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame(columns=["close"])
     return pd.DataFrame(rows, columns=["ticker", "close"]).set_index("ticker")
+
+
+# ── Sector heat loaders (5-minute TTL) ────────────────────────────────────────
+
+
+@st.cache_data(ttl=300)
+def load_sector_heat(db_path: str = str(_DEFAULT_DB_PATH)) -> pd.DataFrame:
+    """Return sector_heat DataFrame indexed by sector (latest row per sector).
+
+    Returns empty DataFrame if table has not yet been populated by the daily refresh.
+    """
+    return get_sector_heat_latest(Path(db_path))
+
+
+@st.cache_data(ttl=300)
+def load_sector_constituents_ranking(
+    sector: str, db_path: str = str(_DEFAULT_DB_PATH)
+) -> pd.DataFrame:
+    """Return constituent-level ranking data for all tickers in a sector.
+
+    Columns: ticker, return_1m, pct_above_sma50, rsi_14, near_breakout,
+             near_breakdown, apewisdom_velocity_24h, news_7d_count
+    """
+    universe = load_universe()
+    if sector not in universe.sectors:
+        return pd.DataFrame()
+
+    tickers = universe.sectors[sector].tickers
+    path = Path(db_path)
+
+    signal_names = [
+        "return_1m", "pct_above_sma50", "rsi_14",
+        "near_breakout", "near_breakdown", "apewisdom_velocity_24h",
+    ]
+
+    rows = []
+    for ticker in tickers:
+        row: dict = {"ticker": ticker}
+        for sig in signal_names:
+            vals = get_latest_signal_for_tickers([ticker], sig, db_path=path)
+            row[sig] = vals.get(ticker)
+        row["news_7d_count"] = get_news_count_for_tickers([ticker], days=7, db_path=path)
+        rows.append(row)
+
+    return pd.DataFrame(rows).set_index("ticker") if rows else pd.DataFrame()
+
+
+@st.cache_data(ttl=300)
+def load_recent_deals(
+    sector: str, days: int = 30, db_path: str = str(_DEFAULT_DB_PATH)
+) -> pd.DataFrame:
+    """Return recent deal log entries for a sector within the trailing N days."""
+    return get_deal_log_for_sector(sector, days=days, db_path=Path(db_path))
 
 
 # ── Per-ticker detail page loaders (5-minute TTL) ─────────────────────────────
