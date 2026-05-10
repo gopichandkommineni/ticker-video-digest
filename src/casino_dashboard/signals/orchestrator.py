@@ -11,8 +11,10 @@ from casino_dashboard.db.repository import (
 )
 from casino_dashboard.signals.computers import (
     compute_apewisdom_velocity_24h,
+    compute_atr14_pct,
     compute_dist_from_extreme,
     compute_mention_velocity_7d,
+    compute_pct_above_sma50,
     compute_return,
     compute_return_1m,
     compute_return_1y,
@@ -48,6 +50,8 @@ def compute_signals_for_ticker(ticker: str, db_path: Path) -> dict[str, float]:
     _store("vol_rsi_14", compute_vol_rsi_14(history))
     _store("dist_from_30d_high_pct", compute_dist_from_extreme(history, 30, "high"))
     _store("dist_from_30d_low_pct", compute_dist_from_extreme(history, 30, "low"))
+    _store("atr14_pct", compute_atr14_pct(history))
+    _store("pct_above_sma50", compute_pct_above_sma50(history))
 
     # Derived flags
     if "dist_from_30d_high_pct" in results:

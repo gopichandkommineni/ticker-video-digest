@@ -180,6 +180,55 @@ def compute_apewisdom_velocity_24h(
     return mentions / mentions_24h_ago
 
 
+def compute_atr14(history: list[TickerSnapshot]) -> float | None:
+    """Average True Range over 14 periods using simple (non-smoothed) mean.
+
+    True Range = max(high-low, |high-prev_close|, |low-prev_close|)
+    Requires at least 15 days of history.
+    """
+    if len(history) < 15:
+        return None
+
+    window = history[-15:]
+    true_ranges = []
+    for i in range(1, len(window)):
+        prev_close = window[i - 1].close
+        high = window[i].high
+        low = window[i].low
+        tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+        true_ranges.append(tr)
+
+    return sum(true_ranges) / len(true_ranges)
+
+
+def compute_atr14_pct(history: list[TickerSnapshot]) -> float | None:
+    """ATR(14) as a fraction of the latest close price.
+
+    Normalises volatility across different price levels so sectors can be compared.
+    Requires at least 15 days of history and a non-zero close.
+    """
+    atr = compute_atr14(history)
+    if atr is None:
+        return None
+    latest_close = history[-1].close
+    if latest_close == 0:
+        return None
+    return atr / latest_close
+
+
+def compute_pct_above_sma50(history: list[TickerSnapshot]) -> float | None:
+    """1.0 if the latest close is above the 50-day simple moving average, else 0.0.
+
+    Returns None if fewer than 50 days of history are available.
+    Used as a per-ticker boolean; the sector aggregator averages across constituents
+    to produce a breadth fraction (e.g. 0.625 = 5 of 8 tickers above SMA50).
+    """
+    if len(history) < 50:
+        return None
+    sma50 = sum(s.close for s in history[-50:]) / 50
+    return 1.0 if history[-1].close > sma50 else 0.0
+
+
 def compute_mention_velocity_7d(history: pd.DataFrame) -> float | None:
     """Return latest_count / mean(prior 7 days count).
 

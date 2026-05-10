@@ -1,0 +1,63 @@
+# Sector → ETF mapping for Capital Flows dimension
+# Each sector lists 1-3 representative ETFs; flows are aggregated across all listed.
+# Photonics has no clean ETF fit — handled as "n/a" in the UI.
+# Source: spec §3, Table 1.
+
+nuclear:
+  - ticker: URNM
+    is_primary: true
+    name: "Sprott Uranium Miners ETF"
+  - ticker: NLR
+    is_primary: false
+    name: "VanEck Uranium + Nuclear Energy ETF"
+
+photonics:
+  # No clean ETF fit — ETF flow column shows "n/a" for this sector.
+
+quantum:
+  - ticker: QTUM
+    is_primary: true
+    name: "Defiance Quantum ETF"
+
+drones_defense:
+  - ticker: ITA
+    is_primary: true
+    name: "iShares U.S. Aerospace & Defense ETF"
+  - ticker: PPA
+    is_primary: false
+    name: "Invesco Aerospace & Defense ETF"
+
+space:
+  - ticker: ARKX
+    is_primary: true
+    name: "ARK Space Exploration & Innovation ETF"
+  - ticker: UFO
+    is_primary: false
+    name: "Procure Space ETF"
+
+critical_minerals:
+  - ticker: REMX
+    is_primary: true
+    name: "VanEck Rare Earth/Strategic Metals ETF"
+  - ticker: BATT
+    is_primary: false
+    name: "Amplify Lithium & Battery Technology ETF"
+
+ai_infrastructure:
+  - ticker: SMH
+    is_primary: true
+    name: "VanEck Semiconductor ETF"
+  - ticker: AIQ
+    is_primary: false
+    name: "Global X Artificial Intelligence & Technology ETF"
+  - ticker: CHAT
+    is_primary: false
+    name: "Roundhill Generative AI & Technology ETF"
+
+crypto_equities:
+  - ticker: BITQ
+    is_primary: true
+    name: "Bitwise Crypto Industry Innovators ETF"
+  - ticker: BLOK
+    is_primary: false
+    name: "Amplify Transformational Data Sharing ETF"
