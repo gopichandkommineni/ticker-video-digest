@@ -6,10 +6,23 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parents[2] / ".env")
 
-ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-YOUTUBE_API_KEY: str = os.environ.get("YOUTUBE_API_KEY", "").strip()
+
+def _get_secret(key: str) -> str:
+    """Read from os.environ first, then fall back to st.secrets (Streamlit Cloud)."""
+    value = os.environ.get(key, "").strip()
+    if not value:
+        try:
+            import streamlit as st  # noqa: PLC0415
+            value = (st.secrets.get(key) or "").strip()
+        except Exception:  # noqa: BLE001
+            pass
+    return value
+
+
+ANTHROPIC_API_KEY: str = _get_secret("ANTHROPIC_API_KEY")
+YOUTUBE_API_KEY: str = _get_secret("YOUTUBE_API_KEY")
 # Optional — market dashboard degrades gracefully when missing.
-FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "").strip()
+FRED_API_KEY: str = _get_secret("FRED_API_KEY")
 
 if not ANTHROPIC_API_KEY:
     raise EnvironmentError(
