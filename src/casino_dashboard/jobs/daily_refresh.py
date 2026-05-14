@@ -2,7 +2,7 @@ import logging
 from datetime import date
 from pathlib import Path
 
-from casino_dashboard.data.apewisdom_client import fetch_apewisdom_universe, filter_to_universe
+from ticker_digest.social_media.reddit.apewisdom_client import fetch_apewisdom_universe, filter_to_universe
 from casino_dashboard.data.deal_log_loader import load_deal_log_from_yaml
 from casino_dashboard.data.etf_flows_fetcher import (
     calculate_implied_flow,

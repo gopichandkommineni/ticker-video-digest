@@ -1,4 +1,9 @@
-"""ApeWisdom public API client — no auth required."""
+"""ApeWisdom public API client — no auth required.
+
+ApeWisdom aggregates Reddit mention counts across finance subreddits and
+exposes them via a free paginated API, making it a natural fit alongside
+the Reddit scraper.
+"""
 import logging
 import time
 from urllib.request import Request, urlopen
