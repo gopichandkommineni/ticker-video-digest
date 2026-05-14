@@ -19,6 +19,9 @@ dependencies = [
     "pandas>=2.0",
     "pyyaml>=6.0",
     "lxml>=4.9",
+    # Social media scrapers
+    "praw>=7.0",
+    "tweepy>=4.0",
 ]
 
 [project.optional-dependencies]

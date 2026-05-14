@@ -11,6 +11,15 @@ YOUTUBE_API_KEY: str = os.environ.get("YOUTUBE_API_KEY", "").strip()
 # Optional — market dashboard degrades gracefully when missing.
 FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "").strip()
 
+# ---------------------------------------------------------------------------
+# Social media credentials (all optional — scrapers degrade gracefully)
+# ---------------------------------------------------------------------------
+# Reddit: PRAW OAuth app credentials. When absent, the public JSON API is used.
+REDDIT_CLIENT_ID: str = os.environ.get("REDDIT_CLIENT_ID", "").strip()
+REDDIT_CLIENT_SECRET: str = os.environ.get("REDDIT_CLIENT_SECRET", "").strip()
+# X (Twitter): API v2 bearer token for the recent-search endpoint.
+X_BEARER_TOKEN: str = os.environ.get("X_BEARER_TOKEN", "").strip()
+
 if not ANTHROPIC_API_KEY:
     raise EnvironmentError(
         "ANTHROPIC_API_KEY is not set. Add it to .env or the environment."
