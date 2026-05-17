@@ -217,9 +217,11 @@ def _refresh_congress(db_path: Path) -> None:
     logger.info("Fetching committee membership from congress-legislators …")
     membership = fetch_committee_membership()
     watched_members = membership["watched_members"]
+    all_bioguide_ids: list[str] = membership.get("all_bioguide_ids", [])
     logger.info("Got %d watched members from committee filter", len(watched_members))
 
-    known_bioguides = {m["bioguide_id"] for m in watched_members}
+    # Validate star trader IDs against all current legislators (not just watched members).
+    known_bioguides = set(all_bioguide_ids) if all_bioguide_ids else None
     star_entries = load_star_traders(_STAR_TRADERS_PATH, known_bioguides=known_bioguides)
     logger.info("Loaded %d star traders from YAML", len(star_entries))
 
