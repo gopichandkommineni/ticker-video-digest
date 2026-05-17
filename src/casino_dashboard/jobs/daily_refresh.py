@@ -3,6 +3,8 @@ from datetime import date
 from pathlib import Path
 
 from ticker_digest.social_media.reddit.apewisdom_client import fetch_apewisdom_universe, filter_to_universe
+from casino_dashboard.data.congress_legislators_fetcher import fetch_committee_membership
+from casino_dashboard.data.congress_trades_fetcher import fetch_recent_congress_trades
 from casino_dashboard.data.deal_log_loader import load_deal_log_from_yaml
 from casino_dashboard.data.etf_flows_fetcher import (
     calculate_implied_flow,
@@ -10,6 +12,7 @@ from casino_dashboard.data.etf_flows_fetcher import (
     load_etf_mapping_from_yaml,
 )
 from casino_dashboard.data.manual_notes_loader import load_manual_notes_from_yaml
+from casino_dashboard.data.star_traders_loader import load_star_traders
 from casino_dashboard.data.yfinance_client import fetch_universe_snapshot
 from casino_dashboard.data.yfinance_metadata import fetch_metadata_for_universe
 from casino_dashboard.db.repository import (
@@ -21,6 +24,8 @@ from casino_dashboard.db.repository import (
     save_snapshot,
     save_social_mention,
     save_ticker_metadata,
+    upsert_congress_members,
+    upsert_congress_trades,
 )
 from casino_dashboard.signals.orchestrator import compute_and_save_all_signals
 from casino_dashboard.signals.sector_aggregator import compute_and_save_all_sector_heat
@@ -33,6 +38,7 @@ _DEFAULT_DB = Path("data/snapshots.db")
 _MANUAL_NOTES_PATH = Path("config/manual_notes.yaml")
 _ETF_MAPPING_PATH = Path("config/etf_mapping.yaml")
 _DEAL_LOG_PATH = Path("config/deal_log.yaml")
+_STAR_TRADERS_PATH = Path("config/star_traders.yaml")
 
 
 def main(db_path: Path = _DEFAULT_DB) -> None:
@@ -185,6 +191,79 @@ def main(db_path: Path = _DEFAULT_DB) -> None:
         logger.info("Sector heat computed for %d sectors", len(universe.sectors))
     except Exception as exc:
         logger.error("Sector heat computation failed (continuing): %s", exc)
+
+    logger.info("Refreshing congress data …")
+    try:
+        _refresh_congress(db_path)
+    except Exception as exc:
+        logger.error("Congress refresh failed (continuing — data may be stale): %s", exc)
+
+
+def _refresh_congress(db_path: Path) -> None:
+    """Fetch and store committee membership, star traders, and recent trades.
+
+    Steps:
+      1. Fetch watched members from unitedstates/congress-legislators.
+      2. Load star traders from config/star_traders.yaml.
+      3. Merge both lists into congress_members (both is_watched + is_star flags).
+      4. Upsert committee links into congress_member_committees.
+      5. Fetch recent trades for the union of watched + star bioguide_ids.
+      6. Upsert trades into congress_trades.
+
+    If the congress refresh fails entirely the caller catches and logs — the
+    rest of the pipeline is not affected. Congress data being a day stale is
+    acceptable; yfinance failing is not.
+    """
+    logger.info("Fetching committee membership from congress-legislators …")
+    membership = fetch_committee_membership()
+    watched_members = membership["watched_members"]
+    logger.info("Got %d watched members from committee filter", len(watched_members))
+
+    known_bioguides = {m["bioguide_id"] for m in watched_members}
+    star_entries = load_star_traders(_STAR_TRADERS_PATH, known_bioguides=known_bioguides)
+    logger.info("Loaded %d star traders from YAML", len(star_entries))
+
+    # Build merged member dict keyed by bioguide_id
+    merged: dict[str, dict] = {}
+
+    for m in watched_members:
+        bid = m["bioguide_id"]
+        merged[bid] = {**m, "is_watched": 1, "is_star": 0}
+
+    for star in star_entries:
+        bid = star["bioguide_id"]
+        if bid in merged:
+            merged[bid]["is_star"] = 1
+        else:
+            # Star trader not in the committee watch list — add minimal record
+            merged[bid] = {
+                "bioguide_id": bid,
+                "full_name": star["name"],
+                "first_name": star["name"].split()[0] if star["name"] else "",
+                "last_name": star["name"].split()[-1] if star["name"] else "",
+                "party": "I",
+                "state": "",
+                "chamber": "",
+                "committees": [],
+                "is_watched": 0,
+                "is_star": 1,
+            }
+
+    logger.info("Upserting %d congress members …", len(merged))
+    upsert_congress_members(list(merged.values()), db_path)
+
+    # Fetch trades for the union of all tracked members
+    all_bioguide_ids = list(merged.keys())
+    all_legislator_records = list(merged.values())
+    logger.info("Fetching FMP trades for %d members …", len(all_bioguide_ids))
+    trades = fetch_recent_congress_trades(
+        days_back=90,
+        bioguide_filter=all_bioguide_ids,
+        legislators=all_legislator_records,
+    )
+    logger.info("Got %d filtered trades — upserting …", len(trades))
+    upsert_congress_trades(trades, db_path)
+    logger.info("Congress refresh complete.")
 
 
 if __name__ == "__main__":

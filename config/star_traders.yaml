@@ -1,0 +1,40 @@
+# Hand-curated list of congressional traders whose public
+# disclosures are tracked separately from the committee view.
+# Edit freely — this is opinionated and the user owns the list.
+star_traders:
+  - bioguide_id: P000197
+    name: "Nancy Pelosi"
+    note: "Consistent multi-year outperformance via PXP trades"
+  - bioguide_id: T000278
+    name: "Tommy Tuberville"
+    note: "Frequent trader, agriculture/defense overlap"
+  - bioguide_id: C001103
+    name: "Dan Crenshaw"
+    note: "Defense and energy committee exposure"
+  - bioguide_id: K000389
+    name: "Ro Khanna"
+    note: "Tech-heavy, House Armed Services"
+  - bioguide_id: G000583
+    name: "Josh Gottheimer"
+    note: "Financial services, frequent trader"
+  - bioguide_id: G000596
+    name: "Mark Green"
+    note: "Healthcare and tech"
+  - bioguide_id: M001157
+    name: "Michael McCaul"
+    note: "Foreign Affairs chair, defense plays"
+  - bioguide_id: L000590
+    name: "Susie Lee"
+    note: "Notable 2023-2024 outperformance"
+  - bioguide_id: G000596
+    name: "Marjorie Taylor Greene"
+    note: "Frequent trader, varied sectors"
+  - bioguide_id: H001082
+    name: "Kevin Hern"
+    note: "Energy and financial services"
+  - bioguide_id: F000246
+    name: "Pat Fallon"
+    note: "Defense, frequent trader"
+  - bioguide_id: M001211
+    name: "Markwayne Mullin"
+    note: "Senate, energy"

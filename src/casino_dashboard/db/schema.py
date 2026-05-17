@@ -131,6 +131,53 @@ def init_db(db_path: Path = _DEFAULT_DB_PATH) -> None:
                 PRIMARY KEY (sector, date)
             );
         """)
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS congress_members (
+                bioguide_id   TEXT PRIMARY KEY,
+                full_name     TEXT NOT NULL,
+                first_name    TEXT NOT NULL,
+                last_name     TEXT NOT NULL,
+                party         TEXT NOT NULL,
+                state         TEXT NOT NULL,
+                chamber       TEXT NOT NULL,
+                is_watched    INTEGER NOT NULL DEFAULT 0,
+                is_star       INTEGER NOT NULL DEFAULT 0,
+                updated_at    TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS congress_member_committees (
+                bioguide_id      TEXT NOT NULL,
+                committee_id     TEXT NOT NULL,
+                committee_name   TEXT NOT NULL,
+                title            TEXT NOT NULL,
+                rank             INTEGER,
+                PRIMARY KEY (bioguide_id, committee_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS congress_trades (
+                trade_id          TEXT PRIMARY KEY,
+                bioguide_id       TEXT,
+                full_name         TEXT NOT NULL,
+                chamber           TEXT NOT NULL,
+                party             TEXT NOT NULL,
+                ticker            TEXT NOT NULL,
+                asset_type        TEXT,
+                transaction_type  TEXT NOT NULL,
+                transaction_date  TEXT NOT NULL,
+                disclosure_date   TEXT NOT NULL,
+                amount_low        REAL,
+                amount_high       REAL,
+                filing_id         TEXT,
+                fetched_at        TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_congress_trades_disclosure
+                ON congress_trades(disclosure_date DESC);
+            CREATE INDEX IF NOT EXISTS idx_congress_trades_bioguide
+                ON congress_trades(bioguide_id, disclosure_date DESC);
+            CREATE INDEX IF NOT EXISTS idx_congress_trades_ticker
+                ON congress_trades(ticker, disclosure_date DESC);
+        """)
         # Migrate existing DBs that predate notes/tags columns
         for col in ("notes", "tags"):
             try:
