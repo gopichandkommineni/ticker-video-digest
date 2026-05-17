@@ -53,21 +53,32 @@ _MEMBERSHIP_URL = (
 
 _TMP_DIR = Path("/tmp/congress_legislators_cache")
 
-# Whitelisted committee names (partial-match, case-insensitive).
-# Each entry is a substring that uniquely identifies the committee.
-_WHITELISTED_COMMITTEE_SUBSTRINGS = [
-    "house armed services",
-    "senate armed services",
-    "house financial services",
-    "senate banking",
-    "house energy and commerce",
-    "senate energy and natural resources",
-    "house permanent select committee on intelligence",
-    "senate select committee on intelligence",
-    "house foreign affairs",
-    "senate foreign relations",
-    "senate commerce, science",
-    "house science, space",
+# Whitelisted committee names — partial-match, case-insensitive.
+# Each tuple is (display_label, [substrings_to_try]).  A committee matches
+# if ANY substring is found in its lowercased name.  We include both the
+# short form ("house armed services") and the "Committee on" long form
+# ("armed services") so the matcher works regardless of how the YAML
+# formats the name.
+_WHITELISTED_COMMITTEES: list[tuple[str, list[str]]] = [
+    ("House Armed Services",       ["house armed services", "armed services committee"]),
+    ("Senate Armed Services",      ["senate armed services"]),
+    ("House Financial Services",   ["house financial services", "financial services committee"]),
+    ("Senate Banking",             ["senate banking"]),
+    ("House Energy and Commerce",  ["house energy and commerce", "energy and commerce"]),
+    ("Senate Energy and Natural Resources", ["senate energy and natural resources"]),
+    ("House Intelligence",         ["house permanent select committee on intelligence",
+                                    "permanent select committee on intelligence"]),
+    ("Senate Intelligence",        ["senate select committee on intelligence",
+                                    "select committee on intelligence"]),
+    ("House Foreign Affairs",      ["house foreign affairs", "foreign affairs committee"]),
+    ("Senate Foreign Relations",   ["senate foreign relations", "foreign relations committee"]),
+    ("Senate Commerce",            ["senate commerce, science", "commerce, science, and transportation"]),
+    ("House Science",              ["house science, space", "science, space, and technology"]),
+]
+
+# Flat list of all substrings for quick _is_whitelisted checks
+_WHITELISTED_COMMITTEE_SUBSTRINGS: list[str] = [
+    sub for _, subs in _WHITELISTED_COMMITTEES for sub in subs
 ]
 
 
@@ -194,6 +205,22 @@ def fetch_committee_membership() -> dict:
     legislator_index = _build_legislator_index(legislators_raw)
     committee_index = _build_committee_index(committees_raw)
 
+    # Diagnostic: log which whitelisted committees were found in the YAML
+    whitelisted_found = {cid: info["name"] for cid, info in committee_index.items() if info.get("whitelisted")}
+    logger.info(
+        "Committee index: %d total committees, %d whitelisted: %s",
+        len(committee_index),
+        len(whitelisted_found),
+        ", ".join(f"{cid}={name}" for cid, name in sorted(whitelisted_found.items())),
+    )
+    if not whitelisted_found:
+        # Dump a sample of committee names to help diagnose name-matching issues
+        sample = list(committee_index.items())[:10]
+        logger.warning(
+            "No whitelisted committees matched! Sample committee names from YAML: %s",
+            ", ".join(f'{cid}={info["name"]!r}' for cid, info in sample),
+        )
+
     # {bioguide_id: {member_info, committees: [...]}}
     watched: dict[str, dict] = {}
 
@@ -248,5 +275,6 @@ def fetch_committee_membership() -> dict:
     logger.info("fetch_committee_membership: %d watched members identified", len(watched))
     return {
         "watched_members": list(watched.values()),
+        "all_bioguide_ids": list(legislator_index.keys()),
         "fetched_at": fetched_at,
     }
