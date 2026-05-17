@@ -21,6 +21,7 @@ from casino_dashboard.ui.components.colors import (
 from casino_dashboard.ui.components.tile import (
     get_empty_tile_html,
     get_tile_html,
+    inject_tile_css,
     render_analyst_target_tile,
     render_empty_tile,
     render_grid,
@@ -42,6 +43,8 @@ from casino_dashboard.ui.loaders import (
 )
 
 st.set_page_config(page_title="Ticker Detail — Stock Dashboard", layout="wide")
+
+inject_tile_css()
 
 st.page_link("pages/00_Sector_Heat.py", label="← Sector Heat", icon="🏠")
 

@@ -5,7 +5,30 @@ from casino_dashboard.ui.components.colors import color_for_returns, color_to_he
 
 _TIER_PRIMARY_SIZE: dict[int, str] = {1: "1.75rem", 2: "1.35rem", 3: "1.1rem"}
 _TIER_MIN_HEIGHT: dict[int, str] = {1: "130px", 2: "100px", 3: "90px"}
-_PLACEHOLDER_COLOR = "#9ca3af"
+_PLACEHOLDER_COLOR = "var(--tile-subline-color)"
+
+_TILE_CSS = """
+<style>
+:root {
+  --tile-label-color: #4b5563;
+  --tile-subline-color: #6b7280;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --tile-label-color: #c4c7cd;
+    --tile-subline-color: #a8acb3;
+  }
+}
+</style>
+"""
+
+
+def inject_tile_css() -> None:
+    """Inject CSS custom properties for tile label and subline colors once per session."""
+    if st.session_state.get("_tile_css_injected"):
+        return
+    st.markdown(_TILE_CSS, unsafe_allow_html=True)
+    st.session_state["_tile_css_injected"] = True
 
 
 def _safe_primary(primary: str | None) -> str:
@@ -51,7 +74,7 @@ def _tile_html(
     edit_icon = " ✏️" if edit_mode else ""
 
     sublines_html = "".join(
-        f'<div style="font-size:0.8rem;color:#9ca3af;margin-top:3px;line-height:1.4;">{s}</div>'
+        f'<div style="font-size:0.8rem;color:var(--tile-subline-color);margin-top:3px;line-height:1.4;">{s}</div>'
         for s in sublines
     )
 
@@ -61,7 +84,7 @@ def _tile_html(
         f"border-radius:8px;padding:16px 14px 14px;"
         f"background:var(--secondary-background-color);min-height:{min_h};\">"
         f'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
-        f'color:#9ca3af;font-weight:700;margin-bottom:10px;">{title}{edit_icon}</div>'
+        f'color:var(--tile-label-color);font-weight:600;margin-bottom:10px;">{title}{edit_icon}</div>'
         f'<div style="font-size:{font_size};font-weight:700;color:{primary_color};line-height:1.15;">'
         f"{primary}</div>"
         f"{sublines_html}"
@@ -139,7 +162,7 @@ def render_note_tile(
         bullets = "".join(
             f'<div style="font-size:0.88rem;color:var(--text-color);line-height:1.6;'
             f'margin-bottom:4px;display:flex;gap:6px;">'
-            f'<span style="color:#9ca3af;flex-shrink:0;">•</span><span>{item}</span></div>'
+            f'<span style="color:var(--tile-subline-color);flex-shrink:0;">•</span><span>{item}</span></div>'
             for item in items
         )
         body_html = f"<div>{bullets}</div>"
@@ -155,7 +178,7 @@ def render_note_tile(
         f"border-radius:8px;padding:16px 14px 14px;"
         f"background:var(--secondary-background-color);min-height:120px;height:auto;\">"
         f'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
-        f'color:#9ca3af;font-weight:700;margin-bottom:10px;">{title} ✏️</div>'
+        f'color:var(--tile-label-color);font-weight:600;margin-bottom:10px;">{title} ✏️</div>'
         f"{body_html}"
         f"</div>"
     )
@@ -194,7 +217,7 @@ def render_analyst_target_tile(
 
     # ── analyst count badge ────────────────────────────────────────────────────
     count_html = (
-        f'<span style="font-size:0.72rem;color:#9ca3af;background:rgba(128,128,128,0.1);'
+        f'<span style="font-size:0.72rem;color:var(--tile-subline-color);background:rgba(128,128,128,0.1);'
         f'padding:2px 8px;border-radius:10px;">'
         f"{int(analyst_count)} analyst{'s' if int(analyst_count) != 1 else ''}</span>"
         if analyst_count is not None
@@ -246,12 +269,12 @@ def render_analyst_target_tile(
   </div>
   <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:0.75rem;">
     <div>
-      <div style="color:#9ca3af;margin-bottom:2px;">Low</div>
+      <div style="color:var(--tile-subline-color);margin-bottom:2px;">Low</div>
       <div style="font-weight:600;color:var(--text-color);">{format_currency(target_low)}</div>
       <div>{low_pct_html}</div>
     </div>
     <div style="text-align:right;">
-      <div style="color:#9ca3af;margin-bottom:2px;">High</div>
+      <div style="color:var(--tile-subline-color);margin-bottom:2px;">High</div>
       <div style="font-weight:600;color:var(--text-color);">{format_currency(target_high)}</div>
       <div>{high_pct_html}</div>
     </div>
@@ -268,7 +291,7 @@ def render_analyst_target_tile(
         f'<div style="display:flex;justify-content:space-between;align-items:center;'
         f'margin-bottom:10px;">'
         f'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
-        f'color:#9ca3af;font-weight:700;">Analyst Target</div>'
+        f'color:var(--tile-label-color);font-weight:600;">Analyst Target</div>'
         f"{count_html}"
         f"</div>"
         # primary: avg price + upside
@@ -278,7 +301,7 @@ def render_analyst_target_tile(
         f'<div style="font-size:0.85rem;font-weight:600;color:{upside_color};">'
         f"{upside_label}</div>"
         f"</div>"
-        f'<div style="font-size:0.72rem;color:#9ca3af;margin-bottom:0;">avg 1-year target</div>'
+        f'<div style="font-size:0.72rem;color:var(--tile-subline-color);margin-bottom:0;">avg 1-year target</div>'
         # range bar
         f"{range_html}"
         f"</div>"
@@ -307,7 +330,7 @@ def render_returns_tile(
         pct = f"{val:+.1%}" if val is not None else "—"
         return (
             f'<div style="flex:0 0 auto;text-align:center;min-width:52px;">'
-            f'<div style="font-size:0.72rem;color:#9ca3af;margin-bottom:5px;">{label}</div>'
+            f'<div style="font-size:0.72rem;color:var(--tile-subline-color);margin-bottom:5px;">{label}</div>'
             f'<div style="font-size:1.15rem;font-weight:700;color:{hex_color};">{pct}</div>'
             f"</div>"
         )
@@ -320,7 +343,7 @@ def render_returns_tile(
         f"border-radius:8px;padding:16px 14px 14px;"
         f"background:var(--secondary-background-color);min-height:110px;\">"
         f'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
-        f'color:#9ca3af;font-weight:700;margin-bottom:10px;">Returns</div>'
+        f'color:var(--tile-label-color);font-weight:600;margin-bottom:10px;">Returns</div>'
         f'<div style="display:flex;gap:16px;overflow-x:auto;padding-bottom:4px;">'
         f"{cards_html}"
         f"</div>"
@@ -391,11 +414,11 @@ def render_range_tile(
         f"border-radius:8px;padding:16px 14px 14px;"
         f"background:var(--secondary-background-color);min-height:140px;\">"
         f'<div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;'
-        f'color:#9ca3af;font-weight:700;margin-bottom:8px;">52-Week Range</div>'
+        f'color:var(--tile-label-color);font-weight:600;margin-bottom:8px;">52-Week Range</div>'
         f'<div style="font-size:1.35rem;font-weight:700;color:var(--text-color);">{price_str}</div>'
         f"{bar_html}"
         f'<div style="display:flex;justify-content:space-between;font-size:0.78rem;'
-        f'color:#9ca3af;margin-top:2px;">'
+        f'color:var(--tile-subline-color);margin-top:2px;">'
         f"<span>L: {low_str}{low_pct_html}</span>"
         f"<span>H: {high_str}{high_pct_html}</span>"
         f"</div>"
