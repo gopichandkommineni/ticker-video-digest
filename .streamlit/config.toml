@@ -1,0 +1,6 @@
+[server]
+# Disable inotify-based file watching on Streamlit Cloud.
+# The default "auto" watcher registers an inotify watch per imported module,
+# which exhausts the kernel's fs.inotify.max_user_watches limit when the
+# codebase is large. Production deployments don't need hot-reload.
+fileWatcherType = "none"
