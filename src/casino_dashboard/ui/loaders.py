@@ -15,8 +15,11 @@ from casino_dashboard.db.repository import (
     get_latest_social_mentions,
     get_manual_notes_all_tickers,
     get_news_count_for_tickers,
+    get_recent_trades_for_members,
     get_sector_heat_latest,
     get_social_history,
+    get_star_members,
+    get_watched_members,
     save_user_annotations,
 )
 from casino_dashboard.db.schema import _DEFAULT_DB_PATH, init_db
@@ -214,6 +217,92 @@ def load_manual_notes_all(db_path: str = str(_DEFAULT_DB_PATH)) -> pd.DataFrame:
 def load_signals_for_detail(db_path: str = str(_DEFAULT_DB_PATH)) -> pd.DataFrame:
     """Return signals matrix with 5-min TTL for use by the per-ticker detail page."""
     return get_latest_signals_all_tickers(Path(db_path))
+
+
+# ── Congress page loaders (1-hour TTL — refreshed by daily job) ───────────────
+
+
+def _format_congress_trades_df(df: pd.DataFrame, days_back: int) -> pd.DataFrame:
+    """Shared formatting applied to both committee and star-trader trade tables."""
+    if df.empty:
+        return pd.DataFrame(
+            columns=[
+                "member", "party", "chamber", "ticker", "transaction_type",
+                "transaction_date", "disclosure_date", "amount_est", "days_lag",
+            ]
+        )
+    df = df.copy()
+    df["amount_est"] = df.apply(
+        lambda r: (
+            f"${((r['amount_low'] + r['amount_high']) / 2):,.0f}"
+            if pd.notna(r.get("amount_low")) and pd.notna(r.get("amount_high"))
+            else (f"${r['amount_low']:,.0f}+" if pd.notna(r.get("amount_low")) else "—")
+        ),
+        axis=1,
+    )
+    df["transaction_date"] = pd.to_datetime(df["transaction_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    df["disclosure_date"] = pd.to_datetime(df["disclosure_date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    df["days_lag"] = (
+        pd.to_datetime(df["disclosure_date"], errors="coerce")
+        - pd.to_datetime(df["transaction_date"], errors="coerce")
+    ).dt.days
+    df = df.rename(columns={"full_name": "member"})
+    cols = ["member", "party", "chamber", "ticker", "transaction_type",
+            "transaction_date", "disclosure_date", "amount_est", "days_lag"]
+    existing = [c for c in cols if c in df.columns]
+    return df[existing].sort_values("disclosure_date", ascending=False)
+
+
+@st.cache_data(ttl=3600)
+def load_committee_trades_table(
+    days_back: int = 90,
+    db_path: str = str(_DEFAULT_DB_PATH),
+) -> pd.DataFrame:
+    """Return trades for committee-watched members (is_watched=1), last days_back days.
+
+    Columns: member, party, chamber, ticker, transaction_type,
+             transaction_date, disclosure_date, amount_est, days_lag.
+    """
+    path = Path(db_path)
+    members_df = get_watched_members(path)
+    if members_df.empty:
+        return _format_congress_trades_df(pd.DataFrame(), days_back)
+    bioguide_ids = members_df["bioguide_id"].tolist()
+    trades_df = get_recent_trades_for_members(bioguide_ids, days_back, path)
+    return _format_congress_trades_df(trades_df, days_back)
+
+
+@st.cache_data(ttl=3600)
+def load_star_trader_trades_table(
+    days_back: int = 90,
+    db_path: str = str(_DEFAULT_DB_PATH),
+) -> pd.DataFrame:
+    """Return trades for star-flagged members (is_star=1), last days_back days.
+
+    Same columns as load_committee_trades_table.
+    """
+    path = Path(db_path)
+    members_df = get_star_members(path)
+    if members_df.empty:
+        return _format_congress_trades_df(pd.DataFrame(), days_back)
+    bioguide_ids = members_df["bioguide_id"].tolist()
+    trades_df = get_recent_trades_for_members(bioguide_ids, days_back, path)
+    return _format_congress_trades_df(trades_df, days_back)
+
+
+def get_last_congress_refresh_timestamp(db_path: str = str(_DEFAULT_DB_PATH)) -> str:
+    """Return the most recent fetched_at timestamp from congress_trades, or 'never'."""
+    path = Path(db_path)
+    try:
+        with sqlite3.connect(path) as conn:
+            row = conn.execute(
+                "SELECT MAX(fetched_at) FROM congress_trades"
+            ).fetchone()
+        if row and row[0]:
+            return str(row[0])[:19].replace("T", " ") + " UTC"
+    except Exception:
+        pass
+    return "never"
 
 
 @st.cache_data(ttl=300)
