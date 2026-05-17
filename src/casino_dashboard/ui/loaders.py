@@ -264,6 +264,7 @@ def load_committee_trades_table(
              transaction_date, disclosure_date, amount_est, days_lag.
     """
     path = Path(db_path)
+    init_db(path)
     members_df = get_watched_members(path)
     if members_df.empty:
         return _format_congress_trades_df(pd.DataFrame(), days_back)
@@ -282,6 +283,7 @@ def load_star_trader_trades_table(
     Same columns as load_committee_trades_table.
     """
     path = Path(db_path)
+    init_db(path)
     members_df = get_star_members(path)
     if members_df.empty:
         return _format_congress_trades_df(pd.DataFrame(), days_back)
@@ -293,6 +295,7 @@ def load_star_trader_trades_table(
 def get_last_congress_refresh_timestamp(db_path: str = str(_DEFAULT_DB_PATH)) -> str:
     """Return the most recent fetched_at timestamp from congress_trades, or 'never'."""
     path = Path(db_path)
+    init_db(path)
     try:
         with sqlite3.connect(path) as conn:
             row = conn.execute(
