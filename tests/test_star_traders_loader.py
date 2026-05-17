@@ -139,6 +139,35 @@ def test_load_star_traders_skips_missing_bioguide_id(tmp_path, caplog):
     assert result[0]["bioguide_id"] == "P000197"
 
 
+def test_load_star_traders_warns_and_skips_duplicate_bioguide_id(tmp_path, caplog):
+    """Duplicate bioguide_id: keep first, skip second, emit a warning."""
+    content = """
+    star_traders:
+      - bioguide_id: G000596
+        name: "Marjorie Taylor Greene"
+        note: "First entry"
+      - bioguide_id: P000197
+        name: "Nancy Pelosi"
+        note: "Should be kept"
+      - bioguide_id: G000596
+        name: "Mark Green"
+        note: "Duplicate — should be skipped"
+    """
+    p = _write_yaml(tmp_path, content)
+    import logging
+    with caplog.at_level(logging.WARNING):
+        result = load_star_traders(p)
+
+    # Only 2 of 3 entries should survive (first G000596 wins)
+    assert len(result) == 2
+    names = [r["name"] for r in result]
+    assert "Marjorie Taylor Greene" in names
+    assert "Nancy Pelosi" in names
+    assert "Mark Green" not in names
+    # Warning logged about the duplicate
+    assert any("duplicate" in msg.lower() and "G000596" in msg for msg in caplog.messages)
+
+
 # ---------------------------------------------------------------------------
 # Smoke test against real config
 # ---------------------------------------------------------------------------

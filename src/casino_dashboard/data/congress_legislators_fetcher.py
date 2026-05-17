@@ -60,18 +60,29 @@ _TMP_DIR = Path("/tmp/congress_legislators_cache")
 # ("armed services") so the matcher works regardless of how the YAML
 # formats the name.
 _WHITELISTED_COMMITTEES: list[tuple[str, list[str]]] = [
-    ("House Armed Services",       ["house armed services", "armed services committee"]),
-    ("Senate Armed Services",      ["senate armed services"]),
-    ("House Financial Services",   ["house financial services", "financial services committee"]),
-    ("Senate Banking",             ["senate banking"]),
+    # "armed services" matches both "House Committee on Armed Services" and
+    # "Senate Committee on Armed Services" — the YAML inserts "Committee on"
+    # between the chamber name and the committee name, so plain "house armed
+    # services" / "senate armed services" are NOT substrings of those strings.
+    ("House Armed Services",       ["house armed services", "armed services committee",
+                                    "committee on armed services", "armed services"]),
+    ("Senate Armed Services",      ["senate armed services", "committee on armed services",
+                                    "armed services"]),
+    ("House Financial Services",   ["house financial services", "financial services committee",
+                                    "committee on financial services", "financial services"]),
+    ("Senate Banking",             ["senate banking", "committee on banking",
+                                    "banking, housing"]),
     ("House Energy and Commerce",  ["house energy and commerce", "energy and commerce"]),
-    ("Senate Energy and Natural Resources", ["senate energy and natural resources"]),
+    ("Senate Energy and Natural Resources", ["senate energy and natural resources",
+                                             "energy and natural resources"]),
     ("House Intelligence",         ["house permanent select committee on intelligence",
                                     "permanent select committee on intelligence"]),
     ("Senate Intelligence",        ["senate select committee on intelligence",
                                     "select committee on intelligence"]),
-    ("House Foreign Affairs",      ["house foreign affairs", "foreign affairs committee"]),
-    ("Senate Foreign Relations",   ["senate foreign relations", "foreign relations committee"]),
+    ("House Foreign Affairs",      ["house foreign affairs", "foreign affairs committee",
+                                    "committee on foreign affairs", "foreign affairs"]),
+    ("Senate Foreign Relations",   ["senate foreign relations", "foreign relations committee",
+                                    "committee on foreign relations", "foreign relations"]),
     ("Senate Commerce",            ["senate commerce, science", "commerce, science, and transportation"]),
     ("House Science",              ["house science, space", "science, space, and technology"]),
 ]

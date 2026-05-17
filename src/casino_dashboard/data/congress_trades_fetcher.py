@@ -128,6 +128,13 @@ def _fmp_get(path: str, api_key: str) -> list[dict]:
                 "The endpoint is not available on your current FMP plan. "
                 "Upgrade your plan or contact FMP support."
             ) from exc
+        if exc.code == 403:
+            raise RuntimeError(
+                f"FMP endpoint {path} returned 403 Forbidden. "
+                "Your current FMP plan does not include congressional-trading data. "
+                "Upgrade to a plan that includes Senate/House disclosure endpoints "
+                "(e.g. FMP Professional or Enterprise) and retry."
+            ) from exc
         raise RuntimeError(
             f"FMP endpoint {path} returned HTTP {exc.code}: {exc.reason}"
         ) from exc

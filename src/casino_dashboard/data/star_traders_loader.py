@@ -46,6 +46,7 @@ def load_star_traders(
         raise ValueError("star_traders.yaml 'star_traders' must be a list")
 
     result = []
+    seen_ids: dict[str, str] = {}  # bioguide_id → name of first occurrence
     for entry in entries:
         if not isinstance(entry, dict):
             logger.warning("star_traders.yaml: non-dict entry %r — skipping", entry)
@@ -54,17 +55,29 @@ def load_star_traders(
         if not bioguide_id:
             logger.warning("star_traders.yaml: entry missing bioguide_id — skipping: %r", entry)
             continue
+        bioguide_id = str(bioguide_id)
+        name = str(entry.get("name", ""))
+        if bioguide_id in seen_ids:
+            logger.warning(
+                "star_traders.yaml: duplicate bioguide_id %r — already used by %r, "
+                "skipping second entry for %r. Fix the YAML to use the correct IDs.",
+                bioguide_id,
+                seen_ids[bioguide_id],
+                name,
+            )
+            continue
+        seen_ids[bioguide_id] = name
         if known_bioguides is not None and bioguide_id not in known_bioguides:
             logger.warning(
                 "star_traders.yaml: bioguide_id %r (%s) not found in current legislators — "
                 "keeping entry but verify the ID is correct",
                 bioguide_id,
-                entry.get("name", "unknown"),
+                name,
             )
         result.append(
             {
-                "bioguide_id": str(bioguide_id),
-                "name": str(entry.get("name", "")),
+                "bioguide_id": bioguide_id,
+                "name": name,
                 "note": str(entry.get("note", "")),
             }
         )

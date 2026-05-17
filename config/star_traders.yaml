@@ -17,9 +17,12 @@ star_traders:
   - bioguide_id: G000583
     name: "Josh Gottheimer"
     note: "Financial services, frequent trader"
-  - bioguide_id: G000596
-    name: "Mark Green"
-    note: "Healthcare and tech"
+  # NOTE: Mark Green (TN-7) has a different bioguide_id — G000596 belongs to
+  # Marjorie Taylor Greene. Look up Mark Green's correct ID at
+  # https://bioguide.congress.gov before re-adding this entry.
+  # - bioguide_id: GXXXXXX
+  #   name: "Mark Green"
+  #   note: "Healthcare and tech"
   - bioguide_id: M001157
     name: "Michael McCaul"
     note: "Foreign Affairs chair, defense plays"
