@@ -61,9 +61,30 @@ sectors:
     speculative: false
     tickers: [COIN, CRCL, BTBT]
 
-  ai_mining:
-    display_name: "AI Mining"
+  neocloud:
+    display_name: "NeoCloud"
     description: "Bitcoin miners pivoting to AI/HPC compute infrastructure"
     stage: "mid"
     speculative: false
-    tickers: [IREN, CIFR, BMNR]
+    tickers: [IREN, NBIS, CIFR, KEEL, WULF, HUT]
+
+  memory:
+    display_name: "Memory"
+    description: "DRAM, NAND flash, and storage"
+    stage: "mid"
+    speculative: false
+    tickers: [MU, SNDK, WDC, STX]
+
+  network:
+    display_name: "Network"
+    description: "Network infrastructure and connectivity"
+    stage: "mid"
+    speculative: false
+    tickers: [BB, NOK]
+
+  orchestration:
+    display_name: "Orchestration"
+    description: "AI workload orchestration and automation"
+    stage: "early-mid"
+    speculative: false
+    tickers: [PATH]

@@ -61,3 +61,23 @@ crypto_equities:
   - ticker: BLOK
     is_primary: false
     name: "Amplify Transformational Data Sharing ETF"
+
+neocloud:
+  - ticker: WGMI
+    is_primary: true
+    name: "Valkyrie Bitcoin Miners ETF"
+
+memory:
+  # No single clean ETF fit — SMH has broad semiconductor coverage.
+  - ticker: SMH
+    is_primary: true
+    name: "VanEck Semiconductor ETF"
+
+network:
+  # No dedicated network-pure ETF — IGN is closest available.
+  - ticker: IGN
+    is_primary: true
+    name: "iShares Expanded Tech-Software Sector ETF"
+
+orchestration:
+  # No dedicated orchestration ETF — handled as "n/a" in the UI.
