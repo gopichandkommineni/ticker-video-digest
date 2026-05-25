@@ -1,4 +1,4 @@
-"""Manage Universe — add tickers to the dashboard universe."""
+"""Add Stocks — add tickers to the dashboard universe."""
 import math
 import re
 import threading
@@ -22,8 +22,8 @@ from casino_dashboard.ui.loaders import load_universe_for_ui
 
 _DB_PATH = _DEFAULT_DB_PATH
 
-st.set_page_config(page_title="Manage Universe", layout="wide")
-st.title("Manage Universe")
+st.set_page_config(page_title="Add Stocks", layout="wide")
+st.title("Add Stocks")
 st.caption(
     "Add tickers to the dashboard universe. "
     "YAML-defined tickers are curated and cannot be removed here."
