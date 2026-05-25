@@ -17,14 +17,15 @@ from casino_dashboard.ui.loaders import load_signals_matrix, load_universe_for_u
 from casino_dashboard.ui.sector_card import sector_card  # noqa: E402
 
 st.title("Stock Momentum Dashboard")
-st.caption(
-    "Daily refreshed signals across 8 narrative themes. "
-    "Read STRATEGY.md for thesis. Not investment advice."
-)
 
 signals_df = load_signals_matrix()
 universe_data = load_universe_for_ui()
 sectors = universe_data["sectors"]
+
+st.caption(
+    f"Daily refreshed signals across {len(sectors)} narrative themes. "
+    "Read STRATEGY.md for thesis. Not investment advice."
+)
 
 sector_items = list(sectors.values())
 for row_start in range(0, len(sector_items), 4):
