@@ -10,14 +10,8 @@ _PLACEHOLDER_COLOR = "var(--tile-subline-color)"
 _TILE_CSS = """
 <style>
 :root {
-  --tile-label-color: #4b5563;
-  --tile-subline-color: #6b7280;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --tile-label-color: #c4c7cd;
-    --tile-subline-color: #a8acb3;
-  }
+  --tile-label-color: color-mix(in srgb, var(--text-color) 65%, transparent);
+  --tile-subline-color: color-mix(in srgb, var(--text-color) 50%, transparent);
 }
 </style>
 """
