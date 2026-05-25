@@ -55,8 +55,15 @@ sectors:
     tickers: [VRT, ETN, PWR, SMCI, ANET, DELL, NTAP, POWL]
 
   crypto_equities:
-    display_name: "Crypto Infrastructure"
+    display_name: "Crypto"
     description: "Public-equity exposure to crypto rails"
     stage: "mid"
     speculative: false
-    tickers: [COIN, CRCL, BMNR, BTBT, CIFR, IREN]
+    tickers: [COIN, CRCL, BTBT]
+
+  ai_mining:
+    display_name: "AI Mining"
+    description: "Bitcoin miners pivoting to AI/HPC compute infrastructure"
+    stage: "mid"
+    speculative: false
+    tickers: [IREN, CIFR, BMNR]
