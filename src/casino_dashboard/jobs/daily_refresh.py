@@ -1,5 +1,5 @@
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from ticker_digest.social_media.reddit.apewisdom_client import fetch_apewisdom_universe, filter_to_universe
@@ -13,21 +13,28 @@ from casino_dashboard.data.etf_flows_fetcher import (
 )
 from casino_dashboard.data.manual_notes_loader import load_manual_notes_from_yaml
 from casino_dashboard.data.star_traders_loader import load_star_traders
-from casino_dashboard.data.yfinance_client import fetch_universe_snapshot
-from casino_dashboard.data.yfinance_metadata import fetch_metadata_for_universe
+from casino_dashboard.data.yfinance_client import fetch_ticker_history, fetch_universe_snapshot
+from casino_dashboard.data.yfinance_metadata import fetch_ticker_metadata, fetch_metadata_for_universe
 from casino_dashboard.db.repository import (
     get_etf_flows,
+    get_user_added_tickers,
     save_deal_log_entries,
     save_etf_flow,
     save_manual_note,
     save_sector_etf_mapping,
+    save_signal,
     save_snapshot,
     save_social_mention,
     save_ticker_metadata,
+    set_user_ticker_status,
     upsert_congress_members,
     upsert_congress_trades,
 )
-from casino_dashboard.signals.orchestrator import compute_and_save_all_signals
+from casino_dashboard.signals.orchestrator import (
+    compute_and_save_all_signals,
+    compute_signals_for_ticker,
+    compute_social_signals_for_ticker,
+)
 from casino_dashboard.signals.sector_aggregator import compute_and_save_all_sector_heat
 from casino_dashboard.universe import load_universe
 
@@ -197,6 +204,63 @@ def main(db_path: Path = _DEFAULT_DB) -> None:
         _refresh_congress(db_path)
     except Exception as exc:
         logger.error("Congress refresh failed (continuing — data may be stale): %s", exc)
+
+    # Retry user-added tickers that are 'pending' or 'failed'.
+    # Safety net: Streamlit Cloud may restart mid-fetch leaving tickers stuck at
+    # 'pending'; 'failed' tickers are retried daily until they succeed or are removed.
+    try:
+        user_df = get_user_added_tickers(db_path)
+        if not user_df.empty:
+            retry_df = user_df[user_df["status"].isin(["pending", "failed"])]
+            if not retry_df.empty:
+                logger.info("Retrying %d user-added tickers (pending/failed) …", len(retry_df))
+                for _, row in retry_df.iterrows():
+                    success, error = refresh_single_ticker(row["ticker"], db_path)
+                    now_iso = datetime.now(tz=timezone.utc).isoformat()
+                    if success:
+                        set_user_ticker_status(row["ticker"], "complete", None, now_iso, db_path)
+                        logger.info("User ticker %s: complete", row["ticker"])
+                    else:
+                        set_user_ticker_status(row["ticker"], "failed", error, now_iso, db_path)
+                        logger.warning("User ticker %s: failed — %s", row["ticker"], error)
+    except Exception as exc:
+        logger.error("User-ticker retry failed (continuing): %s", exc)
+
+
+def refresh_single_ticker(ticker: str, db_path: Path) -> tuple[bool, str | None]:
+    """Fetch price history, metadata, and signals for a single ticker.
+
+    Reuses the same per-ticker functions the daily job calls for the full universe.
+    Returns (success, error_message). On success, error_message is None.
+    """
+    try:
+        snapshots = fetch_ticker_history(ticker)
+        if not snapshots:
+            return False, f"No price history returned for {ticker}"
+        for snap in snapshots:
+            save_snapshot(snap, db_path)
+        logger.info("refresh_single_ticker: saved %d snapshots for %s", len(snapshots), ticker)
+    except Exception as exc:
+        return False, f"Price history fetch failed: {exc}"
+
+    try:
+        meta = fetch_ticker_metadata(ticker)
+        save_ticker_metadata(meta, db_path)
+    except Exception as exc:
+        logger.warning("refresh_single_ticker: metadata fetch failed for %s: %s", ticker, exc)
+
+    try:
+        today = date.today()
+        signals = compute_signals_for_ticker(ticker, db_path)
+        social_signals = compute_social_signals_for_ticker(ticker, db_path)
+        signals.update(social_signals)
+        for signal_name, value in signals.items():
+            save_signal(ticker, today, signal_name, value, db_path)
+        logger.info("refresh_single_ticker: computed %d signals for %s", len(signals), ticker)
+    except Exception as exc:
+        logger.warning("refresh_single_ticker: signal compute failed for %s: %s", ticker, exc)
+
+    return True, None
 
 
 def _refresh_congress(db_path: Path) -> None:
