@@ -1,4 +1,5 @@
 """Manage Universe — add tickers to the dashboard universe."""
+import math
 import re
 import threading
 from datetime import datetime, timezone
@@ -30,6 +31,16 @@ st.caption(
 
 # Ensure the schema tables exist before any write.
 init_db(_DB_PATH)
+
+
+def _str(val: object, default: str = "—") -> str:
+    """Convert a pandas/SQLite cell value to str, treating None/NaN as default."""
+    if val is None:
+        return default
+    if isinstance(val, float) and math.isnan(val):
+        return default
+    s = str(val).strip()
+    return s if s else default
 
 
 def _slugify(text: str) -> str:
@@ -230,11 +241,11 @@ def _status_section() -> None:
         theme_id = row["theme_id"]
         theme_name = sectors[theme_id].display_name if theme_id in sectors else theme_id
         status_text = _render_status(row["status"], row.get("status_detail"))
-        added_info = (row.get("added_by") or "—") + "\n" + (row.get("added_at", "")[:10])
+        added_info = _str(row.get("added_by")) + "\n" + _str(row.get("added_at"), "")[:10]
 
         cols = st.columns([1, 2, 2, 2, 2, 1])
         cols[0].write(ticker)
-        cols[1].write(row.get("company_name") or "—")
+        cols[1].write(_str(row.get("company_name")))
         cols[2].write(theme_name)
         cols[3].write(status_text)
         cols[4].write(added_info)
