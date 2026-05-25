@@ -230,7 +230,7 @@ def _status_section() -> None:
         theme_id = row["theme_id"]
         theme_name = sectors[theme_id].display_name if theme_id in sectors else theme_id
         status_text = _render_status(row["status"], row.get("status_detail"))
-        added_info = (row.get("added_by") or "—") + "\n" + (row.get("added_at", "")[:10])
+        added_info = (row.get("added_by") or "—") + "\n" + str(row.get("added_at") or "")[:10]
 
         cols = st.columns([1, 2, 2, 2, 2, 1])
         cols[0].write(ticker)
