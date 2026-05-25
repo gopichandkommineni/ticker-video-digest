@@ -218,10 +218,10 @@ rev_growth_color = color_to_hex(color_for_revenue_growth(revenue_growth))
 margin_color = color_to_hex(color_for_profit_margin(profit_margin))
 
 fund_label_css = (
-    "font-size:0.68rem;text-transform:uppercase;letter-spacing:0.07em;"
-    "color:#9ca3af;font-weight:600;margin-bottom:4px;"
+    "font-size:0.68rem;text-transform:uppercase;letter-spacing:0.08em;"
+    "color:var(--tile-label-color);font-weight:600;margin-bottom:6px;"
 )
-fund_value_css = "font-size:1.05rem;font-weight:700;color:{color};"
+fund_value_css = "font-size:1.1rem;font-weight:700;color:{color};"
 
 fund_cells = [
     ("Market Cap", format_market_cap(market_cap), "var(--text-color)"),
