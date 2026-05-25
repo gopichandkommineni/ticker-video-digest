@@ -5,7 +5,8 @@
 #
 # Valid deal_type values: capex_announcement, contract_award, funding, m&a, deal
 # Valid sector keys: nuclear, photonics, quantum, drones_defense, space,
-#                    critical_minerals, ai_infrastructure, crypto_equities, ai_mining
+#                    critical_minerals, ai_infrastructure, crypto_equities,
+#                    neocloud, memory, network, orchestration
 
 - date: "2026-05-03"
   sector: ai_infrastructure
