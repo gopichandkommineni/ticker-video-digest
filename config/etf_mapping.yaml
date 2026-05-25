@@ -61,3 +61,8 @@ crypto_equities:
   - ticker: BLOK
     is_primary: false
     name: "Amplify Transformational Data Sharing ETF"
+
+ai_mining:
+  - ticker: WGMI
+    is_primary: true
+    name: "Valkyrie Bitcoin Miners ETF"
