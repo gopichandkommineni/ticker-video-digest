@@ -195,3 +195,28 @@ def init_db(db_path: Path = _DEFAULT_DB_PATH) -> None:
                 conn.execute(f"ALTER TABLE ticker_metadata ADD COLUMN {col}")
             except Exception:
                 pass  # column already exists
+
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS user_added_themes (
+                theme_id       TEXT PRIMARY KEY,
+                display_name   TEXT NOT NULL,
+                description    TEXT NOT NULL,
+                speculative    INTEGER NOT NULL DEFAULT 0,
+                created_by     TEXT,
+                created_at     TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS user_added_tickers (
+                ticker         TEXT PRIMARY KEY,
+                theme_id       TEXT NOT NULL,
+                company_name   TEXT,
+                status         TEXT NOT NULL DEFAULT 'pending',
+                status_detail  TEXT,
+                added_by       TEXT,
+                added_at       TEXT NOT NULL,
+                last_fetch_at  TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_user_tickers_status
+              ON user_added_tickers(status);
+        """)
