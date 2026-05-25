@@ -69,44 +69,44 @@ def _spawn_refresh(ticker: str, db_path: Path) -> None:
 
 st.subheader("Add a ticker")
 
-with st.form("add_ticker_form", clear_on_submit=True):
-    raw_ticker = st.text_input("Ticker symbol", placeholder="e.g. PLTR")
+# Use plain widgets (not st.form) so the theme selector triggers reruns and
+# the "Create new theme" fields appear dynamically without waiting for submit.
+universe_data = load_universe_for_ui()
+yaml_theme_ids: set[str] = set(universe_data["sectors"].keys())
 
-    universe_data = load_universe_for_ui()
-    yaml_theme_ids: set[str] = set(universe_data["sectors"].keys())
+user_themes_df = get_user_added_themes(_DB_PATH)
+user_theme_ids = set(user_themes_df["theme_id"].tolist()) if not user_themes_df.empty else set()
+all_theme_ids = sorted(yaml_theme_ids | user_theme_ids)
 
-    user_themes_df = get_user_added_themes(_DB_PATH)
-    user_theme_ids = set(user_themes_df["theme_id"].tolist()) if not user_themes_df.empty else set()
-    all_theme_ids = sorted(yaml_theme_ids | user_theme_ids)
+theme_display: dict[str, str] = {}
+for tid in all_theme_ids:
+    if tid in universe_data["sectors"]:
+        theme_display[tid] = universe_data["sectors"][tid].display_name
+    elif not user_themes_df.empty and tid in user_themes_df["theme_id"].values:
+        _trow = user_themes_df[user_themes_df["theme_id"] == tid].iloc[0]
+        theme_display[tid] = _trow["display_name"]
+    else:
+        theme_display[tid] = tid
 
-    theme_display: dict[str, str] = {}
-    for tid in all_theme_ids:
-        if tid in universe_data["sectors"]:
-            theme_display[tid] = universe_data["sectors"][tid].display_name
-        elif not user_themes_df.empty and tid in user_themes_df["theme_id"].values:
-            row = user_themes_df[user_themes_df["theme_id"] == tid].iloc[0]
-            theme_display[tid] = row["display_name"]
-        else:
-            theme_display[tid] = tid
+theme_options = all_theme_ids + ["+ Create new theme"]
+theme_labels = [theme_display.get(t, t) for t in all_theme_ids] + ["+ Create new theme"]
+label_to_id = dict(zip(theme_labels, theme_options))
 
-    theme_options = all_theme_ids + ["+ Create new theme"]
-    theme_labels = [theme_display.get(t, t) for t in all_theme_ids] + ["+ Create new theme"]
-    label_to_id = dict(zip(theme_labels, theme_options))
+raw_ticker = st.text_input("Ticker symbol", placeholder="e.g. PLTR", key="add_ticker_input")
+selected_label = st.selectbox("Theme", options=theme_labels, key="add_theme_select")
+selected_theme_option = label_to_id[selected_label]
 
-    selected_label = st.selectbox("Theme", options=theme_labels)
-    selected_theme_option = label_to_id[selected_label]
+new_theme_display_name = ""
+new_theme_description = ""
+new_theme_speculative = False
+if selected_theme_option == "+ Create new theme":
+    new_theme_display_name = st.text_input("New theme name (required)", key="new_theme_name")
+    new_theme_description = st.text_area("Theme description (required)", key="new_theme_desc")
+    new_theme_speculative = st.checkbox("Speculative theme", key="new_theme_spec")
 
-    new_theme_display_name = ""
-    new_theme_description = ""
-    new_theme_speculative = False
-    if selected_theme_option == "+ Create new theme":
-        new_theme_display_name = st.text_input("New theme name (required)")
-        new_theme_description = st.text_area("Theme description (required)")
-        new_theme_speculative = st.checkbox("Speculative theme")
+added_by = st.text_input("Added by (optional)", placeholder="your name", key="add_added_by")
 
-    added_by = st.text_input("Added by (optional)", placeholder="your name")
-
-    submitted = st.form_submit_button("Add ticker")
+submitted = st.button("Add ticker", type="primary")
 
 if submitted:
     ticker = raw_ticker.strip().upper()
@@ -188,6 +188,11 @@ if submitted:
 
     # Clear cached universe so other pages see the new ticker immediately.
     load_universe_for_ui.clear()
+
+    # Reset input fields by clearing their session_state keys.
+    for _k in ("add_ticker_input", "add_theme_select", "new_theme_name",
+                "new_theme_desc", "new_theme_spec", "add_added_by"):
+        st.session_state.pop(_k, None)
 
     st.success(f"Added **{ticker}** ({company_name}) — fetching data now… (status: ⏳ Fetching)")
     st.rerun()
