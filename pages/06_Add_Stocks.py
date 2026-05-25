@@ -262,12 +262,26 @@ _status_section()
 # Section C — Core universe (read-only, curated)
 # ---------------------------------------------------------------------------
 
-with st.expander("Core universe (curated YAML — read-only)"):
+with st.expander("Full universe"):
     universe_data = load_universe_for_ui()
     user_df = get_user_added_tickers(_DB_PATH)
-    user_tickers = set(user_df["ticker"].tolist()) if not user_df.empty else set()
+    user_complete = (
+        set(user_df.loc[user_df["status"] == "complete", "ticker"].tolist())
+        if not user_df.empty else set()
+    )
+    user_pending = (
+        set(user_df.loc[user_df["status"] == "pending", "ticker"].tolist())
+        if not user_df.empty else set()
+    )
 
     for sector_id, sector in universe_data["sectors"].items():
-        yaml_tickers = [t for t in sector.tickers if t not in user_tickers]
-        if yaml_tickers:
-            st.markdown(f"**{sector.display_name}**: {', '.join(yaml_tickers)}")
+        parts = []
+        for t in sector.tickers:
+            if t in user_complete:
+                parts.append(f"{t} ✓")
+            elif t in user_pending:
+                parts.append(f"{t} ⏳")
+            else:
+                parts.append(t)
+        if parts:
+            st.markdown(f"**{sector.display_name}**: {', '.join(parts)}")
