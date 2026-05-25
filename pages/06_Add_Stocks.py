@@ -101,7 +101,7 @@ new_theme_description = ""
 new_theme_speculative = False
 if selected_theme_option == "+ Create new theme":
     new_theme_display_name = st.text_input("New theme name (required)", key="new_theme_name")
-    new_theme_description = st.text_area("Theme description (required)", key="new_theme_desc")
+    new_theme_description = st.text_area("Theme description (optional)", key="new_theme_desc")
     new_theme_speculative = st.checkbox("Speculative theme", key="new_theme_spec")
 
 added_by = st.text_input("Added by (optional)", placeholder="your name", key="add_added_by")
@@ -141,9 +141,6 @@ if submitted:
     if selected_theme_option == "+ Create new theme":
         if not new_theme_display_name.strip():
             st.error("Please enter a theme name.")
-            st.stop()
-        if not new_theme_description.strip():
-            st.error("Please enter a theme description.")
             st.stop()
         theme_id_to_use = _slugify(new_theme_display_name)
         if not theme_id_to_use:
