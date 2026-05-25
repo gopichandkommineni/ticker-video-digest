@@ -52,7 +52,7 @@ def load_signals_matrix(db_path: str = str(_DEFAULT_DB_PATH)) -> pd.DataFrame:
     return get_latest_signals_all_tickers(Path(db_path))
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=300)
 def load_universe_for_ui() -> dict:
     """Return dict with 'sectors' (id→Sector) and 'ticker_to_sectors' (ticker→[id,...])."""
     universe = load_universe()
