@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS handles (
     total_tweets            INTEGER DEFAULT 0,
     last_fetch_at           TEXT,
     last_fetch_status       TEXT,
+    status_since            TEXT,
     user_info_last_fetched  TEXT,
     added_at                TEXT
 );
@@ -67,8 +68,20 @@ def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
 
 
 def init_db(db_path: Path | str | None = None) -> None:
-    """Create tables and indexes if they don't exist."""
+    """Create tables, indexes, and apply additive migrations."""
     conn = get_connection(db_path)
     with conn:
         conn.executescript(_SCHEMA_SQL)
+    migrate_db(conn)
     conn.close()
+
+
+def migrate_db(conn: sqlite3.Connection) -> None:
+    """Apply additive column migrations to an existing schema (idempotent)."""
+    cols = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(handles)").fetchall()
+    }
+    if "status_since" not in cols:
+        with conn:
+            conn.execute("ALTER TABLE handles ADD COLUMN status_since TEXT")

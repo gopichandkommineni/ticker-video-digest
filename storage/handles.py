@@ -21,7 +21,7 @@ def upsert_handle(
     Use this for identity info and status updates.
     """
     allowed = {
-        "display_name", "user_id", "status",
+        "display_name", "user_id", "status", "status_since",
         "last_fetch_at", "last_fetch_status",
         "user_info_last_fetched", "added_at",
     }
@@ -97,3 +97,5 @@ def list_handles(
         return [dict(r) for r in rows]
     finally:
         conn.close()
+
+
