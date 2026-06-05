@@ -66,6 +66,16 @@ def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
     return conn
 
 
+def close_connection(conn: sqlite3.Connection) -> None:
+    """Checkpoint the WAL into the main DB file then close.
+
+    Ensures a copied or committed .db file is self-contained and not
+    dependent on a leftover -wal sidecar.
+    """
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    conn.close()
+
+
 def init_db(db_path: Path | str | None = None) -> None:
     """Create tables and indexes if they don't exist."""
     conn = get_connection(db_path)

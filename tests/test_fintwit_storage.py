@@ -160,3 +160,50 @@ class TestReadFunctions:
         db = _db(tmp_path)
         assert count_tweets(HANDLE, db_path=db) == 0
         assert get_tweets_by_handle(HANDLE, db_path=db) == []
+
+
+class TestThreeSpecificChecks:
+    """Targeted checks requested post-merge."""
+
+    def test_out_of_order_insert_watermark_is_true_max(self, tmp_path):
+        """Insert newest tweet first, then older ones — watermark must be data max."""
+        db = _db(tmp_path)
+        # Insert in reverse chronological order (newest first)
+        upsert_tweets(list(reversed(TWEETS)), db_path=db)
+        row = get_handle(HANDLE, db_path=db)
+        # True max regardless of insertion order
+        assert row["tweets_watermark_utc"] == "2026-06-03T08:00:00Z"
+        assert row["latest_tweet_utc"] == "2026-06-03T08:00:00Z"
+        assert row["total_tweets"] == 3
+
+    def test_wal_checkpoint_no_sidecar(self, tmp_path):
+        """After close_connection, no -wal file should remain alongside the db."""
+        import os
+        from storage.db import close_connection
+        db = _db(tmp_path)
+        upsert_tweets(TWEETS, db_path=db)
+        # Manually open + checkpoint to verify the API works
+        from storage.db import get_connection
+        conn = get_connection(db)
+        conn.execute("SELECT 1")  # ensure WAL has been written to
+        close_connection(conn)
+        wal_path = str(db) + "-wal"
+        # After TRUNCATE checkpoint the -wal file should be absent or empty
+        assert not os.path.exists(wal_path) or os.path.getsize(wal_path) == 0
+
+    def test_sparse_tweet_missing_optional_fields(self, tmp_path):
+        """Tweet with only required fields (null bookmark_count, no quoted_tweet_id) inserts without error."""
+        db = _db(tmp_path)
+        sparse = {
+            "tweet_id": "sparse1",
+            "account_handle": "sparse_handle",
+            "created_at_utc": "2026-06-04T00:00:00Z",
+            # All optional fields deliberately absent
+        }
+        result = upsert_tweets([sparse], db_path=db)
+        assert result.inserted == 1
+        rows = get_tweets_by_handle("sparse_handle", db_path=db)
+        assert len(rows) == 1
+        assert rows[0]["bookmark_count"] is None
+        assert rows[0]["quoted_tweet_id"] is None
+        assert rows[0]["text"] is None

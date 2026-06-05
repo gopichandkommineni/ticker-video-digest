@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .db import get_connection
+from .db import get_connection, close_connection
 
 
 def upsert_handle(
@@ -44,7 +44,7 @@ def upsert_handle(
                 {"handle": handle, **clean},
             )
     finally:
-        conn.close()
+        close_connection(conn)
 
 
 def update_handle_status(
@@ -75,7 +75,7 @@ def get_handle(
         ).fetchone()
         return dict(row) if row else None
     finally:
-        conn.close()
+        close_connection(conn)
 
 
 def list_handles(
@@ -96,4 +96,4 @@ def list_handles(
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
-        conn.close()
+        close_connection(conn)

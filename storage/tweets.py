@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .db import get_connection
+from .db import get_connection, close_connection
 
 
 @dataclass
@@ -78,7 +78,7 @@ def upsert_tweets(
 
         return UpsertResult(inserted=inserted, ignored=ignored)
     finally:
-        conn.close()
+        close_connection(conn)
 
 
 def _update_handle_aggregates(conn: sqlite3.Connection, handle: str) -> None:
