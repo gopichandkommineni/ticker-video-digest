@@ -8,7 +8,7 @@ import urllib.parse
 from typing import Any
 
 from .base import TweetSource, Tweet, FetchResult, UserInfo, snowflake_to_utc, compute_type
-from ._http import get_json, extract_media_urls, RateLimitExhausted
+from ._http import get_json, extract_media_urls, RateLimitExhausted, NetworkErrorExhausted
 
 logger = logging.getLogger(__name__)
 
@@ -89,11 +89,11 @@ class GetXApiSource(TweetSource):
             logger.info("getxapi request %d: %s", pages + 1, url)
             try:
                 data = get_json(url, self._headers, retry_budget=retry_budget)
-            except RateLimitExhausted as exc:
+            except (RateLimitExhausted, NetworkErrorExhausted) as exc:
                 logger.error(
-                    "getxapi: rate-limit retries exhausted on page %d for %s — aborting fetch"
+                    "getxapi: %s on page %d for %s — aborting fetch"
                     " (reached_floor=False, partial tweets kept)",
-                    pages + 1, handle,
+                    type(exc).__name__, pages + 1, handle,
                 )
                 # reached_floor stays False — this was NOT a clean stop
                 break

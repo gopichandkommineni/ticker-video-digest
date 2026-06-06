@@ -1,5 +1,5 @@
 """
-Tests for HTTP 429 retry logic and its interaction with adapter pagination.
+Tests for HTTP 429 + network-error retry logic and adapter pagination interaction.
 
 H1. TRANSIENT 429: 429 on first attempt, 200 on second — get_json returns data,
     sleep called once with the right delay, no exception raised.
@@ -13,12 +13,23 @@ H5. ADAPTER RECOVERY (integration): adapter gets 429 on page 2 then 200 — run
 H6. ADAPTER ABORT (integration): adapter gets persistent 429 on page 3 (retries
     exhausted mid-pagination) — reached_floor=False, status=incomplete (NOT ready),
     partial tweets from pages 1-2 are persisted.
+H7. TRANSIENT TIMEOUT: socket read-timeout on first attempt, 200 on second —
+    get_json retries and returns data; sleep called once.
+H8. EXHAUSTED TIMEOUT RETRIES: persistent TimeoutError — NetworkErrorExhausted
+    raised after len(retry_delays) retries.
+H9. URLERROR WITH SOCKET REASON: URLError wrapping socket.timeout is treated as
+    transient and retried, not propagated as-is.
+H10. ADAPTER RECOVERY ON TIMEOUT (integration): page 2 gets a transient timeout,
+     recovers, run completes with reached_floor=True.
+H11. ADAPTER ABORT ON TIMEOUT (integration): persistent timeout on page 3 exhausts
+     retries — reached_floor=False, status NOT ready, partial tweets persisted.
 """
 
 from __future__ import annotations
 
 import datetime
 import json
+import socket
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -26,7 +37,7 @@ from unittest.mock import patch, MagicMock, call
 
 import pytest
 
-from tweet_sources._http import get_json, RateLimitExhausted
+from tweet_sources._http import get_json, RateLimitExhausted, NetworkErrorExhausted
 from tweet_sources.base import Tweet, FetchResult
 
 UTC = datetime.timezone.utc
@@ -332,3 +343,216 @@ def test_h6_adapter_abort_on_exhausted_429():
         )
         # Partial tweets stored — available for retry
         assert ir.inserted == 4, f"4 partial tweets should be stored, got {ir.inserted}"
+
+
+# ---------------------------------------------------------------------------
+# H7 — transient socket read-timeout, recovers on second attempt
+# ---------------------------------------------------------------------------
+
+def test_h7_transient_timeout_recovers():
+    slept: list[float] = []
+    call_count = 0
+
+    def fake_urlopen(req, timeout):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise TimeoutError("timed out")
+        return _make_200_response({"ok": True})
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        result = get_json(
+            "https://example.com/test",
+            headers={},
+            retry_delays=(5, 30, 120),
+            _sleep_fn=slept.append,
+        )
+
+    assert result == {"ok": True}
+    assert slept == [5], f"expected one 5s sleep, got {slept}"
+    assert call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# H8 — persistent TimeoutError exhausts retries → NetworkErrorExhausted
+# ---------------------------------------------------------------------------
+
+def test_h8_exhausted_timeout_raises():
+    slept: list[float] = []
+
+    with patch("urllib.request.urlopen", side_effect=TimeoutError("timed out")):
+        with pytest.raises(NetworkErrorExhausted):
+            get_json(
+                "https://example.com/test",
+                headers={},
+                retry_delays=(5, 30, 120),
+                _sleep_fn=slept.append,
+            )
+
+    assert slept == [5, 30, 120], f"expected sleeps [5,30,120], got {slept}"
+
+
+# ---------------------------------------------------------------------------
+# H9 — URLError wrapping socket.timeout is treated as transient, retried
+# ---------------------------------------------------------------------------
+
+def test_h9_urlerror_socket_timeout_retried():
+    slept: list[float] = []
+    call_count = 0
+
+    def fake_urlopen(req, timeout):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise urllib.error.URLError(reason=socket.timeout("timed out"))
+        return _make_200_response({"data": 42})
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        result = get_json(
+            "https://example.com/test",
+            headers={},
+            retry_delays=(5, 30, 120),
+            _sleep_fn=slept.append,
+        )
+
+    assert result == {"data": 42}
+    assert slept == [5]
+    assert call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# H10 — adapter recovery on transient timeout (integration)
+# ---------------------------------------------------------------------------
+
+def test_h10_adapter_recovery_on_timeout():
+    """Page 2 gets a transient timeout, recovers on retry, run completes normally."""
+    from tweet_sources.getxapi import GetXApiSource
+
+    year = datetime.datetime.now(UTC).year
+    page1_tweets = [_tweet_raw("301"), _tweet_raw("302")]
+    page2_tweets = [_tweet_raw("303"), _tweet_raw("304")]
+
+    page_responses = [
+        {"tweets": page1_tweets, "next_cursor": "cur1"},
+        {"tweets": page2_tweets, "next_cursor": "cur2"},
+        {"tweets": []},
+    ]
+    page_idx = 0
+    page2_attempted = 0
+    slept: list[float] = []
+
+    def fake_urlopen(req, timeout):
+        nonlocal page_idx, page2_attempted
+        if page_idx == 1 and page2_attempted == 0:
+            page2_attempted += 1
+            raise TimeoutError("read timed out")
+        resp = _make_200_response(page_responses[page_idx])
+        page_idx += 1
+        return resp
+
+    def fake_normalize(raw):
+        from tweet_sources.base import Tweet
+        return Tweet(
+            id=raw["id"], created_at_utc=f"{year}-03-01T10:00:00Z",
+            text=raw.get("text"), type="original", is_reply=False, is_quote=False,
+            in_reply_to_id=None, quoted_tweet_id=None, quoted_author_id=None,
+            conversation_id=None, like_count=None, retweet_count=None, reply_count=None,
+            quote_count=None, view_count=None, bookmark_count=None,
+            has_media=False, media_urls=[], url=None,
+        )
+
+    src = GetXApiSource(api_key="test-key")
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+         patch("tweet_sources.getxapi._normalize", side_effect=fake_normalize), \
+         patch("tweet_sources._http.time.sleep", side_effect=slept.append):
+        result = src.fetch_tweets(
+            "testuser",
+            datetime.date(year, 1, 1),
+            datetime.date(year, 6, 1),
+        )
+
+    print(f"\nH10: tweets={len(result.tweets)} reached_floor={result.reached_floor} slept={slept}")
+    assert result.reached_floor is True, "transient timeout must not abort — run should complete"
+    assert len(result.tweets) == 4
+    assert slept == [5]
+
+
+# ---------------------------------------------------------------------------
+# H11 — adapter abort on persistent timeout (integration)
+# ---------------------------------------------------------------------------
+
+def test_h11_adapter_abort_on_persistent_timeout():
+    """Persistent timeout on page 3 exhausts retries → reached_floor=False, status≠ready."""
+    from tweet_sources.getxapi import GetXApiSource
+    from storage import init_db, get_handle
+    import tempfile
+
+    year = datetime.datetime.now(UTC).year
+    page1_tweets = [_tweet_raw("401"), _tweet_raw("402")]
+    page2_tweets = [_tweet_raw("403"), _tweet_raw("404")]
+
+    page_responses = [
+        {"tweets": page1_tweets, "next_cursor": "cur1"},
+        {"tweets": page2_tweets, "next_cursor": "cur2"},
+    ]
+    page_idx = 0
+    slept: list[float] = []
+
+    def fake_urlopen(req, timeout):
+        nonlocal page_idx
+        if page_idx >= len(page_responses):
+            raise TimeoutError("read timed out")
+        resp = _make_200_response(page_responses[page_idx])
+        page_idx += 1
+        return resp
+
+    def fake_normalize(raw):
+        from tweet_sources.base import Tweet
+        return Tweet(
+            id=raw["id"], created_at_utc=f"{year}-03-15T10:00:00Z",
+            text=raw.get("text"), type="original", is_reply=False, is_quote=False,
+            in_reply_to_id=None, quoted_tweet_id=None, quoted_author_id=None,
+            conversation_id=None, like_count=None, retweet_count=None, reply_count=None,
+            quote_count=None, view_count=None, bookmark_count=None,
+            has_media=False, media_urls=[], url=None,
+        )
+
+    # Adapter-level check first
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+         patch("tweet_sources.getxapi._normalize", side_effect=fake_normalize), \
+         patch("tweet_sources._http.time.sleep", side_effect=slept.append):
+        result = GetXApiSource(api_key="test-key").fetch_tweets(
+            "timeout_user",
+            datetime.date(year, 1, 1),
+            datetime.date(year, 6, 1),
+        )
+
+    print(f"\nH11 adapter: tweets={len(result.tweets)} reached_floor={result.reached_floor} slept={slept}")
+    assert result.reached_floor is False
+    assert len(result.tweets) == 4
+    assert slept == [5, 30, 120]
+
+    # Orchestrator check
+    with tempfile.TemporaryDirectory() as tmp:
+        db = Path(tmp) / "test.db"
+        init_db(db)
+        page_idx = 0
+        slept.clear()
+
+        from orchestration.runner import ingest_handle
+
+        def fake_get_source(_provider):
+            return GetXApiSource(api_key="test-key")
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+             patch("tweet_sources.getxapi._normalize", side_effect=fake_normalize), \
+             patch("tweet_sources._http.time.sleep", side_effect=slept.append), \
+             patch("orchestration.runner.get_source", side_effect=fake_get_source):
+            ir = ingest_handle("timeout_user", provider="fake", db_path=db)
+
+        row = get_handle("timeout_user", db_path=db)
+        print(f"H11 ingest: outcome={ir.outcome}, status={row['status']}, inserted={ir.inserted}")
+
+        assert row["status"] != "ready", f"timeout-aborted run must not be ready, got {row['status']!r}"
+        assert ir.outcome != "ok", f"outcome must not be ok, got {ir.outcome!r}"
+        assert ir.inserted == 4
