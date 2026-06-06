@@ -206,36 +206,66 @@ def test_t4_write_failure_watermark_unchanged(tmp_db: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# T5 — keyed off status_since
+# T5 — stale handle is actually retried, not skipped
 # ---------------------------------------------------------------------------
 
-def test_t5_stale_detection(tmp_db: Path) -> None:
+def test_t5_stale_handle_is_retried(tmp_db: Path) -> None:
+    """
+    A handle stuck in backfilling with status_since > STALE_THRESHOLD_MINUTES:
+      (a) is_stale() returns True
+      (b) ingest_handle RE-RUNS it (outcome != skipped, adapter is called)
+      (c) status transitions out of backfilling (to ready or failed)
+
+    A handle freshly in backfilling (status_since = now):
+      (d) is_stale() returns False
+      (e) ingest_handle SKIPS it (outcome == skipped, adapter not called)
+    """
     from orchestration.runner import is_stale, ingest_handle
     from orchestration import config as cfg
 
     now = datetime.datetime.now(UTC)
-    old_ts  = _iso(now - datetime.timedelta(minutes=cfg.STALE_THRESHOLD_MINUTES + 10))
-    fresh_ts = _iso(now - datetime.timedelta(minutes=cfg.STALE_THRESHOLD_MINUTES - 10))
+    old_ts   = _iso(now - datetime.timedelta(minutes=cfg.STALE_THRESHOLD_MINUTES + 10))
+    fresh_ts = _iso(now - datetime.timedelta(seconds=30))
 
-    assert is_stale({"status": "backfilling", "status_since": old_ts})   is True
-    assert is_stale({"status": "backfilling", "status_since": fresh_ts}) is False
-    assert is_stale({"status": "fetching",    "status_since": old_ts})   is True
-    assert is_stale({"status": "ready",       "status_since": old_ts})   is False
+    # (a) is_stale() correctness
+    assert is_stale({"status": "backfilling", "status_since": old_ts})   is True,  "old handle should be stale"
+    assert is_stale({"status": "backfilling", "status_since": fresh_ts}) is False, "fresh handle should not be stale"
+    assert is_stale({"status": "fetching",    "status_since": old_ts})   is True,  "fetching also stale when old"
+    assert is_stale({"status": "ready",       "status_since": old_ts})   is False, "ready is never stale"
 
-    # Runner must write status_since on every in-progress transition.
-    with _patch(FakeSource(fail_on_call=0)):
-        ingest_handle("testuser", provider="fake", db_path=tmp_db)
+    # (b/c) Stale handle → ingest_handle re-runs it.
+    # Set up handle stuck in backfilling with an old status_since.
+    upsert_handle("stuck", {"status": "backfilling", "status_since": old_ts}, db_path=tmp_db)
+    tweets = [_tweet("x1", "2026-05-01T10:00:00Z")]
+    fake_stale = FakeSource(pages=[tweets])
+    with _patch(fake_stale):
+        r_stale = ingest_handle("stuck", provider="fake", db_path=tmp_db)
 
-    row = get_handle("testuser", db_path=tmp_db)
-    assert row["status_since"] is not None, "runner must write status_since"
-    since = datetime.datetime.fromisoformat(row["status_since"].replace("Z", "+00:00"))
-    age_sec = abs((now - since).total_seconds())
-    assert age_sec < 5, f"status_since too stale: {row['status_since']}"
-    print(f"\nT5: old stale=True, fresh stale=False; runner wrote status_since={row['status_since']}")
+    row_stale = get_handle("stuck", db_path=tmp_db)
+    print(f"\nT5(stale): outcome={r_stale.outcome}, adapter_calls={fake_stale._call_count}, status={row_stale['status']}")
+    assert r_stale.outcome != "skipped",      "stale handle must be re-run, not skipped"
+    assert fake_stale._call_count == 1,       "adapter must be called for stale handle"
+    assert row_stale["status"] != "backfilling", "status must have advanced out of backfilling"
+
+    # (d/e) Fresh handle → ingest_handle skips it.
+    upsert_handle("fresh", {"status": "backfilling", "status_since": fresh_ts}, db_path=tmp_db)
+    fake_fresh = FakeSource(pages=[[]])
+    with _patch(fake_fresh):
+        r_fresh = ingest_handle("fresh", provider="fake", db_path=tmp_db)
+
+    print(f"T5(fresh): outcome={r_fresh.outcome}, adapter_calls={fake_fresh._call_count}")
+    assert r_fresh.outcome == "skipped", "fresh in-progress handle must be skipped"
+    assert fake_fresh._call_count == 0,  "adapter must NOT be called for fresh handle"
+
+    # Runner writes status_since on every in-progress transition.
+    row_stuck_after = get_handle("stuck", db_path=tmp_db)
+    assert row_stuck_after["status_since"] is not None
+    since = datetime.datetime.fromisoformat(row_stuck_after["status_since"].replace("Z", "+00:00"))
+    assert abs((now - since).total_seconds()) < 5, "status_since must be updated on re-run"
 
 
 # ---------------------------------------------------------------------------
-# T6
+# T6 — double-run guard (fresh status_since → skip, confirming T5(d/e) in isolation)
 # ---------------------------------------------------------------------------
 
 def test_t6_double_run_skipped(tmp_db: Path) -> None:
