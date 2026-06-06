@@ -334,24 +334,36 @@ def test_t8_backfill_cap_before_floor_is_incomplete(tmp_db: Path) -> None:
     The orchestrator must:
       (a) outcome == "incomplete" (not "ok")
       (b) status == "incomplete" (handle is retryable)
-      (c) watermark is NOT advanced to now (stays None — backfill never completed)
-      (d) inserted tweets ARE written (partial progress persists, self-healing)
+      (c) watermark NOT advanced to now — two separate sub-guarantees:
+          c1. RunResult.watermark == prior value (None for first backfill)
+          c2. DB tweets_watermark_utc is NOT the current time (not treated as complete)
+      (d) re-run starts from Jan-1 floor (not delta from partial watermark)
+      (e) inserted tweets ARE written (partial progress persists, self-healing)
     """
     from orchestration.runner import ingest_handle
+
+    # Capture watermark BEFORE the run — for a new handle it is None.
+    row_before = get_handle("testuser", db_path=tmp_db)
+    wm_before = (row_before or {}).get("tweets_watermark_utc")
+    print(f"\nT8: watermark BEFORE incomplete backfill: {wm_before!r}")
 
     partial_tweets = [
         _tweet("1", "2026-04-01T10:00:00Z"),
         _tweet("2", "2026-05-01T12:00:00Z"),
     ]
+    run_time = datetime.datetime.now(UTC)
     # reached_floor=False simulates hitting _MAX_PAGES before the Jan-1 floor.
     fake = FakeSource(pages=[partial_tweets], reached_floor=False)
     with _patch(fake):
         result = ingest_handle("testuser", provider="fake", db_path=tmp_db)
 
     row = get_handle("testuser", db_path=tmp_db)
+    wm_after_db  = row["tweets_watermark_utc"]   # what storage trigger recorded
+    wm_after_run = result.watermark               # what RunResult reports as "last good"
 
-    print(f"\nT8: outcome={result.outcome}, status={row['status']}, "
-          f"watermark={row['tweets_watermark_utc']}, inserted={result.inserted}")
+    print(f"T8: watermark AFTER  incomplete backfill (DB):     {wm_after_db!r}")
+    print(f"T8: watermark AFTER  incomplete backfill (RunResult): {wm_after_run!r}")
+    print(f"T8: status={row['status']}, outcome={result.outcome}, inserted={result.inserted}")
 
     # (a) outcome signals incomplete — not silently ok
     assert result.outcome == "incomplete", f"expected incomplete, got {result.outcome}"
@@ -359,25 +371,35 @@ def test_t8_backfill_cap_before_floor_is_incomplete(tmp_db: Path) -> None:
     # (b) status is retryable incomplete, not silently ready
     assert row["status"] == "incomplete", f"expected incomplete status, got {row['status']}"
 
-    # (c) The RunResult watermark is unchanged (None = no prior good watermark).
-    # Storage sets tweets_watermark_utc to the max of partial tweets (correct —
-    # it reflects what IS in the DB), but the orchestrator ignores it on re-run
-    # because status=incomplete forces a fresh backfill from Jan 1.
-    assert result.watermark is None, (
-        f"RunResult.watermark must reflect no prior good watermark, got {result.watermark}"
+    # (c1) RunResult.watermark == prior value. For a first backfill the prior value is
+    # None — the orchestrator must not report a good watermark it never earned.
+    assert wm_after_run == wm_before, (
+        f"RunResult.watermark must equal prior value: before={wm_before!r} after={wm_after_run!r}"
     )
 
-    # Verify the re-run would backfill from the floor, not from the partial watermark.
-    # We do this by checking that a second ingest_handle call enters "backfilling" mode.
-    fake2 = FakeSource(pages=[[]], reached_floor=True)  # empty = nothing new, floor reached
+    # (c2) DB watermark was NOT advanced to "now". The storage trigger may set it to
+    # the max partial tweet date (that's correct — it reflects what IS in the DB), but
+    # it must NEVER be the current wallclock time, which would falsely mark the run
+    # as complete and cause the next run to skip Jan–Apr as a delta.
+    if wm_after_db is not None:
+        wm_dt = datetime.datetime.fromisoformat(wm_after_db.replace("Z", "+00:00"))
+        seconds_from_now = abs((run_time - wm_dt).total_seconds())
+        assert seconds_from_now > 60, (
+            f"DB watermark must not be 'now' — was advanced to {wm_after_db!r} "
+            f"which is only {seconds_from_now:.1f}s from run time"
+        )
+
+    # (d) re-run must start from Jan-1 floor, not delta from the partial DB watermark.
+    fake2 = FakeSource(pages=[[]], reached_floor=True)
     with _patch(fake2):
-        from orchestration.runner import ingest_handle as _ih
-        r2 = _ih("testuser", provider="fake", db_path=tmp_db)
-    import datetime as _dt
-    assert fake2.last_start == _dt.date(_dt.datetime.now().year, 1, 1), (
-        f"re-run of incomplete handle must start from Jan 1 floor, got {fake2.last_start}"
+        _ih = ingest_handle  # same import, avoid shadowing
+        _ih("testuser", provider="fake", db_path=tmp_db)
+    jan1 = datetime.date(datetime.datetime.now(UTC).year, 1, 1)
+    print(f"T8: re-run computed start={fake2.last_start!r}  (expected Jan-1={jan1!r})")
+    assert fake2.last_start == jan1, (
+        f"re-run of incomplete handle must backfill from Jan 1, got {fake2.last_start!r}"
     )
 
-    # (d) partial tweets were written — progress persists for next run
+    # (e) partial tweets were written — progress persists for next run
     assert result.inserted == 2
     assert row["total_tweets"] == 2
