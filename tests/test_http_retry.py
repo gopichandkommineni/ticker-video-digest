@@ -1,5 +1,6 @@
 """
-Tests for HTTP 429 + network-error retry logic and adapter pagination interaction.
+Tests for HTTP 429 + network-error retry logic, adapter pagination interaction,
+and _normalize resilience.
 
 H1. TRANSIENT 429: 429 on first attempt, 200 on second — get_json returns data,
     sleep called once with the right delay, no exception raised.
@@ -556,3 +557,122 @@ def test_h11_adapter_abort_on_persistent_timeout():
         assert row["status"] != "ready", f"timeout-aborted run must not be ready, got {row['status']!r}"
         assert ir.outcome != "ok", f"outcome must not be ok, got {ir.outcome!r}"
         assert ir.inserted == 4
+
+
+# ---------------------------------------------------------------------------
+# N1 — _normalize: stub quoted tweet missing "id" → quoted_tweet_id=None, no crash
+# ---------------------------------------------------------------------------
+
+def test_n1_normalize_stub_quoted_tweet_no_id():
+    """A quoted_tweet object present but missing 'id' must not crash _normalize."""
+    from tweet_sources.getxapi import _normalize as gx_normalize
+    from tweet_sources.twitterapi import _normalize as tw_normalize
+
+    raw = {
+        "id": "1234567890000000000",
+        "text": "quoting a deleted tweet",
+        "isReply": False,
+        "quoted_tweet": {},                    # stub: no 'id', no 'author'
+    }
+
+    for normalize in (gx_normalize, tw_normalize):
+        tweet = normalize(raw)
+        assert tweet.quoted_tweet_id is None, "stub quote with no id must yield quoted_tweet_id=None"
+        assert tweet.quoted_author_id is None
+
+
+def test_n1b_normalize_stub_quoted_tweet_has_id_no_author():
+    """A quoted_tweet with 'id' but no 'author' must not crash and must surface the id."""
+    from tweet_sources.getxapi import _normalize as gx_normalize
+    from tweet_sources.twitterapi import _normalize as tw_normalize
+
+    raw = {
+        "id": "1234567890000000000",
+        "text": "quoting something",
+        "isReply": False,
+        "quoted_tweet": {"id": "9999000000000000000"},   # id present, author absent
+    }
+
+    for normalize in (gx_normalize, tw_normalize):
+        tweet = normalize(raw)
+        assert tweet.quoted_tweet_id == "9999000000000000000"
+        assert tweet.quoted_author_id is None
+
+
+# ---------------------------------------------------------------------------
+# N2 — fetch loop: one malformed tweet is skipped, others still returned
+# ---------------------------------------------------------------------------
+
+def test_n2_fetch_loop_skips_malformed_continues():
+    """A tweet that raises in _normalize is skipped; the rest of the batch is kept."""
+    from tweet_sources.getxapi import GetXApiSource
+
+    year = datetime.datetime.now(UTC).year
+    good1 = _tweet_raw("501")
+    bad   = {"id": "502", "text": "bad", "isReply": False, "quoted_tweet": {"broken": True}}
+    good2 = _tweet_raw("503")
+
+    def fake_urlopen(req, timeout):
+        return _make_200_response({"tweets": [good1, bad, good2], "next_cursor": None})
+
+    def fake_normalize_raise_on_502(raw):
+        if raw.get("id") == "502":
+            raise ValueError("injected normalization failure")
+        return Tweet(
+            id=raw["id"], created_at_utc=f"{year}-03-01T10:00:00Z",
+            text=raw.get("text"), type="original", is_reply=False, is_quote=False,
+            in_reply_to_id=None, quoted_tweet_id=None, quoted_author_id=None,
+            conversation_id=None, like_count=None, retweet_count=None, reply_count=None,
+            quote_count=None, view_count=None, bookmark_count=None,
+            has_media=False, media_urls=[], url=None,
+        )
+
+    src = GetXApiSource(api_key="test-key")
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+         patch("tweet_sources.getxapi._normalize", side_effect=fake_normalize_raise_on_502):
+        result = src.fetch_tweets(
+            "testuser",
+            datetime.date(year, 1, 1),
+            datetime.date(year, 6, 1),
+        )
+
+    print(f"\nN2: tweets={len(result.tweets)} skipped={result.skipped}")
+    assert result.skipped == 1, f"expected 1 skipped, got {result.skipped}"
+    assert len(result.tweets) == 2
+    assert {t.id for t in result.tweets} == {"501", "503"}
+
+
+# ---------------------------------------------------------------------------
+# N3 — fetch loop: skipped count is zero when no errors occur
+# ---------------------------------------------------------------------------
+
+def test_n3_skipped_zero_when_no_errors():
+    """Normal run with no malformed tweets reports skipped=0."""
+    from tweet_sources.getxapi import GetXApiSource
+
+    year = datetime.datetime.now(UTC).year
+
+    def fake_urlopen(req, timeout):
+        return _make_200_response({"tweets": [_tweet_raw("601"), _tweet_raw("602")], "next_cursor": None})
+
+    def fake_normalize(raw):
+        return Tweet(
+            id=raw["id"], created_at_utc=f"{year}-03-01T10:00:00Z",
+            text=raw.get("text"), type="original", is_reply=False, is_quote=False,
+            in_reply_to_id=None, quoted_tweet_id=None, quoted_author_id=None,
+            conversation_id=None, like_count=None, retweet_count=None, reply_count=None,
+            quote_count=None, view_count=None, bookmark_count=None,
+            has_media=False, media_urls=[], url=None,
+        )
+
+    src = GetXApiSource(api_key="test-key")
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+         patch("tweet_sources.getxapi._normalize", side_effect=fake_normalize):
+        result = src.fetch_tweets(
+            "testuser",
+            datetime.date(year, 1, 1),
+            datetime.date(year, 6, 1),
+        )
+
+    assert result.skipped == 0
+    assert len(result.tweets) == 2
