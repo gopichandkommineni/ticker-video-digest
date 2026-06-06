@@ -13,6 +13,8 @@ T5. STALE: handle in backfilling with old status_since -> is_stale() True;
 T6. DOUBLE-RUN: freshly-backfilling handle (not stale) -> skipped, adapter not called.
 T7. ingest_all ISOLATION: one handle's adapter raises; batch continues; only that
     handle ends failed.
+T8. BACKFILL CAP BEFORE FLOOR: adapter returns reached_floor=False on a backfill
+    -> outcome=incomplete, status=incomplete, watermark NOT advanced to now.  KEY TEST.
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ import pytest
 
 from storage import init_db, get_handle, upsert_handle
 from storage.db import get_connection
-from tweet_sources.base import Tweet, UserInfo
+from tweet_sources.base import Tweet, FetchResult, UserInfo
 
 UTC = datetime.timezone.utc
 
@@ -53,10 +55,12 @@ class FakeSource:
     """
     Fake adapter. pages: successive fetch_tweets calls pop from this list.
     fail_on_call: 0-based index on which to raise RuntimeError.
+    reached_floor: value to report in FetchResult (default True = natural stop).
     """
-    def __init__(self, pages=None, fail_on_call=None):
+    def __init__(self, pages=None, fail_on_call=None, reached_floor=True):
         self.pages = list(pages or [[]])
         self.fail_on_call = fail_on_call
+        self._reached_floor = reached_floor
         self._call_count = 0
         self.last_start = None
         self.last_end = None
@@ -66,14 +70,15 @@ class FakeSource:
                         created_at_utc=None, followers_count=0, following_count=0,
                         bio=None, is_verified=False, is_blue_verified=False)
 
-    def fetch_tweets(self, handle: str, start: datetime.date, end: datetime.date):
+    def fetch_tweets(self, handle: str, start: datetime.date, end: datetime.date) -> FetchResult:
         self.last_start = start
         self.last_end = end
         idx = self._call_count
         self._call_count += 1
         if self.fail_on_call is not None and idx == self.fail_on_call:
             raise RuntimeError(f"Simulated failure on call {idx}")
-        return self.pages[idx] if idx < len(self.pages) else []
+        tweets = self.pages[idx] if idx < len(self.pages) else []
+        return FetchResult(tweets=tweets, reached_floor=self._reached_floor)
 
 
 @pytest.fixture
@@ -300,9 +305,10 @@ def test_t7_ingest_all_isolation(tmp_db: Path) -> None:
     def fake_get_source(provider):
         class R:
             def fetch_user_info(self, handle): return FakeSource().fetch_user_info(handle)
-            def fetch_tweets(self, handle, start, end):
+            def fetch_tweets(self, handle, start, end) -> FetchResult:
                 if handle == "bob": raise RuntimeError("broken")
-                return tweets_alice if handle == "alice" else tweets_carol
+                tweets = tweets_alice if handle == "alice" else tweets_carol
+                return FetchResult(tweets=tweets, reached_floor=True)
         return R()
 
     with patch("orchestration.runner.get_source", side_effect=fake_get_source):
@@ -316,3 +322,62 @@ def test_t7_ingest_all_isolation(tmp_db: Path) -> None:
     assert get_handle("alice", db_path=tmp_db)["status"] == "ready"
     assert get_handle("bob",   db_path=tmp_db)["status"] == "failed"
     assert get_handle("carol", db_path=tmp_db)["status"] == "ready"
+
+
+# ---------------------------------------------------------------------------
+# T8 — backfill cap before floor → incomplete, watermark not advanced
+# ---------------------------------------------------------------------------
+
+def test_t8_backfill_cap_before_floor_is_incomplete(tmp_db: Path) -> None:
+    """
+    KEY TEST: adapter returns reached_floor=False on a first (backfill) run.
+    The orchestrator must:
+      (a) outcome == "incomplete" (not "ok")
+      (b) status == "incomplete" (handle is retryable)
+      (c) watermark is NOT advanced to now (stays None — backfill never completed)
+      (d) inserted tweets ARE written (partial progress persists, self-healing)
+    """
+    from orchestration.runner import ingest_handle
+
+    partial_tweets = [
+        _tweet("1", "2026-04-01T10:00:00Z"),
+        _tweet("2", "2026-05-01T12:00:00Z"),
+    ]
+    # reached_floor=False simulates hitting _MAX_PAGES before the Jan-1 floor.
+    fake = FakeSource(pages=[partial_tweets], reached_floor=False)
+    with _patch(fake):
+        result = ingest_handle("testuser", provider="fake", db_path=tmp_db)
+
+    row = get_handle("testuser", db_path=tmp_db)
+
+    print(f"\nT8: outcome={result.outcome}, status={row['status']}, "
+          f"watermark={row['tweets_watermark_utc']}, inserted={result.inserted}")
+
+    # (a) outcome signals incomplete — not silently ok
+    assert result.outcome == "incomplete", f"expected incomplete, got {result.outcome}"
+
+    # (b) status is retryable incomplete, not silently ready
+    assert row["status"] == "incomplete", f"expected incomplete status, got {row['status']}"
+
+    # (c) The RunResult watermark is unchanged (None = no prior good watermark).
+    # Storage sets tweets_watermark_utc to the max of partial tweets (correct —
+    # it reflects what IS in the DB), but the orchestrator ignores it on re-run
+    # because status=incomplete forces a fresh backfill from Jan 1.
+    assert result.watermark is None, (
+        f"RunResult.watermark must reflect no prior good watermark, got {result.watermark}"
+    )
+
+    # Verify the re-run would backfill from the floor, not from the partial watermark.
+    # We do this by checking that a second ingest_handle call enters "backfilling" mode.
+    fake2 = FakeSource(pages=[[]], reached_floor=True)  # empty = nothing new, floor reached
+    with _patch(fake2):
+        from orchestration.runner import ingest_handle as _ih
+        r2 = _ih("testuser", provider="fake", db_path=tmp_db)
+    import datetime as _dt
+    assert fake2.last_start == _dt.date(_dt.datetime.now().year, 1, 1), (
+        f"re-run of incomplete handle must start from Jan 1 floor, got {fake2.last_start}"
+    )
+
+    # (d) partial tweets were written — progress persists for next run
+    assert result.inserted == 2
+    assert row["total_tweets"] == 2

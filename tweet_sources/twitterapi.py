@@ -7,13 +7,13 @@ import logging
 import urllib.parse
 from typing import Any
 
-from .base import TweetSource, Tweet, UserInfo, snowflake_to_utc, compute_type
+from .base import TweetSource, Tweet, FetchResult, UserInfo, snowflake_to_utc, compute_type
 from ._http import get_json, extract_media_urls
 
 logger = logging.getLogger(__name__)
 
 _BASE = "https://api.twitterapi.io"
-_MAX_PAGES = 100
+_MAX_PAGES = 1000  # anti-infinite-loop guard; normal stop is the start-date floor
 
 
 class TwitterApiIoSource(TweetSource):
@@ -53,11 +53,12 @@ class TwitterApiIoSource(TweetSource):
         handle: str,
         start: datetime.date,
         end: datetime.date,
-    ) -> list[Tweet]:
+    ) -> FetchResult:
         """
         Fetch [start, end] inclusive.
         twitterapi.io until: is EXCLUSIVE → pass end + 1 day.
         Stop on empty page or when the oldest tweet in the page predates start.
+        reached_floor=True when stop was natural; False when _MAX_PAGES fired.
         """
         until_date = end + datetime.timedelta(days=1)
         base_q = (
@@ -70,6 +71,7 @@ class TwitterApiIoSource(TweetSource):
         tweets: list[Tweet] = []
         cursor: str | None = None
         pages = 0
+        reached_floor = False
 
         while pages < _MAX_PAGES:
             params: dict[str, str] = {
@@ -88,30 +90,39 @@ class TwitterApiIoSource(TweetSource):
             batch = data.get("tweets") or []
             if not batch:
                 logger.debug("twitterapi.io: empty batch on page %d — stopping", pages)
+                reached_floor = True
                 break
 
-            reached_start = False
+            hit_start = False
             for raw in batch:
                 tweet = _normalize(raw)
                 tweet_dt = datetime.datetime.strptime(tweet.created_at_utc, "%Y-%m-%dT%H:%M:%SZ")
                 if tweet_dt < start_dt:
-                    reached_start = True
+                    hit_start = True
                     break
                 tweets.append(tweet)
 
-            if reached_start:
+            if hit_start:
                 logger.debug("twitterapi.io: reached start boundary on page %d", pages)
+                reached_floor = True
                 break
 
             cursor = data.get("next_cursor")
             if not cursor:
+                reached_floor = True
                 break
 
+        if not reached_floor:
+            logger.warning(
+                "twitterapi.io: hit page cap (%d) before reaching floor %s for %s — backfill incomplete",
+                _MAX_PAGES, start, handle,
+            )
+
         logger.info(
-            "twitterapi.io fetch_tweets(%s, %s→%s): %d tweets in %d request(s)",
-            handle, start, end, len(tweets), pages,
+            "twitterapi.io fetch_tweets(%s, %s→%s): %d tweets in %d request(s) reached_floor=%s",
+            handle, start, end, len(tweets), pages, reached_floor,
         )
-        return tweets
+        return FetchResult(tweets=tweets, reached_floor=reached_floor)
 
 
 def _normalize(raw: dict[str, Any]) -> Tweet:

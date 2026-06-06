@@ -76,6 +76,12 @@ def compute_type(raw: dict[str, Any]) -> tuple[str, bool, bool]:
     return tweet_type, is_reply, is_quote
 
 
+@dataclass
+class FetchResult:
+    tweets: list[Tweet]
+    reached_floor: bool   # True = stopped naturally; False = cap forced exit before start date
+
+
 class TweetSource(ABC):
     """Abstract adapter interface. Implementations must be stateless per-call."""
 
@@ -89,12 +95,14 @@ class TweetSource(ABC):
         handle: str,
         start: datetime.date,
         end: datetime.date,
-    ) -> list[Tweet]:
+    ) -> FetchResult:
         """
         Fetch tweets for *handle* in the inclusive window [start, end].
 
         Pure: does NOT know about watermarks or "today". The caller computes
         the range. Excludes pure retweets (-filter:retweets server-side).
         Paginates to exhaustion (stop on empty batch or oldest tweet < start).
-        Max-pages valve: 100.
+        reached_floor=True when stop was natural; False when the page cap fired
+        before the start boundary was crossed.
+        Max-pages valve: 1000 (anti-infinite-loop guard only).
         """
