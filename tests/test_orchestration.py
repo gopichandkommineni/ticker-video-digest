@@ -15,6 +15,9 @@ T7. ingest_all ISOLATION: one handle's adapter raises; batch continues; only tha
     handle ends failed.
 T8. BACKFILL CAP BEFORE FLOOR: adapter returns reached_floor=False on a backfill
     -> outcome=incomplete, status=incomplete, watermark NOT advanced to now.  KEY TEST.
+T9. SHALLOW INDEX (reached_floor=True but earliest > floor+7d): adapter stops on an
+    empty page but earliest stored tweet is May 31 while floor is Jan 1.  Must be
+    treated as incomplete, not ready.  KEY TEST.
 """
 
 from __future__ import annotations
@@ -98,11 +101,13 @@ def _patch(fake: FakeSource):
 
 def test_t1_new_handle_backfill(tmp_db: Path) -> None:
     now = datetime.datetime.now(UTC)
+    year = now.year
 
     tweets = [
-        _tweet("1", "2026-03-01T10:00:00Z"),
-        _tweet("2", "2026-04-15T12:00:00Z"),
-        _tweet("3", "2026-05-20T08:00:00Z"),
+        _tweet("0", f"{year}-01-02T00:01:00Z"),  # near Jan-1 floor → coverage check passes
+        _tweet("1", f"{year}-03-01T10:00:00Z"),
+        _tweet("2", f"{year}-04-15T12:00:00Z"),
+        _tweet("3", f"{year}-05-20T08:00:00Z"),
     ]
     fake = FakeSource(pages=[tweets])
     with _patch(fake):
@@ -110,14 +115,14 @@ def test_t1_new_handle_backfill(tmp_db: Path) -> None:
         result = ingest_handle("testuser", provider="fake", db_path=tmp_db)
 
     assert result.outcome == "ok", result
-    assert result.watermark == "2026-05-20T08:00:00Z"
-    assert result.inserted == 3
+    assert result.watermark == f"{year}-05-20T08:00:00Z"
+    assert result.inserted == 4
     assert result.ignored == 0
 
     row = get_handle("testuser", db_path=tmp_db)
     assert row["status"] == "ready"
-    assert row["tweets_watermark_utc"] == "2026-05-20T08:00:00Z"
-    assert row["total_tweets"] == 3
+    assert row["tweets_watermark_utc"] == f"{year}-05-20T08:00:00Z"
+    assert row["total_tweets"] == 4
     assert fake.last_start == datetime.date(now.year, 1, 1)
     print(f"\nT1: backfill start={fake.last_start}, watermark={result.watermark}")
 
@@ -129,22 +134,25 @@ def test_t1_new_handle_backfill(tmp_db: Path) -> None:
 def test_t2_delta_run_deduplication(tmp_db: Path) -> None:
     from orchestration.runner import ingest_handle
 
-    with _patch(FakeSource(pages=[[_tweet("1", "2026-03-01T10:00:00Z"),
-                                    _tweet("2", "2026-05-20T08:00:00Z")]])):
+    now = datetime.datetime.now(UTC)
+    year = now.year
+    with _patch(FakeSource(pages=[[_tweet("0", f"{year}-01-02T00:01:00Z"),
+                                    _tweet("1", f"{year}-03-01T10:00:00Z"),
+                                    _tweet("2", f"{year}-05-20T08:00:00Z")]])):
         r1 = ingest_handle("testuser", provider="fake", db_path=tmp_db)
-    assert r1.watermark == "2026-05-20T08:00:00Z"
+    assert r1.watermark == f"{year}-05-20T08:00:00Z"
 
-    fake2 = FakeSource(pages=[[_tweet("2", "2026-05-20T08:00:00Z"),
-                                _tweet("3", "2026-05-21T09:00:00Z")]])
+    fake2 = FakeSource(pages=[[_tweet("2", f"{year}-05-20T08:00:00Z"),
+                                _tweet("3", f"{year}-05-21T09:00:00Z")]])
     with _patch(fake2):
         r2 = ingest_handle("testuser", provider="fake", db_path=tmp_db)
 
     assert r2.outcome == "ok"
     assert r2.inserted == 1
     assert r2.ignored == 1
-    assert get_handle("testuser", db_path=tmp_db)["total_tweets"] == 3
+    assert get_handle("testuser", db_path=tmp_db)["total_tweets"] == 4
 
-    wm = datetime.datetime(2026, 5, 20, 8, 0, 0, tzinfo=UTC)
+    wm = datetime.datetime(year, 5, 20, 8, 0, 0, tzinfo=UTC)
     assert fake2.last_start == (wm - datetime.timedelta(hours=1)).date()
     print(f"\nT2: delta start={fake2.last_start}, total_tweets=3")
 
@@ -156,7 +164,9 @@ def test_t2_delta_run_deduplication(tmp_db: Path) -> None:
 def test_t3_partial_fetch_watermark_unchanged(tmp_db: Path) -> None:
     from orchestration.runner import ingest_handle
 
-    with _patch(FakeSource(pages=[[_tweet("1", "2026-03-01T10:00:00Z")]])):
+    year = datetime.datetime.now(UTC).year
+    with _patch(FakeSource(pages=[[_tweet("0", f"{year}-01-02T00:01:00Z"),
+                                   _tweet("1", f"{year}-03-01T10:00:00Z")]])):
         r0 = ingest_handle("testuser", provider="fake", db_path=tmp_db)
     wm_before = r0.watermark
     print(f"\nT3: watermark before partial-fetch run: {wm_before}")
@@ -174,16 +184,18 @@ def test_t3_partial_fetch_watermark_unchanged(tmp_db: Path) -> None:
     conn = get_connection(tmp_db)
     count = conn.execute("SELECT COUNT(*) FROM raw_tweets WHERE account_handle='testuser'").fetchone()[0]
     conn.close()
-    assert count == 1
+    assert count == 2  # two tweets from setup backfill (Jan-2 + Mar-1)
 
-    retry_tweets = [_tweet("1", "2026-03-01T10:00:00Z"), _tweet("2", "2026-05-21T09:00:00Z")]
+    retry_tweets = [_tweet("0", f"{year}-01-02T00:01:00Z"),
+                    _tweet("1", f"{year}-03-01T10:00:00Z"),
+                    _tweet("2", f"{year}-05-21T09:00:00Z")]
     with _patch(FakeSource(pages=[retry_tweets])):
         r_retry = ingest_handle("testuser", provider="fake", db_path=tmp_db)
 
     wm_retry = get_handle("testuser", db_path=tmp_db)["tweets_watermark_utc"]
     print(f"T3: watermark after retry: {wm_retry}")
     assert r_retry.outcome == "ok"
-    assert wm_retry == "2026-05-21T09:00:00Z"
+    assert wm_retry == f"{year}-05-21T09:00:00Z"
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +205,9 @@ def test_t3_partial_fetch_watermark_unchanged(tmp_db: Path) -> None:
 def test_t4_write_failure_watermark_unchanged(tmp_db: Path) -> None:
     from orchestration.runner import ingest_handle
 
-    with _patch(FakeSource(pages=[[_tweet("1", "2026-03-01T10:00:00Z")]])):
+    year = datetime.datetime.now(UTC).year
+    with _patch(FakeSource(pages=[[_tweet("0", f"{year}-01-02T00:01:00Z"),
+                                   _tweet("1", f"{year}-03-01T10:00:00Z")]])):
         r0 = ingest_handle("testuser", provider="fake", db_path=tmp_db)
     wm_before = r0.watermark
     print(f"\nT4: watermark before write-fail run: {wm_before}")
@@ -299,8 +313,9 @@ def test_t7_ingest_all_isolation(tmp_db: Path) -> None:
     for h in ("alice", "bob", "carol"):
         upsert_handle(h, {"status": "pending"}, db_path=tmp_db)
 
-    tweets_alice = [_tweet("a1", "2026-05-01T10:00:00Z")]
-    tweets_carol = [_tweet("c1", "2026-05-02T10:00:00Z")]
+    year = datetime.datetime.now(UTC).year
+    tweets_alice = [_tweet("a0", f"{year}-01-02T00:01:00Z"), _tweet("a1", f"{year}-05-01T10:00:00Z")]
+    tweets_carol = [_tweet("c0", f"{year}-01-02T00:01:00Z"), _tweet("c1", f"{year}-05-02T10:00:00Z")]
 
     def fake_get_source(provider):
         class R:
@@ -403,3 +418,76 @@ def test_t8_backfill_cap_before_floor_is_incomplete(tmp_db: Path) -> None:
     # (e) partial tweets were written — progress persists for next run
     assert result.inserted == 2
     assert row["total_tweets"] == 2
+
+
+# ---------------------------------------------------------------------------
+# T9 — shallow index: reached_floor=True but earliest tweet is well after floor
+# ---------------------------------------------------------------------------
+
+def test_t9_shallow_index_marked_incomplete(tmp_db: Path) -> None:
+    """
+    KEY TEST: adapter reports reached_floor=True (stopped on an empty page), but
+    the tweets it returned only go back to late May — not to the Jan-1 floor.
+    This is the 'venu_7_ run C' scenario: GetXAPI's index ran dry early.
+
+    The orchestrator must:
+      (a) outcome == "incomplete" (not "ok")
+      (b) status == "incomplete"
+      (c) RunResult.watermark == None (not advanced — floor not reached)
+      (d) reason includes coverage/earliest/floor context
+      (e) re-run starts from Jan-1 floor (same as T8(d))
+      (f) partial tweets ARE stored (self-healing on retry)
+    """
+    from orchestration.runner import ingest_handle
+
+    now = datetime.datetime.now(UTC)
+    floor = datetime.date(now.year, 1, 1)
+
+    # Tweets only go back to May 31 — far short of Jan 1.
+    shallow_tweets = [
+        _tweet("s1", f"{now.year}-05-31T14:00:00Z"),
+        _tweet("s2", f"{now.year}-06-01T09:00:00Z"),
+        _tweet("s3", f"{now.year}-06-03T11:00:00Z"),
+    ]
+
+    # reached_floor=True: adapter thinks it completed (empty page stopped it),
+    # but coverage is only May 31 onward.
+    fake = FakeSource(pages=[shallow_tweets], reached_floor=True)
+    with _patch(fake):
+        result = ingest_handle("shallow_user", provider="fake", db_path=tmp_db)
+
+    row = get_handle("shallow_user", db_path=tmp_db)
+    print(
+        f"\nT9: outcome={result.outcome}, status={row['status']}, "
+        f"earliest={row['earliest_tweet_utc']}, reason={result.reason!r}"
+    )
+
+    # (a) shallow index must not be silently marked ready
+    assert result.outcome == "incomplete", (
+        f"shallow index (reached_floor=True but earliest=May) must be incomplete, got {result.outcome!r}"
+    )
+
+    # (b) handle status is retryable
+    assert row["status"] == "incomplete", f"expected incomplete status, got {row['status']!r}"
+
+    # (c) watermark not advanced (prior value was None for a new handle)
+    assert result.watermark is None, (
+        f"watermark must not advance on shallow-index backfill, got {result.watermark!r}"
+    )
+
+    # (d) reason surfaces the coverage gap
+    assert "earliest" in result.reason and "floor" in result.reason, (
+        f"reason must describe the coverage gap, got {result.reason!r}"
+    )
+
+    # (e) re-run starts from Jan-1 floor, not delta from partial watermark
+    fake2 = FakeSource(pages=[[]], reached_floor=True)
+    with _patch(fake2):
+        ingest_handle("shallow_user", provider="fake", db_path=tmp_db)
+    assert fake2.last_start == floor, (
+        f"re-run of shallow incomplete handle must backfill from {floor}, got {fake2.last_start!r}"
+    )
+
+    # (f) partial tweets stored — available for next run to accumulate on top of
+    assert result.inserted == 3
+    assert row["total_tweets"] == 3

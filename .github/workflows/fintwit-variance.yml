@@ -1,0 +1,52 @@
+name: FinTwit API Variance Probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      handle:
+        description: "Twitter handle to probe (without @)"
+        required: true
+        type: string
+      since:
+        description: "Start date YYYY-MM-DD (default: Jan 1 of current year)"
+        required: false
+        type: string
+      runs:
+        description: "Number of GetXAPI repeat runs (default: 3)"
+        required: false
+        default: "3"
+        type: string
+
+# Read-only probe — no DB writes, no concurrency serialization needed.
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install project
+        run: pip install -e ".[dev]"
+
+      - name: Write .env from secrets
+        run: |
+          printf 'GETXAPI_KEY=%s\n'        "${{ secrets.GETXAPI_KEY }}"        > .env
+          printf 'TWITTERAPI_IO_KEY=%s\n'  "${{ secrets.TWITTERAPI_IO_KEY }}"  >> .env
+
+      - name: Run variance probe
+        env:
+          PYTHONPATH: .
+        run: |
+          ARGS="${{ inputs.handle }}"
+          [ -n "${{ inputs.since }}" ] && ARGS="$ARGS --since ${{ inputs.since }}"
+          ARGS="$ARGS --runs ${{ inputs.runs }}"
+          python scripts/run_variance.py $ARGS

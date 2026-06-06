@@ -201,27 +201,57 @@ def ingest_handle(
         updated_row = get_handle(handle, db_path=db_path)
         new_watermark = (updated_row or {}).get("tweets_watermark_utc")
 
-        # For backfills: if the page cap fired before reaching the start floor,
-        # the backfill is incomplete — do NOT advance watermark to now; mark
-        # incomplete so the handle is retried and visibly flagged.
-        if new_status == "backfilling" and not floor_reached:
-            upsert_handle(
-                handle,
-                {"status": "incomplete", "last_fetch_at": _iso(_now()), "last_fetch_status": "incomplete"},
-                db_path=db_path,
+        if new_status == "backfilling":
+            # Two independent ways a backfill can be incomplete:
+            # (A) Page cap fired before reaching the floor — adapter reports reached_floor=False.
+            # (B) Adapter reported reached_floor=True (empty-page stop) but the earliest
+            #     tweet stored is materially later than the floor — the index ran dry early.
+            #     An empty page is ambiguous; coverage must be verified from what we stored.
+            floor_date = start  # Jan 1 of current year
+            earliest_raw = (updated_row or {}).get("earliest_tweet_utc")
+            earliest_date: datetime.date | None = None
+            if earliest_raw:
+                try:
+                    earliest_date = datetime.datetime.fromisoformat(
+                        earliest_raw.replace("Z", "+00:00")
+                    ).date()
+                except ValueError:
+                    pass
+
+            # Allow a 7-day grace window: index may not have tweets right at Jan 1.
+            coverage_gap = (
+                earliest_date is not None
+                and (earliest_date - floor_date).days > 7
             )
-            logger.warning(
-                "handle %s: backfill incomplete (cap before floor); watermark unchanged at %s",
-                handle, watermark_raw,
-            )
-            return RunResult(
-                handle=handle,
-                outcome="incomplete",
-                inserted=upsert_result.inserted if upsert_result else 0,
-                ignored=upsert_result.ignored if upsert_result else 0,
-                watermark=watermark_raw,  # unchanged — did not reach floor
-                reason="page cap reached before backfill floor",
-            )
+            backfill_incomplete = (not floor_reached) or coverage_gap
+
+            if backfill_incomplete:
+                reason = (
+                    "page cap reached before backfill floor"
+                    if not floor_reached
+                    else f"index ran dry early: earliest={earliest_raw} floor={floor_date.isoformat()}"
+                )
+                upsert_handle(
+                    handle,
+                    {
+                        "status": "incomplete",
+                        "last_fetch_at": _iso(_now()),
+                        "last_fetch_status": "incomplete",
+                    },
+                    db_path=db_path,
+                )
+                logger.warning(
+                    "handle %s: backfill incomplete (%s); watermark unchanged at %s",
+                    handle, reason, watermark_raw,
+                )
+                return RunResult(
+                    handle=handle,
+                    outcome="incomplete",
+                    inserted=upsert_result.inserted if upsert_result else 0,
+                    ignored=upsert_result.ignored if upsert_result else 0,
+                    watermark=watermark_raw,  # unchanged — did not reach floor
+                    reason=reason,
+                )
 
         upsert_handle(
             handle,

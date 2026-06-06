@@ -25,9 +25,11 @@ def compare_sources(
     tw_src = get_source("twitterapi")
 
     logger.info("compare: fetching getxapi …")
-    gx_tweets = gx_src.fetch_tweets(handle, start, end)
+    gx_result = gx_src.fetch_tweets(handle, start, end)
+    gx_tweets = gx_result.tweets
     logger.info("compare: fetching twitterapi …")
-    tw_tweets = tw_src.fetch_tweets(handle, start, end)
+    tw_result = tw_src.fetch_tweets(handle, start, end)
+    tw_tweets = tw_result.tweets
 
     gx_ids = {t.id for t in gx_tweets}
     tw_ids = {t.id for t in tw_tweets}
@@ -78,10 +80,12 @@ def compare_sources(
         "getxapi": {
             "count": len(gx_tweets),
             "earliest_utc": gx_earliest,
+            "reached_floor": gx_result.reached_floor,
         },
         "twitterapi": {
             "count": len(tw_tweets),
             "earliest_utc": tw_earliest,
+            "reached_floor": tw_result.reached_floor,
         },
         "intersection": len(both),
         "getxapi_only": sorted(gx_only),
@@ -97,8 +101,8 @@ def _print_markdown(r: dict[str, Any]) -> None:
     print(f"\n## compare_sources: @{r['handle']}  {r['window']['start']} → {r['window']['end']}\n")
     print(f"| Provider   | Tweets | Earliest UTC |")
     print(f"|------------|-------:|--------------|")
-    print(f"| getxapi    | {r['getxapi']['count']:>6} | {r['getxapi']['earliest_utc'] or 'n/a'} |")
-    print(f"| twitterapi | {r['twitterapi']['count']:>6} | {r['twitterapi']['earliest_utc'] or 'n/a'} |")
+    print(f"| getxapi    | {r['getxapi']['count']:>6} | {r['getxapi']['earliest_utc'] or 'n/a'} | {r['getxapi']['reached_floor']} |")
+    print(f"| twitterapi | {r['twitterapi']['count']:>6} | {r['twitterapi']['earliest_utc'] or 'n/a'} | {r['twitterapi']['reached_floor']} |")
     print()
     print(f"- Intersection: **{r['intersection']}** tweets on both")
     print(f"- getxapi-only: **{len(r['getxapi_only'])}** IDs")
