@@ -160,3 +160,44 @@ class TestReadFunctions:
         db = _db(tmp_path)
         assert count_tweets(HANDLE, db_path=db) == 0
         assert get_tweets_by_handle(HANDLE, db_path=db) == []
+
+
+class TestHandleNormalization:
+    """normalize_handle is applied at every entry point; all variants map to one row."""
+
+    def test_normalize_strips_at_sign(self):
+        from storage.handles import normalize_handle
+        assert normalize_handle("@Venu_7_") == "venu_7_"
+
+    def test_normalize_trims_whitespace(self):
+        from storage.handles import normalize_handle
+        assert normalize_handle("  Venu_7_  ") == "venu_7_"
+
+    def test_normalize_strips_at_and_whitespace_combined(self):
+        from storage.handles import normalize_handle
+        assert normalize_handle(" @Venu_7_ ") == "venu_7_"
+
+    def test_normalize_lowercases(self):
+        from storage.handles import normalize_handle
+        assert normalize_handle("Venu_7_") == "venu_7_"
+
+    def test_all_variants_create_one_row(self, tmp_path):
+        """@Venu_7_, Venu_7_, ' @Venu_7_ ', and venu_7_ must all resolve to one handle row."""
+        from storage.handles import normalize_handle, upsert_handle, get_handle, list_handles
+        db = _db(tmp_path)
+
+        variants = ["@Venu_7_", "Venu_7_", " @Venu_7_ ", "venu_7_"]
+        for v in variants:
+            upsert_handle(v, {"status": "pending"}, db_path=db)
+
+        rows = list_handles(db_path=db)
+        assert len(rows) == 1, (
+            f"expected 1 handle row, got {len(rows)}: {[r['handle'] for r in rows]}"
+        )
+        assert rows[0]["handle"] == "venu_7_"
+
+        # Every variant lookups up the same row
+        for v in variants:
+            row = get_handle(v, db_path=db)
+            assert row is not None, f"get_handle({v!r}) returned None"
+            assert row["handle"] == "venu_7_", f"variant {v!r} resolved to {row['handle']!r}"

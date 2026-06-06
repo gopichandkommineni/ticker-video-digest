@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 from .db import init_db
-from .handles import get_handle, list_handles
+from .handles import get_handle, list_handles, normalize_handle
 from .reads import get_tweets_by_handle, count_tweets
 
 
@@ -25,7 +25,7 @@ def cmd_init(args: argparse.Namespace) -> None:
 
 def cmd_show_handle(args: argparse.Namespace) -> None:
     db = Path(args.db) if args.db else None
-    row = get_handle(args.handle, db_path=db)
+    row = get_handle(normalize_handle(args.handle), db_path=db)
     if row is None:
         print(f"Handle '{args.handle}' not found.")
         sys.exit(1)
@@ -54,13 +54,14 @@ def cmd_list_handles(args: argparse.Namespace) -> None:
 def cmd_tweets(args: argparse.Namespace) -> None:
     db = Path(args.db) if args.db else None
     rows = get_tweets_by_handle(
-        args.handle,
+        normalize_handle(args.handle),
         limit=args.limit,
         since=args.since,
         db_path=db,
     )
-    total = count_tweets(args.handle, db_path=db)
-    print(f"Stored total for @{args.handle}: {total}")
+    handle = normalize_handle(args.handle)
+    total = count_tweets(handle, db_path=db)
+    print(f"Stored total for @{handle}: {total}")
     print(f"Returning {len(rows)} row(s) (limit={args.limit}):\n")
     for r in rows:
         print(f"  [{r['created_at_utc']}] {r['tweet_id']}: {(r['text'] or '')[:80]}")

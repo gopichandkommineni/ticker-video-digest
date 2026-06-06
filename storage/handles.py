@@ -8,6 +8,17 @@ from typing import Any
 from .db import get_connection
 
 
+def normalize_handle(raw: str) -> str:
+    """Return the canonical storage key for a handle.
+
+    Strips leading '@', trims surrounding whitespace, and lowercases.
+    X handles are case-insensitive; lowercase is the canonical form so that
+    '@Venu_7_', 'Venu_7_', ' @Venu_7_ ', and 'venu_7_' all map to the same
+    row rather than creating duplicate history.
+    """
+    return raw.strip().lstrip("@").strip().lower()
+
+
 def upsert_handle(
     handle: str,
     fields: dict[str, Any],
@@ -20,6 +31,7 @@ def upsert_handle(
     (total_tweets, latest_tweet_utc, tweets_watermark_utc, earliest_tweet_utc).
     Use this for identity info and status updates.
     """
+    handle = normalize_handle(handle)
     allowed = {
         "display_name", "user_id", "status", "status_since",
         "last_fetch_at", "last_fetch_status",
@@ -68,6 +80,7 @@ def get_handle(
     db_path: Path | str | None = None,
 ) -> dict[str, Any] | None:
     """Return the handle row as a dict, or None if not found."""
+    handle = normalize_handle(handle)
     conn = get_connection(db_path)
     try:
         row = conn.execute(
@@ -97,5 +110,3 @@ def list_handles(
         return [dict(r) for r in rows]
     finally:
         conn.close()
-
-
