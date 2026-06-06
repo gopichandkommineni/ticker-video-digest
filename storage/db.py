@@ -85,3 +85,17 @@ def migrate_db(conn: sqlite3.Connection) -> None:
     if "status_since" not in cols:
         with conn:
             conn.execute("ALTER TABLE handles ADD COLUMN status_since TEXT")
+
+
+def close_connection(db_path: Path | str | None = None) -> None:
+    """Checkpoint the WAL (TRUNCATE mode) and close cleanly.
+
+    Call this before any git commit so the committed .db has no -wal/-shm
+    sidecar and is not in a half-written state.
+    """
+    path = Path(db_path) if db_path else _DEFAULT_DB
+    if not path.exists():
+        return
+    conn = sqlite3.connect(str(path))
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    conn.close()

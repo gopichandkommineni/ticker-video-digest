@@ -1,0 +1,113 @@
+name: FinTwit Manual Backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      handle:
+        description: "Twitter handle to backfill (without @)"
+        required: true
+        type: string
+
+# R1: same concurrency group as daily-delta and snapshots refresh.
+concurrency:
+  group: db-writer
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install project
+        run: pip install -e ".[dev]"
+
+      # R4: write secrets to .env; never echo them.
+      - name: Write .env from secrets
+        run: |
+          printf 'GETXAPI_KEY=%s\n'        "${{ secrets.GETXAPI_KEY }}"        > .env
+          printf 'TWITTERAPI_IO_KEY=%s\n'  "${{ secrets.TWITTERAPI_IO_KEY }}"  >> .env
+
+      - name: Run ingest_handle and report result
+        id: backfill
+        run: |
+          python - <<'PYEOF'
+          import os, sys
+          from dotenv import load_dotenv
+          load_dotenv()
+
+          from storage import close_connection
+          from orchestration.runner import ingest_handle
+
+          handle = "${{ inputs.handle }}".strip()
+          if not handle:
+              print("ERROR: no handle provided", file=sys.stderr)
+              sys.exit(1)
+
+          print(f"Backfilling handle: {handle}")
+          result = ingest_handle(handle)
+
+          print(f"\n── Backfill result for @{handle} ──")
+          print(f"  outcome:      {result.outcome}")
+          print(f"  inserted:     {result.inserted}")
+          print(f"  ignored:      {result.ignored}")
+          print(f"  watermark:    {result.watermark}")
+          print(f"  reached_floor:{result.reason!r}" if result.outcome == "incomplete"
+                else f"  reached_floor: True (completed to floor)")
+          if result.error:
+              print(f"  error:        {result.error}")
+
+          # R2: WAL checkpoint before git commit.
+          close_connection()
+
+          # GitHub job summary
+          icon = "✓" if result.outcome == "ok" else ("~" if result.outcome == "incomplete" else "✗")
+          summary_lines = [
+              f"## FinTwit Backfill — @{handle}",
+              f"| field | value |",
+              f"|-------|-------|",
+              f"| outcome | {icon} {result.outcome} |",
+              f"| inserted | {result.inserted} |",
+              f"| ignored | {result.ignored} |",
+              f"| watermark | {result.watermark or 'none'} |",
+          ]
+          if result.outcome == "incomplete":
+              summary_lines.append(f"| reason | {result.reason} |")
+              summary_lines.append("")
+              summary_lines.append("> **incomplete** — account is too large to finish in one run. "
+                                   "The daily-delta job will retry until it reaches the Jan-1 floor.")
+          if result.error:
+              summary_lines.append(f"| error | {result.error} |")
+
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null")
+          with open(summary_path, "w") as f:
+              f.write("\n".join(summary_lines) + "\n")
+
+          if result.outcome == "failed":
+              sys.exit(1)
+          PYEOF
+
+      # R2+R3: commit .db unconditionally (partial progress must persist even on failure).
+      - name: Commit data/fintwit.db if changed
+        if: always()
+        run: |
+          git config user.name  "fintwit-bot"
+          git config user.email "bot@users.noreply.github.com"
+          # R3: only the db file — never git add -A
+          git add data/fintwit.db
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "FinTwit backfill ${{ inputs.handle }}: $(date -u +%Y-%m-%dT%H:%M)Z"
+          git pull --rebase origin main
+          git push origin HEAD:main

@@ -13,6 +13,8 @@ T5. STALE: handle in backfilling with old status_since -> is_stale() True;
 T6. DOUBLE-RUN: freshly-backfilling handle (not stale) -> skipped, adapter not called.
 T7. ingest_all ISOLATION: one handle's adapter raises; batch continues; only that
     handle ends failed.
+T8. BACKFILL CAP BEFORE FLOOR: adapter returns reached_floor=False on a backfill
+    -> outcome=incomplete, status=incomplete, watermark NOT advanced to now.  KEY TEST.
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ import pytest
 
 from storage import init_db, get_handle, upsert_handle
 from storage.db import get_connection
-from tweet_sources.base import Tweet, UserInfo
+from tweet_sources.base import Tweet, FetchResult, UserInfo
 
 UTC = datetime.timezone.utc
 
@@ -53,10 +55,12 @@ class FakeSource:
     """
     Fake adapter. pages: successive fetch_tweets calls pop from this list.
     fail_on_call: 0-based index on which to raise RuntimeError.
+    reached_floor: value to report in FetchResult (default True = natural stop).
     """
-    def __init__(self, pages=None, fail_on_call=None):
+    def __init__(self, pages=None, fail_on_call=None, reached_floor=True):
         self.pages = list(pages or [[]])
         self.fail_on_call = fail_on_call
+        self._reached_floor = reached_floor
         self._call_count = 0
         self.last_start = None
         self.last_end = None
@@ -66,14 +70,15 @@ class FakeSource:
                         created_at_utc=None, followers_count=0, following_count=0,
                         bio=None, is_verified=False, is_blue_verified=False)
 
-    def fetch_tweets(self, handle: str, start: datetime.date, end: datetime.date):
+    def fetch_tweets(self, handle: str, start: datetime.date, end: datetime.date) -> FetchResult:
         self.last_start = start
         self.last_end = end
         idx = self._call_count
         self._call_count += 1
         if self.fail_on_call is not None and idx == self.fail_on_call:
             raise RuntimeError(f"Simulated failure on call {idx}")
-        return self.pages[idx] if idx < len(self.pages) else []
+        tweets = self.pages[idx] if idx < len(self.pages) else []
+        return FetchResult(tweets=tweets, reached_floor=self._reached_floor)
 
 
 @pytest.fixture
@@ -300,9 +305,10 @@ def test_t7_ingest_all_isolation(tmp_db: Path) -> None:
     def fake_get_source(provider):
         class R:
             def fetch_user_info(self, handle): return FakeSource().fetch_user_info(handle)
-            def fetch_tweets(self, handle, start, end):
+            def fetch_tweets(self, handle, start, end) -> FetchResult:
                 if handle == "bob": raise RuntimeError("broken")
-                return tweets_alice if handle == "alice" else tweets_carol
+                tweets = tweets_alice if handle == "alice" else tweets_carol
+                return FetchResult(tweets=tweets, reached_floor=True)
         return R()
 
     with patch("orchestration.runner.get_source", side_effect=fake_get_source):
@@ -316,3 +322,84 @@ def test_t7_ingest_all_isolation(tmp_db: Path) -> None:
     assert get_handle("alice", db_path=tmp_db)["status"] == "ready"
     assert get_handle("bob",   db_path=tmp_db)["status"] == "failed"
     assert get_handle("carol", db_path=tmp_db)["status"] == "ready"
+
+
+# ---------------------------------------------------------------------------
+# T8 — backfill cap before floor → incomplete, watermark not advanced
+# ---------------------------------------------------------------------------
+
+def test_t8_backfill_cap_before_floor_is_incomplete(tmp_db: Path) -> None:
+    """
+    KEY TEST: adapter returns reached_floor=False on a first (backfill) run.
+    The orchestrator must:
+      (a) outcome == "incomplete" (not "ok")
+      (b) status == "incomplete" (handle is retryable)
+      (c) watermark NOT advanced to now — two separate sub-guarantees:
+          c1. RunResult.watermark == prior value (None for first backfill)
+          c2. DB tweets_watermark_utc is NOT the current time (not treated as complete)
+      (d) re-run starts from Jan-1 floor (not delta from partial watermark)
+      (e) inserted tweets ARE written (partial progress persists, self-healing)
+    """
+    from orchestration.runner import ingest_handle
+
+    # Capture watermark BEFORE the run — for a new handle it is None.
+    row_before = get_handle("testuser", db_path=tmp_db)
+    wm_before = (row_before or {}).get("tweets_watermark_utc")
+    print(f"\nT8: watermark BEFORE incomplete backfill: {wm_before!r}")
+
+    partial_tweets = [
+        _tweet("1", "2026-04-01T10:00:00Z"),
+        _tweet("2", "2026-05-01T12:00:00Z"),
+    ]
+    run_time = datetime.datetime.now(UTC)
+    # reached_floor=False simulates hitting _MAX_PAGES before the Jan-1 floor.
+    fake = FakeSource(pages=[partial_tweets], reached_floor=False)
+    with _patch(fake):
+        result = ingest_handle("testuser", provider="fake", db_path=tmp_db)
+
+    row = get_handle("testuser", db_path=tmp_db)
+    wm_after_db  = row["tweets_watermark_utc"]   # what storage trigger recorded
+    wm_after_run = result.watermark               # what RunResult reports as "last good"
+
+    print(f"T8: watermark AFTER  incomplete backfill (DB):     {wm_after_db!r}")
+    print(f"T8: watermark AFTER  incomplete backfill (RunResult): {wm_after_run!r}")
+    print(f"T8: status={row['status']}, outcome={result.outcome}, inserted={result.inserted}")
+
+    # (a) outcome signals incomplete — not silently ok
+    assert result.outcome == "incomplete", f"expected incomplete, got {result.outcome}"
+
+    # (b) status is retryable incomplete, not silently ready
+    assert row["status"] == "incomplete", f"expected incomplete status, got {row['status']}"
+
+    # (c1) RunResult.watermark == prior value. For a first backfill the prior value is
+    # None — the orchestrator must not report a good watermark it never earned.
+    assert wm_after_run == wm_before, (
+        f"RunResult.watermark must equal prior value: before={wm_before!r} after={wm_after_run!r}"
+    )
+
+    # (c2) DB watermark was NOT advanced to "now". The storage trigger may set it to
+    # the max partial tweet date (that's correct — it reflects what IS in the DB), but
+    # it must NEVER be the current wallclock time, which would falsely mark the run
+    # as complete and cause the next run to skip Jan–Apr as a delta.
+    if wm_after_db is not None:
+        wm_dt = datetime.datetime.fromisoformat(wm_after_db.replace("Z", "+00:00"))
+        seconds_from_now = abs((run_time - wm_dt).total_seconds())
+        assert seconds_from_now > 60, (
+            f"DB watermark must not be 'now' — was advanced to {wm_after_db!r} "
+            f"which is only {seconds_from_now:.1f}s from run time"
+        )
+
+    # (d) re-run must start from Jan-1 floor, not delta from the partial DB watermark.
+    fake2 = FakeSource(pages=[[]], reached_floor=True)
+    with _patch(fake2):
+        _ih = ingest_handle  # same import, avoid shadowing
+        _ih("testuser", provider="fake", db_path=tmp_db)
+    jan1 = datetime.date(datetime.datetime.now(UTC).year, 1, 1)
+    print(f"T8: re-run computed start={fake2.last_start!r}  (expected Jan-1={jan1!r})")
+    assert fake2.last_start == jan1, (
+        f"re-run of incomplete handle must backfill from Jan 1, got {fake2.last_start!r}"
+    )
+
+    # (e) partial tweets were written — progress persists for next run
+    assert result.inserted == 2
+    assert row["total_tweets"] == 2

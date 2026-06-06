@@ -141,7 +141,9 @@ def ingest_handle(
     now = _now()
     watermark_raw: str | None = (row or {}).get("tweets_watermark_utc")
 
-    if watermark_raw:
+    # An incomplete handle must re-backfill from the floor regardless of any
+    # partial watermark the storage layer recorded from the incomplete run.
+    if watermark_raw and status != "incomplete":
         wm_dt = datetime.datetime.fromisoformat(watermark_raw.replace("Z", "+00:00"))
         if wm_dt.tzinfo is None:
             wm_dt = wm_dt.replace(tzinfo=_UTC)
@@ -163,13 +165,16 @@ def ingest_handle(
         db_path=db_path,
     )
 
-    # Step 5: fetch. Track whether it completed cleanly.
+    # Step 5: fetch. Track whether it completed cleanly and reached the floor.
     source = get_source(prov)
     fetched: list = []
     fetch_clean = False
+    floor_reached = False
     fetch_error = ""
     try:
-        fetched = source.fetch_tweets(handle, start, end)
+        fetch_result = source.fetch_tweets(handle, start, end)
+        fetched = fetch_result.tweets
+        floor_reached = fetch_result.reached_floor
         fetch_clean = True
     except Exception as exc:
         fetch_error = str(exc)
@@ -194,6 +199,29 @@ def ingest_handle(
         # F3: read watermark from storage, not from the adapter's returned list.
         updated_row = get_handle(handle, db_path=db_path)
         new_watermark = (updated_row or {}).get("tweets_watermark_utc")
+
+        # For backfills: if the page cap fired before reaching the start floor,
+        # the backfill is incomplete — do NOT advance watermark to now; mark
+        # incomplete so the handle is retried and visibly flagged.
+        if new_status == "backfilling" and not floor_reached:
+            upsert_handle(
+                handle,
+                {"status": "incomplete", "last_fetch_at": _iso(_now()), "last_fetch_status": "incomplete"},
+                db_path=db_path,
+            )
+            logger.warning(
+                "handle %s: backfill incomplete (cap before floor); watermark unchanged at %s",
+                handle, watermark_raw,
+            )
+            return RunResult(
+                handle=handle,
+                outcome="incomplete",
+                inserted=upsert_result.inserted if upsert_result else 0,
+                ignored=upsert_result.ignored if upsert_result else 0,
+                watermark=watermark_raw,  # unchanged — did not reach floor
+                reason="page cap reached before backfill floor",
+            )
+
         upsert_handle(
             handle,
             {"status": "ready", "last_fetch_at": _iso(_now()), "last_fetch_status": "ok"},
