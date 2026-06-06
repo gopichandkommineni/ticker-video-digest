@@ -12,12 +12,18 @@ on:
         required: false
         type: string
       runs:
-        description: "Number of GetXAPI repeat runs (default: 3)"
+        description: "Number of repeat runs per provider (default: 3)"
         required: false
         default: "3"
         type: string
 
-# Read-only probe — no DB writes, no concurrency serialization needed.
+# Serialize with other db-writing workflows so probe commits don't race daily-delta.
+concurrency:
+  group: db-writer
+  cancel-in-progress: false
+
+permissions:
+  contents: write
 
 jobs:
   probe:
@@ -50,3 +56,15 @@ jobs:
           [ -n "${{ inputs.since }}" ] && ARGS="$ARGS --since ${{ inputs.since }}"
           ARGS="$ARGS --runs ${{ inputs.runs }}"
           python scripts/run_variance.py $ARGS
+
+      - name: Commit probe outputs to main
+        if: always()
+        run: |
+          # Only commit if new probe files were created.
+          git add probes/
+          git diff --cached --quiet && echo "No probe outputs to commit — skipping" && exit 0
+          git config user.name  "fintwit-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git commit -m "Probe: variance ${{ inputs.handle }} $(date -u +%Y-%m-%d)"
+          git pull --rebase origin main
+          git push origin HEAD:main
