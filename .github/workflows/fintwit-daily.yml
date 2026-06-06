@@ -31,7 +31,7 @@ jobs:
       - name: Install project
         run: pip install -e ".[dev]"
 
-      # R4: write secrets to .env; never echo them.
+      # R4: write secrets to .env in cwd; scripts load it with load_dotenv(".env").
       - name: Write .env from secrets
         run: |
           printf 'GETXAPI_KEY=%s\n'        "${{ secrets.GETXAPI_KEY }}"        > .env
@@ -39,73 +39,15 @@ jobs:
 
       - name: Run ingest_all and report outcomes
         id: ingest
-        run: |
-          python - <<'PYEOF'
-          import os, sys
-          from dotenv import load_dotenv
-          load_dotenv()
-
-          from storage import close_connection
-          from orchestration.runner import ingest_all
-
-          results = ingest_all()
-
-          # Per-handle summary
-          counts = {"ok": 0, "failed": 0, "incomplete": 0, "skipped": 0}
-          print("\n── FinTwit ingest summary ──")
-          for r in results:
-              bucket = r.outcome if r.outcome in counts else "failed"
-              counts[bucket] += 1
-              detail = ""
-              if r.outcome == "ok":
-                  detail = f"inserted={r.inserted} ignored={r.ignored} watermark={r.watermark}"
-              elif r.outcome == "incomplete":
-                  detail = f"inserted={r.inserted} reason={r.reason!r} (will retry tomorrow)"
-              elif r.outcome == "failed":
-                  detail = f"error={r.error!r}"
-              elif r.outcome == "skipped":
-                  detail = f"reason={r.reason!r}"
-              flag = "✓" if r.outcome == "ok" else ("~" if r.outcome in ("skipped", "incomplete") else "✗")
-              print(f"  {flag} {r.handle}: {r.outcome}  {detail}")
-
-          print(f"\n  ok={counts['ok']} failed={counts['failed']} "
-                f"incomplete={counts['incomplete']} skipped={counts['skipped']}")
-
-          # R2: WAL checkpoint before git commit.
-          close_connection()
-
-          # GitHub job summary
-          summary_lines = [
-              "## FinTwit Daily Delta",
-              f"| outcome | count |",
-              f"|---------|-------|",
-              f"| ✓ ok | {counts['ok']} |",
-              f"| ~ incomplete | {counts['incomplete']} |",
-              f"| ~ skipped | {counts['skipped']} |",
-              f"| ✗ failed | {counts['failed']} |",
-          ]
-          if counts["failed"] or counts["incomplete"]:
-              summary_lines.append("")
-              summary_lines.append("### Handles needing attention")
-              for r in results:
-                  if r.outcome in ("failed", "incomplete"):
-                      summary_lines.append(f"- **{r.handle}**: {r.outcome} — "
-                                           f"{r.error or r.reason or ''}")
-
-          summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null")
-          with open(summary_path, "w") as f:
-              f.write("\n".join(summary_lines) + "\n")
-
-          # Exit non-zero if any handle failed or is stuck incomplete.
-          # .db is already checkpointed above; commit step runs unconditionally.
-          if counts["failed"] or counts["incomplete"]:
-              sys.exit(1)
-          PYEOF
+        env:
+          PYTHONPATH: .
+        run: python scripts/run_daily.py
 
       # R2+R3: commit .db unconditionally (partial progress must persist even on failure).
       - name: Commit data/fintwit.db if changed
         if: always()
         run: |
+          test -f data/fintwit.db || { echo "data/fintwit.db not present — nothing to commit"; exit 0; }
           git config user.name  "fintwit-bot"
           git config user.email "bot@users.noreply.github.com"
           # R3: only the db file — never git add -A

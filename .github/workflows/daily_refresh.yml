@@ -44,6 +44,7 @@ jobs:
 
       - name: Commit snapshots.db if changed
         run: |
+          test -f data/snapshots.db || { echo "data/snapshots.db not present — nothing to commit"; exit 0; }
           git config user.name "casino-dashboard-bot"
           git config user.email "bot@users.noreply.github.com"
           # R3: only snapshots.db — never git add -A (fixes branch-pollution bug)
