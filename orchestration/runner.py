@@ -20,7 +20,7 @@ from typing import Any
 
 from . import config as cfg
 from storage.db import init_db
-from storage.handles import get_handle, list_handles, upsert_handle
+from storage.handles import get_handle, list_handles, normalize_handle, upsert_handle
 from storage.tweets import upsert_tweets
 from tweet_sources.base import UserInfo
 from tweet_sources.factory import get_source
@@ -122,6 +122,7 @@ def ingest_handle(
     - Partial or failed fetch leaves watermark unchanged; status=failed (F1).
     - A handle already in-progress and not stale is skipped (F4).
     """
+    handle = normalize_handle(handle)
     init_db(db_path)
     prov = provider or cfg.TWEET_PROVIDER
 

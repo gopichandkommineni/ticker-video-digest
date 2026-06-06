@@ -48,10 +48,10 @@ jobs:
           from dotenv import load_dotenv
           load_dotenv()
 
-          from storage import close_connection
+          from storage import close_connection, normalize_handle
           from orchestration.runner import ingest_handle
 
-          handle = "${{ inputs.handle }}".strip()
+          handle = normalize_handle("${{ inputs.handle }}")
           if not handle:
               print("ERROR: no handle provided", file=sys.stderr)
               sys.exit(1)
