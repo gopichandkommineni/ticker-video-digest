@@ -1,0 +1,334 @@
+"""
+Tests for HTTP 429 retry logic and its interaction with adapter pagination.
+
+H1. TRANSIENT 429: 429 on first attempt, 200 on second — get_json returns data,
+    sleep called once with the right delay, no exception raised.
+H2. EXHAUSTED RETRIES: 429 on all attempts — RateLimitExhausted raised,
+    sleep called len(retry_delays) times total.
+H3. NON-429 HTTP ERROR: 500 response — RuntimeError raised immediately, no retry.
+H4. BUDGET EXHAUSTED: retry_budget["remaining"] <= 0 before first retry sleep —
+    RateLimitExhausted raised immediately without sleeping.
+H5. ADAPTER RECOVERY (integration): adapter gets 429 on page 2 then 200 — run
+    continues pagination, reached_floor=True, all tweets collected.
+H6. ADAPTER ABORT (integration): adapter gets persistent 429 on page 3 (retries
+    exhausted mid-pagination) — reached_floor=False, status=incomplete (NOT ready),
+    partial tweets from pages 1-2 are persisted.
+"""
+
+from __future__ import annotations
+
+import datetime
+import json
+import urllib.error
+import urllib.request
+from pathlib import Path
+from unittest.mock import patch, MagicMock, call
+
+import pytest
+
+from tweet_sources._http import get_json, RateLimitExhausted
+from tweet_sources.base import Tweet, FetchResult
+
+UTC = datetime.timezone.utc
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _tweet_raw(tweet_id: str) -> dict:
+    """Minimal raw tweet dict accepted by getxapi._normalize."""
+    return {
+        "id": tweet_id,
+        "text": f"tweet {tweet_id}",
+        "isReply": False,
+    }
+
+
+def _make_http_error(code: int) -> urllib.error.HTTPError:
+    import io
+    body = json.dumps({"error": f"HTTP {code}"}).encode()
+    return urllib.error.HTTPError(
+        url="https://example.com",
+        code=code,
+        msg=f"Error {code}",
+        hdrs=None,
+        fp=io.BytesIO(body),
+    )
+
+
+def _make_200_response(body: dict):
+    """Return a context-manager mock that simulates a 200 urlopen response."""
+    mock_resp = MagicMock()
+    mock_resp.status = 200
+    mock_resp.read.return_value = json.dumps(body).encode()
+    mock_resp.__enter__ = lambda s: s
+    mock_resp.__exit__ = MagicMock(return_value=False)
+    return mock_resp
+
+
+# ---------------------------------------------------------------------------
+# H1 — transient 429, recovers on second attempt
+# ---------------------------------------------------------------------------
+
+def test_h1_transient_429_recovers():
+    slept: list[float] = []
+    responses = [_make_http_error(429), _make_200_response({"ok": True})]
+    call_count = 0
+
+    def fake_urlopen(req, timeout):
+        nonlocal call_count
+        r = responses[call_count]
+        call_count += 1
+        if isinstance(r, urllib.error.HTTPError):
+            raise r
+        return r
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        result = get_json(
+            "https://example.com/test",
+            headers={},
+            retry_delays=(5, 30, 120),
+            _sleep_fn=slept.append,
+        )
+
+    assert result == {"ok": True}
+    assert slept == [5], f"expected one 5s sleep, got {slept}"
+    assert call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# H2 — all retries exhausted → RateLimitExhausted
+# ---------------------------------------------------------------------------
+
+def test_h2_exhausted_retries_raises():
+    slept: list[float] = []
+
+    def fake_urlopen(req, timeout):
+        raise _make_http_error(429)
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        with pytest.raises(RateLimitExhausted):
+            get_json(
+                "https://example.com/test",
+                headers={},
+                retry_delays=(5, 30, 120),
+                _sleep_fn=slept.append,
+            )
+
+    # 3 retries → 3 sleeps (5, 30, 120), then raises on the 4th attempt
+    assert slept == [5, 30, 120], f"expected sleeps [5,30,120], got {slept}"
+
+
+# ---------------------------------------------------------------------------
+# H3 — non-429 HTTP error → RuntimeError, no retry
+# ---------------------------------------------------------------------------
+
+def test_h3_non_429_raises_immediately():
+    slept: list[float] = []
+    call_count = 0
+
+    def fake_urlopen(req, timeout):
+        nonlocal call_count
+        call_count += 1
+        raise _make_http_error(500)
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        with pytest.raises(RuntimeError, match="HTTP 500"):
+            get_json(
+                "https://example.com/test",
+                headers={},
+                retry_delays=(5, 30, 120),
+                _sleep_fn=slept.append,
+            )
+
+    assert slept == [], "no sleep on non-429 error"
+    assert call_count == 1, "only one attempt for non-429"
+
+
+# ---------------------------------------------------------------------------
+# H4 — retry budget exhausted → no sleep, raises immediately
+# ---------------------------------------------------------------------------
+
+def test_h4_budget_exhausted_raises_without_sleeping():
+    slept: list[float] = []
+
+    def fake_urlopen(req, timeout):
+        raise _make_http_error(429)
+
+    budget = {"remaining": 0.0}
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        with pytest.raises(RateLimitExhausted):
+            get_json(
+                "https://example.com/test",
+                headers={},
+                retry_delays=(5, 30, 120),
+                retry_budget=budget,
+                _sleep_fn=slept.append,
+            )
+
+    assert slept == [], "must not sleep when budget is 0"
+
+
+# ---------------------------------------------------------------------------
+# H5 — adapter-level recovery: 429 on page 2, then 200 — run continues
+# ---------------------------------------------------------------------------
+
+def test_h5_adapter_recovery_continues_pagination():
+    """
+    GetXApiSource.fetch_tweets: page 1 returns 2 tweets, page 2 gets a transient 429
+    (recovers on retry), page 3 returns empty → reached_floor=True, all tweets collected.
+    """
+    from tweet_sources.getxapi import GetXApiSource
+
+    # Snowflake IDs that decode to dates in the current year (within test tolerance).
+    # We'll use deterministic IDs; the adapter uses snowflake_to_utc to parse them.
+    # For simplicity, patch _normalize to control created_at_utc directly.
+    year = datetime.datetime.now(UTC).year
+
+    page1_tweets = [_tweet_raw("111"), _tweet_raw("112")]
+    page2_tweets = [_tweet_raw("113"), _tweet_raw("114")]
+
+    page_responses = [
+        {"tweets": page1_tweets, "next_cursor": "cur1"},   # page 1: 200
+        {"tweets": page2_tweets, "next_cursor": "cur2"},   # page 2: 429 then 200
+        {"tweets": []},                                     # page 3: empty → floor
+    ]
+    page_idx = 0
+    page2_attempted = 0
+    slept: list[float] = []
+
+    def fake_urlopen(req, timeout):
+        nonlocal page_idx, page2_attempted
+        # page 2 (index 1) gets a 429 on first attempt
+        if page_idx == 1 and page2_attempted == 0:
+            page2_attempted += 1
+            raise _make_http_error(429)
+        resp = _make_200_response(page_responses[page_idx])
+        page_idx += 1
+        return resp
+
+    src = GetXApiSource(api_key="test-key")
+    start = datetime.date(year, 1, 1)
+    end = datetime.date(year, 6, 1)
+
+    def fake_normalize(raw):
+        # Return a Tweet with a created_at_utc well within the fetch window
+        from tweet_sources.base import Tweet
+        return Tweet(
+            id=raw["id"], created_at_utc=f"{year}-03-01T10:00:00Z",
+            text=raw.get("text"), type="original", is_reply=False, is_quote=False,
+            in_reply_to_id=None, quoted_tweet_id=None, quoted_author_id=None,
+            conversation_id=None, like_count=None, retweet_count=None, reply_count=None,
+            quote_count=None, view_count=None, bookmark_count=None,
+            has_media=False, media_urls=[], url=None,
+        )
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+         patch("tweet_sources.getxapi._normalize", side_effect=fake_normalize), \
+         patch("tweet_sources._http.time.sleep", side_effect=slept.append):
+        result = src.fetch_tweets("testuser", start, end)
+
+    print(f"\nH5: tweets={len(result.tweets)} reached_floor={result.reached_floor} slept={slept}")
+    assert result.reached_floor is True, "transient 429 must not abort — run should complete"
+    assert len(result.tweets) == 4, f"all 4 tweets from pages 1+2 expected, got {len(result.tweets)}"
+    assert slept == [5], "one 5s sleep for the transient 429"
+
+
+# ---------------------------------------------------------------------------
+# H6 — adapter abort: 429 exhausted mid-loop → reached_floor=False, status≠ready
+# ---------------------------------------------------------------------------
+
+def test_h6_adapter_abort_on_exhausted_429():
+    """
+    GetXApiSource.fetch_tweets: pages 1-2 succeed, page 3 gets persistent 429 (all
+    retries exhausted). Adapter breaks with reached_floor=False.
+    Then ingest_handle: outcome must NOT be 'ok', status must NOT be 'ready'.
+    Partial tweets from pages 1-2 are persisted (self-healing).
+    """
+    from storage import init_db, get_handle
+    from tweet_sources.getxapi import GetXApiSource
+    import tempfile
+
+    year = datetime.datetime.now(UTC).year
+
+    page1_tweets = [_tweet_raw("201"), _tweet_raw("202")]
+    page2_tweets = [_tweet_raw("203"), _tweet_raw("204")]
+
+    page_responses = [
+        {"tweets": page1_tweets, "next_cursor": "cur1"},
+        {"tweets": page2_tweets, "next_cursor": "cur2"},
+        # page 3: persistent 429 — all retries exhaust
+    ]
+    page_idx = 0
+    slept: list[float] = []
+
+    def fake_urlopen(req, timeout):
+        nonlocal page_idx
+        if page_idx >= len(page_responses):
+            raise _make_http_error(429)
+        resp = _make_200_response(page_responses[page_idx])
+        page_idx += 1
+        return resp
+
+    def fake_normalize(raw):
+        from tweet_sources.base import Tweet
+        return Tweet(
+            id=raw["id"], created_at_utc=f"{year}-03-15T10:00:00Z",
+            text=raw.get("text"), type="original", is_reply=False, is_quote=False,
+            in_reply_to_id=None, quoted_tweet_id=None, quoted_author_id=None,
+            conversation_id=None, like_count=None, retweet_count=None, reply_count=None,
+            quote_count=None, view_count=None, bookmark_count=None,
+            has_media=False, media_urls=[], url=None,
+        )
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+         patch("tweet_sources.getxapi._normalize", side_effect=fake_normalize), \
+         patch("tweet_sources._http.time.sleep", side_effect=slept.append):
+        result = GetXApiSource(api_key="test-key").fetch_tweets(
+            "throttled_user",
+            datetime.date(year, 1, 1),
+            datetime.date(year, 6, 1),
+        )
+
+    print(f"\nH6 adapter: tweets={len(result.tweets)} reached_floor={result.reached_floor} slept={slept}")
+
+    # reached_floor must be False — this was NOT a clean stop
+    assert result.reached_floor is False, (
+        "exhausted 429 mid-pagination must NOT set reached_floor=True"
+    )
+    # Partial tweets from pages 1+2 are returned for storage
+    assert len(result.tweets) == 4
+
+    # Now run through ingest_handle: coverage-gap + reached_floor=False → incomplete
+    with tempfile.TemporaryDirectory() as tmp:
+        db = Path(tmp) / "test.db"
+        init_db(db)
+
+        page_idx = 0  # reset for second run through ingest_handle
+        slept.clear()
+
+        from orchestration.runner import ingest_handle
+
+        def fake_get_source(_provider):
+            src = GetXApiSource(api_key="test-key")
+            return src
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
+             patch("tweet_sources.getxapi._normalize", side_effect=fake_normalize), \
+             patch("tweet_sources._http.time.sleep", side_effect=slept.append), \
+             patch("orchestration.runner.get_source", side_effect=fake_get_source):
+            ir = ingest_handle("throttled_user", provider="fake", db_path=db)
+
+        row = get_handle("throttled_user", db_path=db)
+        print(f"H6 ingest: outcome={ir.outcome}, status={row['status']}, inserted={ir.inserted}")
+
+        # MUST NOT be ready — a 429-aborted run is not complete
+        assert row["status"] != "ready", (
+            f"status must not be 'ready' after exhausted 429 abort, got {row['status']!r}"
+        )
+        assert ir.outcome != "ok", (
+            f"outcome must not be 'ok' after exhausted 429 abort, got {ir.outcome!r}"
+        )
+        # Partial tweets stored — available for retry
+        assert ir.inserted == 4, f"4 partial tweets should be stored, got {ir.inserted}"

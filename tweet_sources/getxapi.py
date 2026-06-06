@@ -8,12 +8,16 @@ import urllib.parse
 from typing import Any
 
 from .base import TweetSource, Tweet, FetchResult, UserInfo, snowflake_to_utc, compute_type
-from ._http import get_json, extract_media_urls
+from ._http import get_json, extract_media_urls, RateLimitExhausted
 
 logger = logging.getLogger(__name__)
 
 _BASE = "https://api.getxapi.com"
 _MAX_PAGES = 1000  # anti-infinite-loop guard; normal stop is the start-date floor
+
+# Maximum seconds this fetch call may spend sleeping on 429 retries across all pages.
+# Prevents a single throttled handle from consuming the whole Actions job timeout.
+_MAX_RETRY_BUDGET_SECONDS = 300
 
 
 class GetXApiSource(TweetSource):
@@ -72,6 +76,9 @@ class GetXApiSource(TweetSource):
         cursor: str | None = None
         pages = 0
         reached_floor = False
+        # Shared 429-retry budget across all pages; prevents one throttled handle
+        # from sleeping the entire Actions job into timeout.
+        retry_budget: dict[str, float] = {"remaining": float(_MAX_RETRY_BUDGET_SECONDS)}
 
         while pages < _MAX_PAGES:
             params: dict[str, str] = {"q": base_q, "count": "20"}
@@ -80,7 +87,16 @@ class GetXApiSource(TweetSource):
 
             url = f"{_BASE}/twitter/tweet/advanced_search?{urllib.parse.urlencode(params)}"
             logger.info("getxapi request %d: %s", pages + 1, url)
-            data = get_json(url, self._headers)
+            try:
+                data = get_json(url, self._headers, retry_budget=retry_budget)
+            except RateLimitExhausted as exc:
+                logger.error(
+                    "getxapi: rate-limit retries exhausted on page %d for %s — aborting fetch"
+                    " (reached_floor=False, partial tweets kept)",
+                    pages + 1, handle,
+                )
+                # reached_floor stays False — this was NOT a clean stop
+                break
             pages += 1
 
             batch = data.get("tweets") or []

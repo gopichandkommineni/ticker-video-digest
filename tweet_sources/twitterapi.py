@@ -8,12 +8,15 @@ import urllib.parse
 from typing import Any
 
 from .base import TweetSource, Tweet, FetchResult, UserInfo, snowflake_to_utc, compute_type
-from ._http import get_json, extract_media_urls
+from ._http import get_json, extract_media_urls, RateLimitExhausted
 
 logger = logging.getLogger(__name__)
 
 _BASE = "https://api.twitterapi.io"
 _MAX_PAGES = 1000  # anti-infinite-loop guard; normal stop is the start-date floor
+
+# Maximum seconds this fetch call may spend sleeping on 429 retries across all pages.
+_MAX_RETRY_BUDGET_SECONDS = 300
 
 
 class TwitterApiIoSource(TweetSource):
@@ -72,6 +75,7 @@ class TwitterApiIoSource(TweetSource):
         cursor: str | None = None
         pages = 0
         reached_floor = False
+        retry_budget: dict[str, float] = {"remaining": float(_MAX_RETRY_BUDGET_SECONDS)}
 
         while pages < _MAX_PAGES:
             params: dict[str, str] = {
@@ -84,7 +88,15 @@ class TwitterApiIoSource(TweetSource):
 
             url = f"{_BASE}/twitter/tweet/advanced_search?{urllib.parse.urlencode(params)}"
             logger.info("twitterapi.io request %d: %s", pages + 1, url)
-            data = get_json(url, self._headers)
+            try:
+                data = get_json(url, self._headers, retry_budget=retry_budget)
+            except RateLimitExhausted:
+                logger.error(
+                    "twitterapi.io: rate-limit retries exhausted on page %d for %s — aborting fetch"
+                    " (reached_floor=False, partial tweets kept)",
+                    pages + 1, handle,
+                )
+                break
             pages += 1
 
             batch = data.get("tweets") or []
