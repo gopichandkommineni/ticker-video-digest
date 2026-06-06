@@ -75,6 +75,7 @@ class TwitterApiIoSource(TweetSource):
         cursor: str | None = None
         pages = 0
         reached_floor = False
+        skipped = 0
         retry_budget: dict[str, float] = {"remaining": float(_MAX_RETRY_BUDGET_SECONDS)}
 
         while pages < _MAX_PAGES:
@@ -107,7 +108,15 @@ class TwitterApiIoSource(TweetSource):
 
             hit_start = False
             for raw in batch:
-                tweet = _normalize(raw)
+                try:
+                    tweet = _normalize(raw)
+                except Exception as exc:
+                    skipped += 1
+                    logger.error(
+                        "twitterapi.io: skipping malformed tweet id=%s (%s)",
+                        raw.get("id", "<unknown>"), exc,
+                    )
+                    continue
                 tweet_dt = datetime.datetime.strptime(tweet.created_at_utc, "%Y-%m-%dT%H:%M:%SZ")
                 if tweet_dt < start_dt:
                     hit_start = True
@@ -131,10 +140,10 @@ class TwitterApiIoSource(TweetSource):
             )
 
         logger.info(
-            "twitterapi.io fetch_tweets(%s, %s→%s): %d tweets in %d request(s) reached_floor=%s",
-            handle, start, end, len(tweets), pages, reached_floor,
+            "twitterapi.io fetch_tweets(%s, %s→%s): normalized %d, skipped %d malformed, in %d request(s) reached_floor=%s",
+            handle, start, end, len(tweets), skipped, pages, reached_floor,
         )
-        return FetchResult(tweets=tweets, reached_floor=reached_floor)
+        return FetchResult(tweets=tweets, reached_floor=reached_floor, skipped=skipped)
 
 
 def _normalize(raw: dict[str, Any]) -> Tweet:
@@ -150,8 +159,8 @@ def _normalize(raw: dict[str, Any]) -> Tweet:
         is_reply=is_reply,
         is_quote=is_quote,
         in_reply_to_id=raw.get("inReplyToId"),
-        quoted_tweet_id=quoted["id"] if quoted else None,
-        quoted_author_id=quoted["author"]["id"] if quoted and quoted.get("author") else None,
+        quoted_tweet_id=quoted.get("id") if quoted else None,
+        quoted_author_id=quoted["author"].get("id") if quoted and quoted.get("author") else None,
         conversation_id=raw.get("conversationId"),
         like_count=raw.get("likeCount"),
         retweet_count=raw.get("retweetCount"),

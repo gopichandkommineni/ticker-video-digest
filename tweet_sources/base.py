@@ -80,6 +80,7 @@ def compute_type(raw: dict[str, Any]) -> tuple[str, bool, bool]:
 class FetchResult:
     tweets: list[Tweet]
     reached_floor: bool   # True = stopped naturally; False = cap forced exit before start date
+    skipped: int = 0      # count of tweets dropped due to normalization errors
 
 
 class TweetSource(ABC):
