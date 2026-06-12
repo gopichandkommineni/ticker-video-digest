@@ -1,0 +1,755 @@
+# Hierarchical keyword taxonomy for tweet classification
+# Structure: theme > sub_theme > keywords (with weights 1/3/5)
+#
+# Weight guide:
+#   5 = anchor   — highly specific, rarely appears outside this sub_theme
+#   3 = strong   — clearly associated, occasionally shared across sub_themes
+#   1 = context  — supporting signal only, not enough alone
+#
+# Rules:
+#   - All matching is case-insensitive, whole-word (word-boundary aware)
+#   - Phrases (multi-word) are matched before single words
+#   - Minimum score to assign a sub_theme: 3
+#   - A tweet can match multiple sub_themes (within or across themes)
+
+themes:
+
+  AI_Semiconductors:
+    theme: "AI"
+    sub_themes:
+
+      GPU_and_Compute_Chips:
+        keywords:
+          # anchors
+          - [blackwell, 5]
+          - [hopper, 5]
+          - [gb200, 5]
+          - [h100, 5]
+          - [b200, 5]
+          - [cuda, 5]
+          - [accelerator, 5]
+          - [xpu, 5]
+          - [tpu, 5]
+          - [asic, 5]
+          - [gpu rack, 5]
+          # strong
+          - [gpu, 3]
+          - [chip, 3]
+          - [semiconductor, 3]
+          - [processor, 3]
+          - [silicon, 3]
+          - [wafer, 3]
+          - [foundry, 3]
+          - [fab, 3]
+          - [node, 3]
+          - [euv, 3]
+          - [duv, 3]
+          - [lithography, 3]
+          - [packaging, 3]
+          - [chiplet, 3]
+          - [arm architecture, 3]
+          # context
+          - [compute, 1]
+          - [inference, 1]
+          - [training, 1]
+          - [throughput, 1]
+
+      AI_Memory:
+        keywords:
+          # anchors
+          - [hbm, 5]
+          - [hbm3, 5]
+          - [hbm4, 5]
+          - [high bandwidth memory, 5]
+          - [socamm, 5]
+          - [nand flash, 5]
+          - [dram supercycle, 5]
+          - [memory supercycle, 5]
+          # strong
+          - [dram, 3]
+          - [nand, 3]
+          - [flash, 3]
+          - [memory bandwidth, 3]
+          - [storage, 3]
+          - [ssd, 3]
+          - [hard drive, 3]
+          - [tsv, 3]
+          # context
+          - [memory, 1]
+          - [capacity, 1]
+          - [data, 1]
+
+      Semiconductor_Equipment_and_Materials:
+        keywords:
+          # anchors
+          - [euv scanner, 5]
+          - [chemical mechanical planarization, 5]
+          - [cmp, 5]
+          - [atomic layer deposition, 5]
+          - [ald, 5]
+          - [cvd, 5]
+          - [ion implant, 5]
+          - [wafer inspection, 5]
+          - [yield management, 5]
+          # strong
+          - [semiconductor equipment, 3]
+          - [etch, 3]
+          - [deposition, 3]
+          - [metrology, 3]
+          - [epitaxy, 3]
+          - [substrate, 3]
+          - [gallium arsenide, 3]
+          - [gallium nitride, 3]
+          - [indium phosphide, 3]
+          - [inp, 3]
+          - [silicon carbide, 3]
+          - [sic, 3]
+          # context
+          - [equipment, 1]
+          - [materials, 1]
+          - [process, 1]
+
+  AI_Infrastructure:
+    theme: "AI"
+    sub_themes:
+
+      Data_Centers_and_Cloud:
+        keywords:
+          # anchors
+          - [ai factory, 5]
+          - [nvl72, 5]
+          - [nvl36, 5]
+          - [hyperscaler, 5]
+          - [neocloud, 5]
+          - [colocation, 5]
+          - [ai cloud, 5]
+          - [csp, 5]
+          - [data center campus, 5]
+          # strong
+          - [data center, 3]
+          - [cloud, 3]
+          - [server rack, 3]
+          - [server, 3]
+          - [hpc, 3]
+          - [high performance compute, 3]
+          - [cloud compute, 3]
+          - [compute cluster, 3]
+          - [gpu cluster, 3]
+          # context
+          - [compute, 1]
+          - [capacity, 1]
+          - [uptime, 1]
+          - [latency, 1]
+
+      AI_Networking_and_Photonics:
+        keywords:
+          # anchors
+          - [co-packaged optics, 5]
+          - [cpo, 5]
+          - [silicon photonics, 5]
+          - [optical transceiver, 5]
+          - [800g, 5]
+          - [1.6t, 5]
+          - [lpo, 5]
+          - [lro, 5]
+          - [optical compute interconnect, 5]
+          - [oci, 5]
+          - [indium phosphide, 5]
+          - [inp laser, 5]
+          - [vcsel, 5]
+          - [eml, 5]
+          # strong
+          - [photonics, 3]
+          - [optical, 3]
+          - [fiber, 3]
+          - [transceiver, 3]
+          - [interconnect, 3]
+          - [bandwidth, 3]
+          - [networking, 3]
+          - [switch, 3]
+          - [spine leaf, 3]
+          - [infiniband, 3]
+          # context
+          - [signal, 1]
+          - [latency, 1]
+          - [throughput, 1]
+
+      AI_Power_and_Cooling:
+        keywords:
+          # anchors
+          - [800v, 5]
+          - [power distribution unit, 5]
+          - [pdu, 5]
+          - [liquid cooling, 5]
+          - [direct liquid cooling, 5]
+          - [dlc, 5]
+          - [immersion cooling, 5]
+          - [thermal design power, 5]
+          - [tdp, 5]
+          - [power shelf, 5]
+          # strong
+          - [cooling, 3]
+          - [power delivery, 3]
+          - [ups, 3]
+          - [megawatt, 3]
+          - [gigawatt, 3]
+          - [power architecture, 3]
+          - [voltage regulator, 3]
+          - [vrm, 3]
+          # context
+          - [power, 1]
+          - [watt, 1]
+          - [heat, 1]
+          - [thermal, 1]
+
+  AI_Software_and_Models:
+    theme: "AI"
+    sub_themes:
+
+      Foundation_Models_and_Agents:
+        keywords:
+          # anchors
+          - [large language model, 5]
+          - [llm, 5]
+          - [foundation model, 5]
+          - [agentic, 5]
+          - [ai agent, 5]
+          - [rag, 5]
+          - [fine tuning, 5]
+          - [context window, 5]
+          - [tokens per second, 5]
+          - [claude, 5]
+          - [gpt, 5]
+          - [gemini, 5]
+          # strong
+          - [model, 3]
+          - [inference, 3]
+          - [training, 3]
+          - [benchmark, 3]
+          - [prompt, 3]
+          - [generative ai, 3]
+          # context
+          - [intelligence, 1]
+          - [algorithm, 1]
+          - [prediction, 1]
+
+      Cybersecurity:
+        keywords:
+          # anchors
+          - [zero trust, 5]
+          - [sase, 5]
+          - [soc platform, 5]
+          - [endpoint detection, 5]
+          - [edr, 5]
+          - [xdr, 5]
+          - [ransomware, 5]
+          - [threat intelligence, 5]
+          - [identity and access, 5]
+          - [iam, 5]
+          - [zero day, 5]
+          # strong
+          - [cybersecurity, 3]
+          - [cyberattack, 3]
+          - [firewall, 3]
+          - [vulnerability, 3]
+          - [intrusion, 3]
+          - [encryption, 3]
+          - [network security, 3]
+          # context
+          - [security, 1]
+          - [breach, 1]
+          - [hack, 1]
+
+  Space:
+    theme: "Space"
+    sub_themes:
+
+      Launch_Services:
+        keywords:
+          # anchors
+          - [reusable rocket, 5]
+          - [launch vehicle, 5]
+          - [payload fairing, 5]
+          - [low earth orbit, 5]
+          - [leo launch, 5]
+          - [geosynchronous, 5]
+          - [geo, 5]
+          - [launch manifest, 5]
+          - [rideshare, 5]
+          # strong
+          - [launch, 3]
+          - [rocket, 3]
+          - [orbit, 3]
+          - [spacecraft, 3]
+          - [reusability, 3]
+          - [propulsion, 3]
+          # context
+          - [payload, 1]
+          - [altitude, 1]
+          - [mission, 1]
+
+      Satellite_Communications:
+        keywords:
+          # anchors
+          - [starlink, 5]
+          - [leo constellation, 5]
+          - [direct to cell, 5]
+          - [geostationary satellite, 5]
+          - [satellite broadband, 5]
+          - [ground station, 5]
+          # strong
+          - [satellite, 3]
+          - [constellation, 3]
+          - [broadband, 3]
+          - [connectivity, 3]
+          - [transponder, 3]
+          # context
+          - [signal, 1]
+          - [coverage, 1]
+          - [latency, 1]
+
+      Space_Imaging_and_Intelligence:
+        keywords:
+          # anchors
+          - [synthetic aperture radar, 5]
+          - [sar, 5]
+          - [earth observation, 5]
+          - [multispectral, 5]
+          - [hyperspectral, 5]
+          - [geospatial intelligence, 5]
+          - [geoint, 5]
+          # strong
+          - [imaging, 3]
+          - [remote sensing, 3]
+          - [reconnaissance, 3]
+          - [surveillance, 3]
+          - [optical satellite, 3]
+          # context
+          - [resolution, 1]
+          - [orbit, 1]
+          - [detection, 1]
+
+      Space_Infrastructure_and_Components:
+        keywords:
+          # anchors
+          - [space station, 5]
+          - [lunar gateway, 5]
+          - [in-space servicing, 5]
+          - [on-orbit, 5]
+          - [space tug, 5]
+          # strong
+          - [space infrastructure, 3]
+          - [satellite bus, 3]
+          - [solar panel, 3]
+          - [antenna, 3]
+          - [reaction wheel, 3]
+          - [thruster, 3]
+          # context
+          - [space, 1]
+          - [orbital, 1]
+          - [component, 1]
+
+  Defense_and_Drones:
+    theme: "Defense"
+    sub_themes:
+
+      Military_Drones_and_UAS:
+        keywords:
+          # anchors
+          - [counter drone, 5]
+          - [uas, 5]
+          - [suas, 5]
+          - [loitering munition, 5]
+          - [drone swarm, 5]
+          - [attritable, 5]
+          - [collaborative combat aircraft, 5]
+          - [cca, 5]
+          - [autonomous weapon, 5]
+          - [subsea drone, 5]
+          # strong
+          - [drone, 3]
+          - [uav, 3]
+          - [unmanned, 3]
+          - [military drone, 3]
+          - [reconnaissance drone, 3]
+          # context
+          - [defense, 1]
+          - [military, 1]
+          - [autonomous, 1]
+
+      eVTOL_and_Advanced_Air_Mobility:
+        keywords:
+          # anchors
+          - [evtol, 5]
+          - [urban air mobility, 5]
+          - [air taxi, 5]
+          - [vertical takeoff, 5]
+          - [vtol, 5]
+          - [electric aircraft, 5]
+          # strong
+          - [air mobility, 3]
+          - [pilotless, 3]
+          - [flight corridor, 3]
+          # context
+          - [aviation, 1]
+          - [flight, 1]
+
+      Aerospace_and_Defense_Primes:
+        keywords:
+          # anchors
+          - [lockheed, 5]
+          - [northrop, 5]
+          - [raytheon, 5]
+          - [l3harris, 5]
+          - [anduril, 5]
+          - [palantir, 5]
+          - [pentagon budget, 5]
+          - [dod contract, 5]
+          - [defense budget, 5]
+          - [aukus, 5]
+          # strong
+          - [defense contractor, 3]
+          - [prime contractor, 3]
+          - [missile, 3]
+          - [radar, 3]
+          - [electronic warfare, 3]
+          # context
+          - [defense, 1]
+          - [military, 1]
+          - [national security, 1]
+
+  Energy:
+    theme: "Energy"
+    sub_themes:
+
+      Nuclear_and_Uranium:
+        keywords:
+          # anchors
+          - [small modular reactor, 5]
+          - [smr, 5]
+          - [micro reactor, 5]
+          - [uranium enrichment, 5]
+          - [nuclear fuel, 5]
+          - [fission, 5]
+          - [fusion, 5]
+          - [pressurized water reactor, 5]
+          - [pwr, 5]
+          - [nuclear renaissance, 5]
+          # strong
+          - [nuclear, 3]
+          - [uranium, 3]
+          - [reactor, 3]
+          - [enrichment, 3]
+          - [isotope, 3]
+          # context
+          - [energy, 1]
+          - [baseload, 1]
+          - [megawatt, 1]
+
+      Renewables_and_Clean_Energy:
+        keywords:
+          # anchors
+          - [wind farm, 5]
+          - [solar farm, 5]
+          - [power purchase agreement, 5]
+          - [ppa, 5]
+          - [green hydrogen, 5]
+          - [electrolysis, 5]
+          - [fuel cell, 5]
+          - [carbon capture, 5]
+          # strong
+          - [solar, 3]
+          - [wind, 3]
+          - [renewable, 3]
+          - [clean energy, 3]
+          - [hydrogen, 3]
+          # context
+          - [energy, 1]
+          - [sustainable, 1]
+          - [grid, 1]
+
+      Battery_and_Energy_Storage:
+        keywords:
+          # anchors
+          - [grid scale storage, 5]
+          - [flow battery, 5]
+          - [solid state battery, 5]
+          - [battery energy storage system, 5]
+          - [bess, 5]
+          - [lithium iron phosphate, 5]
+          - [lfp, 5]
+          - [battery pack, 5]
+          # strong
+          - [battery, 3]
+          - [energy storage, 3]
+          - [lithium, 3]
+          - [cathode, 3]
+          - [anode, 3]
+          - [cycle life, 3]
+          # context
+          - [storage, 1]
+          - [capacity, 1]
+          - [charge, 1]
+
+      Power_Infrastructure:
+        keywords:
+          # anchors
+          - [grid interconnection, 5]
+          - [transmission line, 5]
+          - [substation, 5]
+          - [power purchase agreement, 5]
+          - [behind the meter, 5]
+          - [demand response, 5]
+          # strong
+          - [grid, 3]
+          - [utility, 3]
+          - [power plant, 3]
+          - [electricity, 3]
+          - [transmission, 3]
+          # context
+          - [power, 1]
+          - [watt, 1]
+          - [load, 1]
+
+  Critical_Materials:
+    theme: "Materials"
+    sub_themes:
+
+      Rare_Earths:
+        keywords:
+          # anchors
+          - [rare earth element, 5]
+          - [ree, 5]
+          - [neodymium, 5]
+          - [dysprosium, 5]
+          - [praseodymium, 5]
+          - [cerium, 5]
+          - [lanthanum, 5]
+          - [greenland minerals, 5]
+          # strong
+          - [rare earth, 3]
+          - [magnet, 3]
+          - [separation plant, 3]
+          # context
+          - [mining, 1]
+          - [critical, 1]
+          - [supply chain, 1]
+
+      Critical_Minerals:
+        keywords:
+          # anchors
+          - [cobalt refinery, 5]
+          - [lithium brine, 5]
+          - [graphite anode, 5]
+          - [antimony, 5]
+          - [tungsten, 5]
+          - [manganese, 5]
+          - [nickel sulphate, 5]
+          - [critical mineral strategy, 5]
+          # strong
+          - [critical mineral, 3]
+          - [cobalt, 3]
+          - [graphite, 3]
+          - [beryllium, 3]
+          # context
+          - [mineral, 1]
+          - [mining, 1]
+          - [strategic, 1]
+
+      Copper:
+        keywords:
+          # anchors
+          - [copper concentrate, 5]
+          - [copper smelter, 5]
+          - [copper supercycle, 5]
+          - [electrolytic copper, 5]
+          # strong
+          - [copper, 3]
+          - [ore, 3]
+          - [mine, 3]
+          # context
+          - [metal, 1]
+          - [commodity, 1]
+
+  Quantum:
+    theme: "Quantum"
+    sub_themes:
+
+      Quantum_Computing:
+        keywords:
+          # anchors
+          - [qubit, 5]
+          - [quantum error correction, 5]
+          - [superconducting qubit, 5]
+          - [trapped ion, 5]
+          - [photonic quantum, 5]
+          - [quantum volume, 5]
+          - [quantum advantage, 5]
+          - [quantum supremacy, 5]
+          # strong
+          - [quantum computing, 3]
+          - [quantum processor, 3]
+          - [annealing, 3]
+          - [entanglement, 3]
+          - [quantum, 3]
+          # context
+          - [quantum computing company, 1]
+
+      Quantum_Security:
+        keywords:
+          # anchors
+          - [post quantum cryptography, 5]
+          - [quantum key distribution, 5]
+          - [qkd, 5]
+          - [quantum safe, 5]
+          - [lattice cryptography, 5]
+          # strong
+          - [quantum encryption, 3]
+          - [quantum security, 3]
+          # context
+          - [quantum, 1]
+          - [cryptography, 1]
+
+  Robotics_and_AVs:
+    theme: "Robotics"
+    sub_themes:
+
+      Humanoid_Robots:
+        keywords:
+          # anchors
+          - [humanoid, 5]
+          - [bipedal, 5]
+          - [optimus robot, 5]
+          - [figure robot, 5]
+          - [dexterous manipulation, 5]
+          - [embodied ai, 5]
+          # strong
+          - [robot, 3]
+          - [manipulator, 3]
+          - [robotic arm, 3]
+          # context
+          - [automation, 1]
+          - [physical ai, 1]
+
+      Autonomous_Vehicles:
+        keywords:
+          # anchors
+          - [full self driving, 5]
+          - [fsd, 5]
+          - [waymo, 5]
+          - [lidar, 5]
+          - [radar sensor, 5]
+          - [level 4, 5]
+          - [level 5, 5]
+          - [autonomous driving, 5]
+          - [robotaxi, 5]
+          # strong
+          - [self driving, 3]
+          - [autonomous vehicle, 3]
+          - [av, 3]
+          - [fleet autonomy, 3]
+          # context
+          - [vehicle, 1]
+          - [sensor, 1]
+          - [navigation, 1]
+
+  Crypto_and_Digital_Assets:
+    theme: "Crypto"
+    sub_themes:
+
+      Bitcoin_Mining_and_HPC:
+        keywords:
+          # anchors
+          - [hash rate, 5]
+          - [proof of work, 5]
+          - [asic miner, 5]
+          - [mining rig, 5]
+          - [bitcoin halving, 5]
+          - [hpc conversion, 5]
+          # strong
+          - [bitcoin miner, 3]
+          - [crypto mining, 3]
+          - [mining, 3]
+          - [hash power, 3]
+          # context
+          - [bitcoin, 1]
+          - [crypto, 1]
+          - [blockchain, 1]
+
+      Digital_Assets_and_Exchanges:
+        keywords:
+          # anchors
+          - [spot bitcoin etf, 5]
+          - [defi protocol, 5]
+          - [stablecoin, 5]
+          - [tokenization, 5]
+          - [crypto exchange, 5]
+          # strong
+          - [ethereum, 3]
+          - [defi, 3]
+          - [nft, 3]
+          - [wallet, 3]
+          # context
+          - [crypto, 1]
+          - [token, 1]
+
+  FinTech:
+    theme: "FinTech"
+    sub_themes:
+
+      Payments_and_Neobanks:
+        keywords:
+          # anchors
+          - [buy now pay later, 5]
+          - [bnpl, 5]
+          - [open banking, 5]
+          - [digital wallet, 5]
+          - [embedded finance, 5]
+          # strong
+          - [payments, 3]
+          - [neobank, 3]
+          - [fintech, 3]
+          - [insurtech, 3]
+          # context
+          - [financial, 1]
+          - [transaction, 1]
+
+  Biotech_and_Healthcare:
+    theme: "Healthcare"
+    sub_themes:
+
+      Oncology_and_Immunotherapy:
+        keywords:
+          # anchors
+          - [car-t, 5]
+          - [checkpoint inhibitor, 5]
+          - [pd-1, 5]
+          - [ctla-4, 5]
+          - [tumor microenvironment, 5]
+          - [bispecific antibody, 5]
+          # strong
+          - [oncology, 3]
+          - [immunotherapy, 3]
+          - [cancer, 3]
+          - [clinical trial, 3]
+          # context
+          - [treatment, 1]
+          - [therapy, 1]
+
+      Digital_Health_and_GLP1:
+        keywords:
+          # anchors
+          - [glp-1, 5]
+          - [semaglutide, 5]
+          - [ozempic, 5]
+          - [wegovy, 5]
+          - [telehealth, 5]
+          - [rpm, 5]
+          - [ai diagnostics, 5]
+          # strong
+          - [weight loss, 3]
+          - [digital health, 3]
+          - [wearable, 3]
+          # context
+          - [health, 1]
+          - [patient, 1]
