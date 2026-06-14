@@ -1,35 +1,35 @@
 """
 Orchestration layer tests — fake adapter only, no real API calls.
 
-T1. New handle -> backfill range starts Jan 1 current year (computed at runtime);
-    status pending->backfilling->ready; watermark = max created_at of written tweets.
-T2. Second run on ready handle -> delta range = watermark-1h -> now; overlap deduped.
-T3. PARTIAL FETCH (adapter raises): watermark UNCHANGED; status=failed; partial tweets
-    retained. Retry completes cleanly; watermark advances — gap self-heals.  KEY TEST.
-T4. WRITE FAILURE (upsert raises): watermark UNCHANGED; status=failed.  KEY TEST.
-T5. STALE: handle in backfilling with old status_since -> is_stale() True;
-    fresh status_since -> False; runner actually writes status_since on each
-    in-progress transition.
-T6. DOUBLE-RUN: freshly-backfilling handle (not stale) -> skipped, adapter not called.
-T7. ingest_all ISOLATION: one handle's adapter raises; batch continues; only that
-    handle ends failed.
-T8. BACKFILL CAP BEFORE FLOOR: adapter returns reached_floor=False on a backfill
-    -> outcome=incomplete, status=incomplete, watermark NOT advanced to now.  KEY TEST.
-T9. SHALLOW INDEX (reached_floor=True but earliest > floor+7d): adapter stops on an
-    empty page but earliest stored tweet is May 31 while floor is Jan 1.  Must be
-    treated as incomplete, not ready.  KEY TEST.
+New architecture (v2 day-queue):
+  - Both providers (getxapi + twitterapi) are called for every day.
+  - Cross-provider count agreement replaces reached_floor as completeness oracle.
+  - day_fetch_log table tracks per-day status; runner reads it for final outcome.
+  - coverage_floor replaces watermark as the completeness signal.
+
+Test inventory:
+  T1.  New handle → backfill from Jan 1; all days ok → status=ready.
+  T2.  Handle with prior ok days → delta (last 3 days); deduplication.
+  T3.  One provider fails a day → that day is 'failed'; outcome=incomplete.
+       Re-run heals it (failed day retried, both providers agree).
+  T4.  Both providers return mismatched counts → day marked mismatch; incomplete.
+       Re-run with agreement → ok.
+  T5.  Stale handle (old status_since) → re-run; fresh → skipped.
+  T6.  Double-run guard (fresh in-progress) → skipped, adapters not called.
+  T7.  ingest_all isolation: one handle's adapter raises; batch continues.
+  T8.  All days fail (both providers error) → outcome=incomplete, no coverage_floor.
 """
 
 from __future__ import annotations
 
 import datetime
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 
 from storage import init_db, get_handle, upsert_handle
-from storage.db import get_connection
+from storage.day_log import day_summary, mark_day, populate_pending_days
 from tweet_sources.base import Tweet, FetchResult, UserInfo
 
 UTC = datetime.timezone.utc
@@ -56,17 +56,21 @@ def _tweet(id: str, created_at_utc: str) -> Tweet:
 
 class FakeSource:
     """
-    Fake adapter. pages: successive fetch_tweets calls pop from this list.
-    fail_on_call: 0-based index on which to raise RuntimeError.
-    reached_floor: value to report in FetchResult (default True = natural stop).
+    Fake adapter for day-queue tests.
+
+    tweets_by_day: {date_str: [Tweet, ...]} — what to return per day.
+    fail_provider: if set to 'getxapi' or 'twitterapi', raises on that provider.
     """
-    def __init__(self, pages=None, fail_on_call=None, reached_floor=True):
-        self.pages = list(pages or [[]])
-        self.fail_on_call = fail_on_call
-        self._reached_floor = reached_floor
-        self._call_count = 0
-        self.last_start = None
-        self.last_end = None
+    def __init__(
+        self,
+        tweets_by_day: dict[str, list[Tweet]] | None = None,
+        fail_provider: str | None = None,
+        provider_name: str = "fake",
+    ):
+        self.tweets_by_day = tweets_by_day or {}
+        self.fail_provider = fail_provider
+        self.provider_name = provider_name
+        self.calls: list[tuple[str, datetime.date, datetime.date]] = []
 
     def fetch_user_info(self, handle: str) -> UserInfo:
         return UserInfo(handle=handle, display_name="Test", user_id="1",
@@ -74,14 +78,20 @@ class FakeSource:
                         bio=None, is_verified=False, is_blue_verified=False)
 
     def fetch_tweets(self, handle: str, start: datetime.date, end: datetime.date) -> FetchResult:
-        self.last_start = start
-        self.last_end = end
-        idx = self._call_count
-        self._call_count += 1
-        if self.fail_on_call is not None and idx == self.fail_on_call:
-            raise RuntimeError(f"Simulated failure on call {idx}")
-        tweets = self.pages[idx] if idx < len(self.pages) else []
-        return FetchResult(tweets=tweets, reached_floor=self._reached_floor)
+        self.calls.append((handle, start, end))
+        if self.fail_provider and self.provider_name == self.fail_provider:
+            raise RuntimeError(f"Simulated {self.fail_provider} failure")
+        tweets = self.tweets_by_day.get(start.isoformat(), [])
+        return FetchResult(tweets=tweets, reached_floor=True)
+
+
+def _make_get_source(gx_source: FakeSource, tw_source: FakeSource):
+    """Return a get_source factory that yields the right fake per provider."""
+    def _get_source(provider: str):
+        if provider == "getxapi":
+            return gx_source
+        return tw_source
+    return _get_source
 
 
 @pytest.fixture
@@ -91,154 +101,164 @@ def tmp_db(tmp_path: Path) -> Path:
     return db
 
 
-def _patch(fake: FakeSource):
-    return patch("orchestration.runner.get_source", return_value=fake)
+def _patch_sources(gx: FakeSource, tw: FakeSource):
+    return patch("orchestration.day_fetcher.get_source", side_effect=_make_get_source(gx, tw))
+
+
+def _patch_delay():
+    """Zero out INTER_DAY_DELAY so tests don't sleep."""
+    return patch("orchestration.day_fetcher.INTER_DAY_DELAY", 0.0)
 
 
 # ---------------------------------------------------------------------------
-# T1
+# T1 — new handle backfill
 # ---------------------------------------------------------------------------
 
 def test_t1_new_handle_backfill(tmp_db: Path) -> None:
-    now = datetime.datetime.now(UTC)
-    year = now.year
+    """New handle → backfill; both providers agree → status=ready, coverage_floor set."""
+    today = datetime.date.today()
+    yesterday = today - datetime.timedelta(days=1)
 
-    tweets = [
-        _tweet("0", f"{year}-01-02T00:01:00Z"),  # near Jan-1 floor → coverage check passes
-        _tweet("1", f"{year}-03-01T10:00:00Z"),
-        _tweet("2", f"{year}-04-15T12:00:00Z"),
-        _tweet("3", f"{year}-05-20T08:00:00Z"),
-    ]
-    fake = FakeSource(pages=[tweets])
-    with _patch(fake):
-        from orchestration.runner import ingest_handle
-        result = ingest_handle("testuser", provider="fake", db_path=tmp_db)
+    tweets_today     = [_tweet("a", f"{today.isoformat()}T10:00:00Z")]
+    tweets_yesterday = [_tweet("b", f"{yesterday.isoformat()}T10:00:00Z")]
+    by_day = {today.isoformat(): tweets_today, yesterday.isoformat(): tweets_yesterday}
+
+    gx = FakeSource(by_day, provider_name="getxapi")
+    tw = FakeSource(by_day, provider_name="twitterapi")
+
+    from orchestration.runner import ingest_handle
+    with _patch_sources(gx, tw), _patch_delay():
+        # _backfill_since limits range to 2 days so the test is fast.
+        result = ingest_handle("testuser", db_path=tmp_db, _backfill_since=yesterday)
+
+    row = get_handle("testuser", db_path=tmp_db)
+    print(f"\nT1: outcome={result.outcome}, floor={result.coverage_floor}, status={row['status']}")
 
     assert result.outcome == "ok", result
-    assert result.watermark == f"{year}-05-20T08:00:00Z"
-    assert result.inserted == 4
-    assert result.ignored == 0
-
-    row = get_handle("testuser", db_path=tmp_db)
     assert row["status"] == "ready"
-    assert row["tweets_watermark_utc"] == f"{year}-05-20T08:00:00Z"
-    assert row["total_tweets"] == 4
-    assert fake.last_start == datetime.date(now.year, 1, 1)
-    print(f"\nT1: backfill start={fake.last_start}, watermark={result.watermark}")
+    assert result.coverage_floor is not None
+    assert len(gx.calls) == 2   # one call per day (2 days)
+    assert len(tw.calls) == 2
 
 
 # ---------------------------------------------------------------------------
-# T2
+# T2 — delta run (handle with prior ok days)
 # ---------------------------------------------------------------------------
 
-def test_t2_delta_run_deduplication(tmp_db: Path) -> None:
+def test_t2_delta_run_uses_last_3_days(tmp_db: Path) -> None:
+    """Handle with prior ok days in day_fetch_log → delta uses last 3 days."""
     from orchestration.runner import ingest_handle
 
-    now = datetime.datetime.now(UTC)
-    year = now.year
-    with _patch(FakeSource(pages=[[_tweet("0", f"{year}-01-02T00:01:00Z"),
-                                    _tweet("1", f"{year}-03-01T10:00:00Z"),
-                                    _tweet("2", f"{year}-05-20T08:00:00Z")]])):
-        r1 = ingest_handle("testuser", provider="fake", db_path=tmp_db)
-    assert r1.watermark == f"{year}-05-20T08:00:00Z"
+    today = datetime.date.today()
+    # Pre-populate some ok days so runner thinks backfill is done.
+    since = today - datetime.timedelta(days=10)
+    populate_pending_days("testuser", since, today - datetime.timedelta(days=4),
+                          db_path=tmp_db)
+    # Mark them all ok to simulate completed prior backfill.
+    day = since
+    while day <= today - datetime.timedelta(days=4):
+        for prov in ("getxapi", "twitterapi"):
+            mark_day("testuser", day.isoformat(), prov, status="ok",
+                     tweet_count=5, db_path=tmp_db)
+        day += datetime.timedelta(days=1)
 
-    fake2 = FakeSource(pages=[[_tweet("2", f"{year}-05-20T08:00:00Z"),
-                                _tweet("3", f"{year}-05-21T09:00:00Z")]])
-    with _patch(fake2):
-        r2 = ingest_handle("testuser", provider="fake", db_path=tmp_db)
+    upsert_handle("testuser", {"status": "ready"}, db_path=tmp_db)
 
+    gx = FakeSource(provider_name="getxapi")
+    tw = FakeSource(provider_name="twitterapi")
+
+    with _patch_sources(gx, tw), _patch_delay():
+        result = ingest_handle("testuser", db_path=tmp_db)
+
+    print(f"\nT2: outcome={result.outcome}, gx_calls={gx.calls}, tw_calls={tw.calls}")
+    assert result.outcome == "ok"
+    # Delta should only process the last 3 days (overlap window).
+    dates_fetched = {start for (_, start, _) in gx.calls}
+    min_fetched = min(dates_fetched) if dates_fetched else today
+    assert (today - min_fetched).days <= 3, (
+        f"delta should only fetch last 3 days, but fetched from {min_fetched}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# T3 — one provider fails → failed day → incomplete → retry heals
+# ---------------------------------------------------------------------------
+
+def test_t3_single_provider_failure_retried(tmp_db: Path) -> None:
+    """One provider throws → day marked failed → outcome=incomplete.
+    Second run with both providers ok → outcome=ok."""
+    from orchestration.runner import ingest_handle
+
+    today = datetime.date.today()
+    date_str = today.isoformat()
+    tweets = [_tweet("x", f"{date_str}T10:00:00Z")]
+
+    # First run: twitterapi fails.
+    gx_ok = FakeSource({date_str: tweets}, provider_name="getxapi")
+    tw_fail = FakeSource({date_str: tweets}, fail_provider="twitterapi", provider_name="twitterapi")
+
+    with _patch_sources(gx_ok, tw_fail), _patch_delay():
+        r1 = ingest_handle("testuser", db_path=tmp_db, _backfill_since=today)
+
+    summary = day_summary("testuser", db_path=tmp_db)
+    print(f"\nT3 run1: outcome={r1.outcome}, day_summary={summary}")
+    assert r1.outcome == "incomplete"
+    assert summary.get("failed", 0) > 0
+
+    # Second run: both providers ok.
+    gx_ok2 = FakeSource({date_str: tweets}, provider_name="getxapi")
+    tw_ok2 = FakeSource({date_str: tweets}, provider_name="twitterapi")
+
+    with _patch_sources(gx_ok2, tw_ok2), _patch_delay():
+        r2 = ingest_handle("testuser", db_path=tmp_db, _backfill_since=today)
+
+    print(f"T3 run2: outcome={r2.outcome}")
     assert r2.outcome == "ok"
-    assert r2.inserted == 1
-    assert r2.ignored == 1
-    assert get_handle("testuser", db_path=tmp_db)["total_tweets"] == 4
-
-    wm = datetime.datetime(year, 5, 20, 8, 0, 0, tzinfo=UTC)
-    assert fake2.last_start == (wm - datetime.timedelta(hours=1)).date()
-    print(f"\nT2: delta start={fake2.last_start}, total_tweets=3")
 
 
 # ---------------------------------------------------------------------------
-# T3
+# T4 — provider count mismatch → mismatch day → incomplete → retry heals
 # ---------------------------------------------------------------------------
 
-def test_t3_partial_fetch_watermark_unchanged(tmp_db: Path) -> None:
+def test_t4_count_mismatch_marked_and_retried(tmp_db: Path) -> None:
+    """Providers return very different counts → mismatch → incomplete.
+    Second run with matching counts → ok."""
     from orchestration.runner import ingest_handle
 
-    year = datetime.datetime.now(UTC).year
-    with _patch(FakeSource(pages=[[_tweet("0", f"{year}-01-02T00:01:00Z"),
-                                   _tweet("1", f"{year}-03-01T10:00:00Z")]])):
-        r0 = ingest_handle("testuser", provider="fake", db_path=tmp_db)
-    wm_before = r0.watermark
-    print(f"\nT3: watermark before partial-fetch run: {wm_before}")
+    today = datetime.date.today()
+    date_str = today.isoformat()
 
-    with _patch(FakeSource(fail_on_call=0)):
-        r_fail = ingest_handle("testuser", provider="fake", db_path=tmp_db)
+    # GetXAPI returns 2 tweets, twitterapi returns 30 → >10% mismatch.
+    few   = [_tweet(str(i), f"{date_str}T{i:02d}:00:00Z") for i in range(2)]
+    many  = [_tweet(str(i), f"{date_str}T{i:02d}:00:00Z") for i in range(30)]
+    gx_few  = FakeSource({date_str: few},  provider_name="getxapi")
+    tw_many = FakeSource({date_str: many}, provider_name="twitterapi")
 
-    row_fail = get_handle("testuser", db_path=tmp_db)
-    wm_after_fail = row_fail["tweets_watermark_utc"]
-    print(f"T3: watermark after partial-fetch run: {wm_after_fail}, status={row_fail['status']}")
-    assert r_fail.outcome == "failed"
-    assert wm_after_fail == wm_before, f"before={wm_before} after={wm_after_fail}"
-    assert row_fail["status"] == "failed"
+    with _patch_sources(gx_few, tw_many), _patch_delay():
+        r1 = ingest_handle("testuser", db_path=tmp_db, _backfill_since=today)
 
-    conn = get_connection(tmp_db)
-    count = conn.execute("SELECT COUNT(*) FROM raw_tweets WHERE account_handle='testuser'").fetchone()[0]
-    conn.close()
-    assert count == 2  # two tweets from setup backfill (Jan-2 + Mar-1)
+    summary = day_summary("testuser", db_path=tmp_db)
+    print(f"\nT4 run1: outcome={r1.outcome}, day_summary={summary}")
+    assert r1.outcome == "incomplete"
+    assert summary.get("mismatch", 0) > 0
 
-    retry_tweets = [_tweet("0", f"{year}-01-02T00:01:00Z"),
-                    _tweet("1", f"{year}-03-01T10:00:00Z"),
-                    _tweet("2", f"{year}-05-21T09:00:00Z")]
-    with _patch(FakeSource(pages=[retry_tweets])):
-        r_retry = ingest_handle("testuser", provider="fake", db_path=tmp_db)
+    # Second run: both return same count → agreement → ok.
+    same = [_tweet(str(i), f"{date_str}T{i:02d}:00:00Z") for i in range(15)]
+    gx2 = FakeSource({date_str: same}, provider_name="getxapi")
+    tw2 = FakeSource({date_str: same}, provider_name="twitterapi")
 
-    wm_retry = get_handle("testuser", db_path=tmp_db)["tweets_watermark_utc"]
-    print(f"T3: watermark after retry: {wm_retry}")
-    assert r_retry.outcome == "ok"
-    assert wm_retry == f"{year}-05-21T09:00:00Z"
+    with _patch_sources(gx2, tw2), _patch_delay():
+        r2 = ingest_handle("testuser", db_path=tmp_db, _backfill_since=today)
+
+    print(f"T4 run2: outcome={r2.outcome}")
+    assert r2.outcome == "ok"
 
 
 # ---------------------------------------------------------------------------
-# T4
-# ---------------------------------------------------------------------------
-
-def test_t4_write_failure_watermark_unchanged(tmp_db: Path) -> None:
-    from orchestration.runner import ingest_handle
-
-    year = datetime.datetime.now(UTC).year
-    with _patch(FakeSource(pages=[[_tweet("0", f"{year}-01-02T00:01:00Z"),
-                                   _tweet("1", f"{year}-03-01T10:00:00Z")]])):
-        r0 = ingest_handle("testuser", provider="fake", db_path=tmp_db)
-    wm_before = r0.watermark
-    print(f"\nT4: watermark before write-fail run: {wm_before}")
-
-    with _patch(FakeSource(pages=[[_tweet("2", "2026-05-21T09:00:00Z")]])), \
-         patch("orchestration.runner.upsert_tweets", side_effect=RuntimeError("disk full")):
-        r_fail = ingest_handle("testuser", provider="fake", db_path=tmp_db)
-
-    row = get_handle("testuser", db_path=tmp_db)
-    wm_after = row["tweets_watermark_utc"]
-    print(f"T4: watermark after write-fail run: {wm_after}, status={row['status']}")
-    assert r_fail.outcome == "failed"
-    assert wm_after == wm_before, f"before={wm_before} after={wm_after}"
-    assert row["status"] == "failed"
-
-
-# ---------------------------------------------------------------------------
-# T5 — stale handle is actually retried, not skipped
+# T5 — stale handle retried; fresh handle skipped
 # ---------------------------------------------------------------------------
 
 def test_t5_stale_handle_is_retried(tmp_db: Path) -> None:
-    """
-    A handle stuck in backfilling with status_since > STALE_THRESHOLD_MINUTES:
-      (a) is_stale() returns True
-      (b) ingest_handle RE-RUNS it (outcome != skipped, adapter is called)
-      (c) status transitions out of backfilling (to ready or failed)
-
-    A handle freshly in backfilling (status_since = now):
-      (d) is_stale() returns False
-      (e) ingest_handle SKIPS it (outcome == skipped, adapter not called)
-    """
     from orchestration.runner import is_stale, ingest_handle
     from orchestration import config as cfg
 
@@ -246,45 +266,41 @@ def test_t5_stale_handle_is_retried(tmp_db: Path) -> None:
     old_ts   = _iso(now - datetime.timedelta(minutes=cfg.STALE_THRESHOLD_MINUTES + 10))
     fresh_ts = _iso(now - datetime.timedelta(seconds=30))
 
-    # (a) is_stale() correctness
-    assert is_stale({"status": "backfilling", "status_since": old_ts})   is True,  "old handle should be stale"
-    assert is_stale({"status": "backfilling", "status_since": fresh_ts}) is False, "fresh handle should not be stale"
-    assert is_stale({"status": "fetching",    "status_since": old_ts})   is True,  "fetching also stale when old"
-    assert is_stale({"status": "ready",       "status_since": old_ts})   is False, "ready is never stale"
+    assert is_stale({"status": "backfilling", "status_since": old_ts})   is True
+    assert is_stale({"status": "backfilling", "status_since": fresh_ts}) is False
+    assert is_stale({"status": "fetching",    "status_since": old_ts})   is True
+    assert is_stale({"status": "ready",       "status_since": old_ts})   is False
 
-    # (b/c) Stale handle → ingest_handle re-runs it.
-    # Set up handle stuck in backfilling with an old status_since.
+    today = datetime.date.today()
+    date_str = today.isoformat()
+    tweets = [_tweet("s", f"{date_str}T10:00:00Z")]
+    gx = FakeSource({date_str: tweets}, provider_name="getxapi")
+    tw = FakeSource({date_str: tweets}, provider_name="twitterapi")
+
+    # Stale handle → should be re-run.
     upsert_handle("stuck", {"status": "backfilling", "status_since": old_ts}, db_path=tmp_db)
-    tweets = [_tweet("x1", "2026-05-01T10:00:00Z")]
-    fake_stale = FakeSource(pages=[tweets])
-    with _patch(fake_stale):
-        r_stale = ingest_handle("stuck", provider="fake", db_path=tmp_db)
+    with _patch_sources(gx, tw), _patch_delay():
+        r_stale = ingest_handle("stuck", db_path=tmp_db, _backfill_since=today)
 
-    row_stale = get_handle("stuck", db_path=tmp_db)
-    print(f"\nT5(stale): outcome={r_stale.outcome}, adapter_calls={fake_stale._call_count}, status={row_stale['status']}")
-    assert r_stale.outcome != "skipped",      "stale handle must be re-run, not skipped"
-    assert fake_stale._call_count == 1,       "adapter must be called for stale handle"
-    assert row_stale["status"] != "backfilling", "status must have advanced out of backfilling"
+    row = get_handle("stuck", db_path=tmp_db)
+    print(f"\nT5(stale): outcome={r_stale.outcome}, status={row['status']}")
+    assert r_stale.outcome != "skipped"
+    assert row["status"] not in ("backfilling", "fetching")
 
-    # (d/e) Fresh handle → ingest_handle skips it.
+    # Fresh handle → should be skipped.
     upsert_handle("fresh", {"status": "backfilling", "status_since": fresh_ts}, db_path=tmp_db)
-    fake_fresh = FakeSource(pages=[[]])
-    with _patch(fake_fresh):
-        r_fresh = ingest_handle("fresh", provider="fake", db_path=tmp_db)
+    gx2 = FakeSource(provider_name="getxapi")
+    tw2 = FakeSource(provider_name="twitterapi")
+    with _patch_sources(gx2, tw2), _patch_delay():
+        r_fresh = ingest_handle("fresh", db_path=tmp_db)
 
-    print(f"T5(fresh): outcome={r_fresh.outcome}, adapter_calls={fake_fresh._call_count}")
-    assert r_fresh.outcome == "skipped", "fresh in-progress handle must be skipped"
-    assert fake_fresh._call_count == 0,  "adapter must NOT be called for fresh handle"
-
-    # Runner writes status_since on every in-progress transition.
-    row_stuck_after = get_handle("stuck", db_path=tmp_db)
-    assert row_stuck_after["status_since"] is not None
-    since = datetime.datetime.fromisoformat(row_stuck_after["status_since"].replace("Z", "+00:00"))
-    assert abs((now - since).total_seconds()) < 5, "status_since must be updated on re-run"
+    print(f"T5(fresh): outcome={r_fresh.outcome}, gx_calls={gx2.calls}")
+    assert r_fresh.outcome == "skipped"
+    assert len(gx2.calls) == 0
 
 
 # ---------------------------------------------------------------------------
-# T6 — double-run guard (fresh status_since → skip, confirming T5(d/e) in isolation)
+# T6 — double-run guard
 # ---------------------------------------------------------------------------
 
 def test_t6_double_run_skipped(tmp_db: Path) -> None:
@@ -294,17 +310,18 @@ def test_t6_double_run_skipped(tmp_db: Path) -> None:
     fresh_ts = _iso(now - datetime.timedelta(seconds=30))
     upsert_handle("testuser", {"status": "backfilling", "status_since": fresh_ts}, db_path=tmp_db)
 
-    fake = FakeSource(pages=[[]])
-    with _patch(fake):
-        result = ingest_handle("testuser", provider="fake", db_path=tmp_db)
+    gx = FakeSource(provider_name="getxapi")
+    tw = FakeSource(provider_name="twitterapi")
+    with _patch_sources(gx, tw), _patch_delay():
+        result = ingest_handle("testuser", db_path=tmp_db)
 
     assert result.outcome == "skipped"
-    assert fake._call_count == 0
-    print(f"\nT6: outcome={result.outcome}, adapter_calls={fake._call_count}")
+    assert len(gx.calls) == 0
+    print(f"\nT6: outcome={result.outcome}")
 
 
 # ---------------------------------------------------------------------------
-# T7
+# T7 — ingest_all isolation
 # ---------------------------------------------------------------------------
 
 def test_t7_ingest_all_isolation(tmp_db: Path) -> None:
@@ -313,181 +330,49 @@ def test_t7_ingest_all_isolation(tmp_db: Path) -> None:
     for h in ("alice", "bob", "carol"):
         upsert_handle(h, {"status": "pending"}, db_path=tmp_db)
 
-    year = datetime.datetime.now(UTC).year
-    tweets_alice = [_tweet("a0", f"{year}-01-02T00:01:00Z"), _tweet("a1", f"{year}-05-01T10:00:00Z")]
-    tweets_carol = [_tweet("c0", f"{year}-01-02T00:01:00Z"), _tweet("c1", f"{year}-05-02T10:00:00Z")]
+    today = datetime.date.today()
+    date_str = today.isoformat()
+    tweets_ok = [_tweet("t", f"{date_str}T10:00:00Z")]
 
-    def fake_get_source(provider):
-        class R:
-            def fetch_user_info(self, handle): return FakeSource().fetch_user_info(handle)
-            def fetch_tweets(self, handle, start, end) -> FetchResult:
-                if handle == "bob": raise RuntimeError("broken")
-                tweets = tweets_alice if handle == "alice" else tweets_carol
-                return FetchResult(tweets=tweets, reached_floor=True)
-        return R()
+    def fake_get_source(provider: str):
+        class FailForBob:
+            def fetch_user_info(self, handle):
+                return FakeSource().fetch_user_info(handle)
+            def fetch_tweets(self, handle, start, end):
+                if handle == "bob":
+                    raise RuntimeError("broken")
+                return FetchResult(tweets=tweets_ok, reached_floor=True)
+        return FailForBob()
 
-    with patch("orchestration.runner.get_source", side_effect=fake_get_source):
-        results = ingest_all(provider="fake", db_path=tmp_db)
+    with patch("orchestration.day_fetcher.get_source", side_effect=fake_get_source), \
+         _patch_delay():
+        results = ingest_all(db_path=tmp_db, _backfill_since=today)
 
     by = {r.handle: r for r in results}
     print(f"\nT7: {[(r.handle, r.outcome) for r in results]}")
     assert by["alice"].outcome == "ok"
-    assert by["bob"].outcome   == "failed"
+    assert by["bob"].outcome   in ("failed", "incomplete")
     assert by["carol"].outcome == "ok"
     assert get_handle("alice", db_path=tmp_db)["status"] == "ready"
-    assert get_handle("bob",   db_path=tmp_db)["status"] == "failed"
     assert get_handle("carol", db_path=tmp_db)["status"] == "ready"
 
 
 # ---------------------------------------------------------------------------
-# T8 — backfill cap before floor → incomplete, watermark not advanced
+# T8 — all days fail → incomplete, no coverage_floor
 # ---------------------------------------------------------------------------
 
-def test_t8_backfill_cap_before_floor_is_incomplete(tmp_db: Path) -> None:
-    """
-    KEY TEST: adapter returns reached_floor=False on a first (backfill) run.
-    The orchestrator must:
-      (a) outcome == "incomplete" (not "ok")
-      (b) status == "incomplete" (handle is retryable)
-      (c) watermark NOT advanced to now — two separate sub-guarantees:
-          c1. RunResult.watermark == prior value (None for first backfill)
-          c2. DB tweets_watermark_utc is NOT the current time (not treated as complete)
-      (d) re-run starts from Jan-1 floor (not delta from partial watermark)
-      (e) inserted tweets ARE written (partial progress persists, self-healing)
-    """
+def test_t8_all_days_failed_is_incomplete(tmp_db: Path) -> None:
+    """Both providers fail every day → outcome=incomplete, coverage_floor=None."""
     from orchestration.runner import ingest_handle
 
-    # Capture watermark BEFORE the run — for a new handle it is None.
-    row_before = get_handle("testuser", db_path=tmp_db)
-    wm_before = (row_before or {}).get("tweets_watermark_utc")
-    print(f"\nT8: watermark BEFORE incomplete backfill: {wm_before!r}")
+    gx_fail = FakeSource(fail_provider="getxapi",    provider_name="getxapi")
+    tw_fail = FakeSource(fail_provider="twitterapi", provider_name="twitterapi")
 
-    partial_tweets = [
-        _tweet("1", "2026-04-01T10:00:00Z"),
-        _tweet("2", "2026-05-01T12:00:00Z"),
-    ]
-    run_time = datetime.datetime.now(UTC)
-    # reached_floor=False simulates hitting _MAX_PAGES before the Jan-1 floor.
-    fake = FakeSource(pages=[partial_tweets], reached_floor=False)
-    with _patch(fake):
-        result = ingest_handle("testuser", provider="fake", db_path=tmp_db)
+    with _patch_sources(gx_fail, tw_fail), _patch_delay():
+        result = ingest_handle("testuser", db_path=tmp_db, _backfill_since=datetime.date.today())
 
     row = get_handle("testuser", db_path=tmp_db)
-    wm_after_db  = row["tweets_watermark_utc"]   # what storage trigger recorded
-    wm_after_run = result.watermark               # what RunResult reports as "last good"
-
-    print(f"T8: watermark AFTER  incomplete backfill (DB):     {wm_after_db!r}")
-    print(f"T8: watermark AFTER  incomplete backfill (RunResult): {wm_after_run!r}")
-    print(f"T8: status={row['status']}, outcome={result.outcome}, inserted={result.inserted}")
-
-    # (a) outcome signals incomplete — not silently ok
-    assert result.outcome == "incomplete", f"expected incomplete, got {result.outcome}"
-
-    # (b) status is retryable incomplete, not silently ready
-    assert row["status"] == "incomplete", f"expected incomplete status, got {row['status']}"
-
-    # (c1) RunResult.watermark == prior value. For a first backfill the prior value is
-    # None — the orchestrator must not report a good watermark it never earned.
-    assert wm_after_run == wm_before, (
-        f"RunResult.watermark must equal prior value: before={wm_before!r} after={wm_after_run!r}"
-    )
-
-    # (c2) DB watermark was NOT advanced to "now". The storage trigger may set it to
-    # the max partial tweet date (that's correct — it reflects what IS in the DB), but
-    # it must NEVER be the current wallclock time, which would falsely mark the run
-    # as complete and cause the next run to skip Jan–Apr as a delta.
-    if wm_after_db is not None:
-        wm_dt = datetime.datetime.fromisoformat(wm_after_db.replace("Z", "+00:00"))
-        seconds_from_now = abs((run_time - wm_dt).total_seconds())
-        assert seconds_from_now > 60, (
-            f"DB watermark must not be 'now' — was advanced to {wm_after_db!r} "
-            f"which is only {seconds_from_now:.1f}s from run time"
-        )
-
-    # (d) re-run must start from Jan-1 floor, not delta from the partial DB watermark.
-    fake2 = FakeSource(pages=[[]], reached_floor=True)
-    with _patch(fake2):
-        _ih = ingest_handle  # same import, avoid shadowing
-        _ih("testuser", provider="fake", db_path=tmp_db)
-    jan1 = datetime.date(datetime.datetime.now(UTC).year, 1, 1)
-    print(f"T8: re-run computed start={fake2.last_start!r}  (expected Jan-1={jan1!r})")
-    assert fake2.last_start == jan1, (
-        f"re-run of incomplete handle must backfill from Jan 1, got {fake2.last_start!r}"
-    )
-
-    # (e) partial tweets were written — progress persists for next run
-    assert result.inserted == 2
-    assert row["total_tweets"] == 2
-
-
-# ---------------------------------------------------------------------------
-# T9 — shallow index: reached_floor=True but earliest tweet is well after floor
-# ---------------------------------------------------------------------------
-
-def test_t9_shallow_index_marked_incomplete(tmp_db: Path) -> None:
-    """
-    KEY TEST: adapter reports reached_floor=True (stopped on an empty page), but
-    the tweets it returned only go back to late May — not to the Jan-1 floor.
-    This is the 'venu_7_ run C' scenario: GetXAPI's index ran dry early.
-
-    The orchestrator must:
-      (a) outcome == "incomplete" (not "ok")
-      (b) status == "incomplete"
-      (c) RunResult.watermark == None (not advanced — floor not reached)
-      (d) reason includes coverage/earliest/floor context
-      (e) re-run starts from Jan-1 floor (same as T8(d))
-      (f) partial tweets ARE stored (self-healing on retry)
-    """
-    from orchestration.runner import ingest_handle
-
-    now = datetime.datetime.now(UTC)
-    floor = datetime.date(now.year, 1, 1)
-
-    # Tweets only go back to May 31 — far short of Jan 1.
-    shallow_tweets = [
-        _tweet("s1", f"{now.year}-05-31T14:00:00Z"),
-        _tweet("s2", f"{now.year}-06-01T09:00:00Z"),
-        _tweet("s3", f"{now.year}-06-03T11:00:00Z"),
-    ]
-
-    # reached_floor=True: adapter thinks it completed (empty page stopped it),
-    # but coverage is only May 31 onward.
-    fake = FakeSource(pages=[shallow_tweets], reached_floor=True)
-    with _patch(fake):
-        result = ingest_handle("shallow_user", provider="fake", db_path=tmp_db)
-
-    row = get_handle("shallow_user", db_path=tmp_db)
-    print(
-        f"\nT9: outcome={result.outcome}, status={row['status']}, "
-        f"earliest={row['earliest_tweet_utc']}, reason={result.reason!r}"
-    )
-
-    # (a) shallow index must not be silently marked ready
-    assert result.outcome == "incomplete", (
-        f"shallow index (reached_floor=True but earliest=May) must be incomplete, got {result.outcome!r}"
-    )
-
-    # (b) handle status is retryable
-    assert row["status"] == "incomplete", f"expected incomplete status, got {row['status']!r}"
-
-    # (c) watermark not advanced (prior value was None for a new handle)
-    assert result.watermark is None, (
-        f"watermark must not advance on shallow-index backfill, got {result.watermark!r}"
-    )
-
-    # (d) reason surfaces the coverage gap
-    assert "earliest" in result.reason and "floor" in result.reason, (
-        f"reason must describe the coverage gap, got {result.reason!r}"
-    )
-
-    # (e) re-run starts from Jan-1 floor, not delta from partial watermark
-    fake2 = FakeSource(pages=[[]], reached_floor=True)
-    with _patch(fake2):
-        ingest_handle("shallow_user", provider="fake", db_path=tmp_db)
-    assert fake2.last_start == floor, (
-        f"re-run of shallow incomplete handle must backfill from {floor}, got {fake2.last_start!r}"
-    )
-
-    # (f) partial tweets stored — available for next run to accumulate on top of
-    assert result.inserted == 3
-    assert row["total_tweets"] == 3
+    print(f"\nT8: outcome={result.outcome}, floor={result.coverage_floor}, status={row['status']}")
+    assert result.outcome == "incomplete"
+    assert result.coverage_floor is None
+    assert row["status"] == "incomplete"

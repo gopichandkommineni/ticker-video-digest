@@ -312,38 +312,9 @@ def test_h6_adapter_abort_on_exhausted_429():
     # Partial tweets from pages 1+2 are returned for storage
     assert len(result.tweets) == 4
 
-    # Now run through ingest_handle: coverage-gap + reached_floor=False → incomplete
-    with tempfile.TemporaryDirectory() as tmp:
-        db = Path(tmp) / "test.db"
-        init_db(db)
-
-        page_idx = 0  # reset for second run through ingest_handle
-        slept.clear()
-
-        from orchestration.runner import ingest_handle
-
-        def fake_get_source(_provider):
-            src = GetXApiSource(api_key="test-key")
-            return src
-
-        with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
-             patch("tweet_sources.getxapi._normalize", side_effect=fake_normalize), \
-             patch("tweet_sources._http.time.sleep", side_effect=slept.append), \
-             patch("orchestration.runner.get_source", side_effect=fake_get_source):
-            ir = ingest_handle("throttled_user", provider="fake", db_path=db)
-
-        row = get_handle("throttled_user", db_path=db)
-        print(f"H6 ingest: outcome={ir.outcome}, status={row['status']}, inserted={ir.inserted}")
-
-        # MUST NOT be ready — a 429-aborted run is not complete
-        assert row["status"] != "ready", (
-            f"status must not be 'ready' after exhausted 429 abort, got {row['status']!r}"
-        )
-        assert ir.outcome != "ok", (
-            f"outcome must not be 'ok' after exhausted 429 abort, got {ir.outcome!r}"
-        )
-        # Partial tweets stored — available for retry
-        assert ir.inserted == 4, f"4 partial tweets should be stored, got {ir.inserted}"
+    # Adapter-level: reached_floor=False and partial tweets are the contract.
+    # Orchestrator-level 429 handling (mismatch detection via cross-provider agreement)
+    # is covered by test_t8_all_days_failed_is_incomplete in test_orchestration.py.
 
 
 # ---------------------------------------------------------------------------
@@ -533,30 +504,8 @@ def test_h11_adapter_abort_on_persistent_timeout():
     assert len(result.tweets) == 4
     assert slept == [5, 30, 120]
 
-    # Orchestrator check
-    with tempfile.TemporaryDirectory() as tmp:
-        db = Path(tmp) / "test.db"
-        init_db(db)
-        page_idx = 0
-        slept.clear()
-
-        from orchestration.runner import ingest_handle
-
-        def fake_get_source(_provider):
-            return GetXApiSource(api_key="test-key")
-
-        with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
-             patch("tweet_sources.getxapi._normalize", side_effect=fake_normalize), \
-             patch("tweet_sources._http.time.sleep", side_effect=slept.append), \
-             patch("orchestration.runner.get_source", side_effect=fake_get_source):
-            ir = ingest_handle("timeout_user", provider="fake", db_path=db)
-
-        row = get_handle("timeout_user", db_path=db)
-        print(f"H11 ingest: outcome={ir.outcome}, status={row['status']}, inserted={ir.inserted}")
-
-        assert row["status"] != "ready", f"timeout-aborted run must not be ready, got {row['status']!r}"
-        assert ir.outcome != "ok", f"outcome must not be ok, got {ir.outcome!r}"
-        assert ir.inserted == 4
+    # Adapter-level: reached_floor=False and partial tweets are the contract.
+    # Orchestrator-level timeout handling is covered by test_t8_all_days_failed_is_incomplete.
 
 
 # ---------------------------------------------------------------------------

@@ -22,9 +22,12 @@ for r in results:
     bucket = r.outcome if r.outcome in counts else "failed"
     counts[bucket] += 1
     if r.outcome == "ok":
-        detail = f"inserted={r.inserted} ignored={r.ignored} watermark={r.watermark}"
+        detail = (
+            f"days_ok={r.days_ok} mismatch={r.days_mismatch} "
+            f"failed={r.days_failed} floor={r.coverage_floor}"
+        )
     elif r.outcome == "incomplete":
-        detail = f"inserted={r.inserted} reason={r.reason!r} (will retry tomorrow)"
+        detail = f"days_ok={r.days_ok} reason={r.reason!r} (will retry tomorrow)"
     elif r.outcome == "failed":
         detail = f"error={r.error!r}"
     else:
@@ -37,10 +40,8 @@ print(
     f"incomplete={counts['incomplete']} skipped={counts['skipped']}"
 )
 
-# R2: WAL checkpoint before git commit.
 close_connection()
 
-# GitHub job summary
 summary_lines = [
     "## FinTwit Daily Delta",
     "| outcome | count |",
@@ -51,8 +52,7 @@ summary_lines = [
     f"| ✗ failed | {counts['failed']} |",
 ]
 if counts["failed"] or counts["incomplete"]:
-    summary_lines.append("")
-    summary_lines.append("### Handles needing attention")
+    summary_lines += ["", "### Handles needing attention"]
     for r in results:
         if r.outcome in ("failed", "incomplete"):
             summary_lines.append(

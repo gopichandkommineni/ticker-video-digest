@@ -22,38 +22,34 @@ print(f"Backfilling handle: {handle}")
 result = ingest_handle(handle)
 
 print(f"\n── Backfill result for @{handle} ──")
-print(f"  outcome:      {result.outcome}")
-print(f"  inserted:     {result.inserted}")
-print(f"  ignored:      {result.ignored}")
-print(f"  watermark:    {result.watermark}")
+print(f"  outcome:         {result.outcome}")
+print(f"  days ok:         {result.days_ok}")
+print(f"  days mismatch:   {result.days_mismatch}")
+print(f"  days failed:     {result.days_failed}")
+print(f"  coverage_floor:  {result.coverage_floor}")
 if result.outcome == "incomplete":
-    print(f"  reason:       {result.reason!r}")
-else:
-    print(f"  reached_floor: True (completed to floor)")
+    print(f"  reason:          {result.reason!r}")
 if result.error:
-    print(f"  error:        {result.error}")
+    print(f"  error:           {result.error}")
 
-# R2: WAL checkpoint before git commit.
 close_connection()
 
-# GitHub job summary
 icon = "✓" if result.outcome == "ok" else ("~" if result.outcome == "incomplete" else "✗")
 summary_lines = [
     f"## FinTwit Backfill — @{handle}",
     "| field | value |",
     "|-------|-------|",
     f"| outcome | {icon} {result.outcome} |",
-    f"| inserted | {result.inserted} |",
-    f"| ignored | {result.ignored} |",
-    f"| watermark | {result.watermark or 'none'} |",
+    f"| days ok | {result.days_ok} |",
+    f"| days mismatch | {result.days_mismatch} |",
+    f"| days failed | {result.days_failed} |",
+    f"| coverage floor | {result.coverage_floor or 'none'} |",
 ]
 if result.outcome == "incomplete":
-    summary_lines.append(f"| reason | {result.reason} |")
-    summary_lines.append("")
-    summary_lines.append(
-        "> **incomplete** — account is too large to finish in one run. "
-        "The daily-delta job will retry until it reaches the Jan-1 floor."
-    )
+    summary_lines += [
+        "",
+        f"> **incomplete** — {result.reason}. The daily-delta job will retry outstanding days.",
+    ]
 if result.error:
     summary_lines.append(f"| error | {result.error} |")
 
