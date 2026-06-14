@@ -6,6 +6,21 @@ from pathlib import Path
 _DEFAULT_DB = Path(__file__).parent.parent / "data" / "fintwit.db"
 
 _SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS day_fetch_log (
+    handle       TEXT    NOT NULL,
+    date         TEXT    NOT NULL,
+    provider     TEXT    NOT NULL,
+    status       TEXT    NOT NULL DEFAULT 'pending',
+    tweet_count  INTEGER,
+    fetched_at   TEXT,
+    retry_count  INTEGER NOT NULL DEFAULT 0,
+    error        TEXT,
+    PRIMARY KEY (handle, date, provider)
+);
+
+CREATE INDEX IF NOT EXISTS idx_day_fetch_log_handle_status
+    ON day_fetch_log (handle, status);
+
 CREATE TABLE IF NOT EXISTS raw_tweets (
     tweet_id            TEXT PRIMARY KEY,
     account_handle      TEXT NOT NULL,
