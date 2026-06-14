@@ -68,6 +68,20 @@ CREATE TABLE IF NOT EXISTS handles (
 
 CREATE INDEX IF NOT EXISTS idx_raw_tweets_handle_created
     ON raw_tweets (account_handle, created_at_utc DESC);
+
+CREATE TABLE IF NOT EXISTS ticker_mentions (
+    tweet_id        TEXT    NOT NULL,
+    account_handle  TEXT    NOT NULL,
+    ticker          TEXT    NOT NULL,
+    in_universe     INTEGER NOT NULL DEFAULT 0,
+    created_at_utc  TEXT,
+    PRIMARY KEY (tweet_id, ticker)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ticker_mentions_ticker
+    ON ticker_mentions (ticker);
+CREATE INDEX IF NOT EXISTS idx_ticker_mentions_handle
+    ON ticker_mentions (account_handle);
 """
 
 
