@@ -57,14 +57,15 @@ jobs:
           ARGS="$ARGS --runs ${{ inputs.runs }}"
           python scripts/run_variance.py $ARGS
 
-      - name: Commit probe outputs to main
+      - name: Commit probe outputs + seeded DB to main
         if: always()
         run: |
-          # Only commit if new probe files were created.
-          git add probes/
-          git diff --cached --quiet && echo "No probe outputs to commit — skipping" && exit 0
+          # Probe fixtures plus the seeded tweet DB (run_variance persists into
+          # data/fintwit.db unless --no-persist). Never git add -A.
+          git add probes/ data/fintwit.db
+          git diff --cached --quiet && echo "Nothing to commit — skipping" && exit 0
           git config user.name  "fintwit-bot"
           git config user.email "bot@users.noreply.github.com"
-          git commit -m "Probe: variance ${{ inputs.handle }} $(date -u +%Y-%m-%d)"
+          git commit -m "Probe + seed: variance ${{ inputs.handle }} $(date -u +%Y-%m-%d)"
           git pull --rebase origin main
           git push origin HEAD:main
