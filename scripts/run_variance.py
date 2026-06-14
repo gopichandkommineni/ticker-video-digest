@@ -30,10 +30,13 @@ from dotenv import load_dotenv
 load_dotenv(".env")
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent))
 
 from storage.handles import normalize_handle
+from storage.db import init_db, close_connection
 from tweet_sources.base import Tweet
 from tweet_sources.factory import get_source
+from import_probe_data import import_folder
 
 logging.basicConfig(
     level=logging.INFO,
@@ -386,6 +389,11 @@ def main() -> None:
     parser.add_argument("handle")
     parser.add_argument("--since", default=None)
     parser.add_argument("--runs", type=int, default=3)
+    parser.add_argument(
+        "--no-persist",
+        action="store_true",
+        help="Skip seeding raw_tweets + day_fetch_log from this run's fixtures.",
+    )
     args = parser.parse_args()
 
     handle = normalize_handle(args.handle)
@@ -433,6 +441,17 @@ def main() -> None:
     (out_dir / "meta.md").write_text(meta)
     logger.info("Wrote meta.md")
 
+    # --- Persist into raw_tweets + day_fetch_log (idempotent) ---
+    persist: dict | None = None
+    if not args.no_persist:
+        init_db()
+        persist = import_folder(out_dir)
+        close_connection()  # checkpoint WAL so the committed .db has no sidecar
+        logger.info(
+            "Persisted @%s: inserted=%d ok=%d mismatch=%d",
+            handle, persist["inserted"], persist["days_ok"], persist["days_mismatch"],
+        )
+
     # --- stdout summary ---
     print(f"\n## Variance probe: @{handle}  {start} → {end}  ({args.runs} runs each)\n")
     print(f"Output: {out_dir}\n")
@@ -443,6 +462,12 @@ def main() -> None:
             f"  [{r.provider}] run{r.run_index}: {r.count} tweets  "
             f"floor={r.reached_floor}  429s={r.rate_429_count}  aborted={r.aborted}"
         )
+    if persist is not None:
+        print(
+            f"\nPersisted to DB: inserted={persist['inserted']} ignored={persist['ignored']} "
+            f"| day-slots ok={persist['days_ok']} mismatch={persist['days_mismatch']} "
+            f"failed={persist['days_failed']}"
+        )
 
     # --- GitHub job summary ---
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null")
@@ -450,6 +475,13 @@ def main() -> None:
         f.write(report)
         f.write("\n\n---\n\n")
         f.write(meta)
+        if persist is not None:
+            f.write(
+                f"\n\n---\n\n### DB persistence\n"
+                f"- tweets inserted: **{persist['inserted']}** (ignored {persist['ignored']})\n"
+                f"- day-slots: ok **{persist['days_ok']}**, "
+                f"mismatch **{persist['days_mismatch']}**, failed **{persist['days_failed']}**\n"
+            )
 
 
 if __name__ == "__main__":
