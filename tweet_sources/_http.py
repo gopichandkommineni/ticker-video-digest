@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import socket
+import threading
 import time
 import urllib.request
 import urllib.error
@@ -14,6 +16,38 @@ logger = logging.getLogger(__name__)
 
 # Per-request retry schedule on HTTP 429 and transient network errors (seconds).
 _DEFAULT_RETRY_DELAYS: tuple[int, ...] = (5, 30, 120)
+
+
+# ---------------------------------------------------------------------------
+# Per-provider rate limiting (worker pool v1 spec §3.3).
+#
+# get_json() must run every HTTP call through a provider's RateLimiter.wait()
+# without the provider adapters (getxapi.py/twitterapi.py) needing changes. The
+# worker scopes the right limiter to its own thread via use_rate_limiter();
+# get_json reads it from this thread-local. A limiter passed explicitly to
+# get_json (the DI seam used by tests) takes precedence. When neither is set —
+# the sequential path — no limiting is applied and behavior is unchanged.
+# ---------------------------------------------------------------------------
+_thread_limiter = threading.local()
+
+
+def _current_thread_limiter():
+    return getattr(_thread_limiter, "limiter", None)
+
+
+@contextlib.contextmanager
+def use_rate_limiter(limiter):
+    """Scope *limiter* to the current thread for the duration of the block.
+
+    Nesting restores the previous limiter on exit. ``None`` disables limiting
+    for the block.
+    """
+    prev = getattr(_thread_limiter, "limiter", None)
+    _thread_limiter.limiter = limiter
+    try:
+        yield
+    finally:
+        _thread_limiter.limiter = prev
 
 
 class RateLimitExhausted(RuntimeError):
@@ -43,6 +77,7 @@ def get_json(
     timeout: int = 30,
     retry_delays: tuple[int, ...] = _DEFAULT_RETRY_DELAYS,
     retry_budget: dict[str, float] | None = None,
+    rate_limiter=None,
     _sleep_fn=None,
 ) -> dict[str, Any]:
     """GET *url* with *headers*, return parsed JSON.
@@ -61,9 +96,12 @@ def get_json(
     Raises RuntimeError on any other non-retryable HTTP error.
     """
     sleep = _sleep_fn if _sleep_fn is not None else time.sleep
+    limiter = rate_limiter if rate_limiter is not None else _current_thread_limiter()
     attempt = 0
 
     while True:
+        if limiter is not None:
+            limiter.wait()
         req = urllib.request.Request(url, headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=timeout) as resp:
