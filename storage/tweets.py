@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import datetime
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .db import get_connection
+
+_UTC = datetime.timezone.utc
+
+
+def _iso_now() -> str:
+    return datetime.datetime.now(tz=_UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 @dataclass
@@ -38,11 +45,17 @@ def upsert_tweets(
     if not tweets:
         return UpsertResult(inserted=0, ignored=0)
 
+    now = _iso_now()
     conn = get_connection(db_path)
     try:
         with conn:
             inserted = 0
             for row in tweets:
+                params = _normalize(row)
+                # first_seen_at/last_seen_at both set on INSERT; on a re-fetch we
+                # refresh last_seen_at only and leave first_seen_at untouched.
+                params["first_seen_at"] = now
+                params["last_seen_at"] = now
                 cur = conn.execute(
                     """
                     INSERT OR IGNORE INTO raw_tweets (
@@ -53,7 +66,8 @@ def upsert_tweets(
                         like_count, retweet_count, reply_count, quote_count,
                         view_count, bookmark_count,
                         has_media, media_urls, url,
-                        is_deleted, fetched_at, source_provider, raw_json
+                        is_deleted, fetched_at, source_provider, raw_json,
+                        first_seen_at, last_seen_at
                     ) VALUES (
                         :tweet_id, :account_handle, :display_name, :user_id,
                         :text, :created_at_utc, :type,
@@ -62,12 +76,22 @@ def upsert_tweets(
                         :like_count, :retweet_count, :reply_count, :quote_count,
                         :view_count, :bookmark_count,
                         :has_media, :media_urls, :url,
-                        :is_deleted, :fetched_at, :source_provider, :raw_json
+                        :is_deleted, :fetched_at, :source_provider, :raw_json,
+                        :first_seen_at, :last_seen_at
                     )
                     """,
-                    _normalize(row),
+                    params,
                 )
-                inserted += cur.rowcount
+                if cur.rowcount == 1:
+                    inserted += 1
+                else:
+                    # Already present — refresh last_seen_at, preserve first_seen_at.
+                    conn.execute(
+                        "UPDATE raw_tweets SET last_seen_at = ? WHERE tweet_id = ?",
+                        (now, params["tweet_id"]),
+                    )
+
+                _record_provenance(conn, params["tweet_id"], params["source_provider"], now)
 
             ignored = len(tweets) - inserted
 
@@ -118,6 +142,32 @@ def _update_handle_aggregates(conn: sqlite3.Connection, handle: str) -> None:
                                             excluded.earliest_tweet_utc)
         """,
         (handle, total, latest, latest, earliest),
+    )
+
+
+def _record_provenance(
+    conn: sqlite3.Connection,
+    tweet_id: str,
+    provider: str | None,
+    now: str,
+) -> None:
+    """Upsert one (tweet_id, provider) row in tweet_provenance.
+
+    first_seen_at is set once on first insert; last_seen_at is refreshed on
+    every observation. tweet_provenance is the authoritative provenance going
+    forward (raw_tweets.source_provider is kept only for back-compat). No-op if
+    the provider is unknown, since (tweet_id, provider) is the primary key.
+    """
+    if not provider:
+        return
+    conn.execute(
+        """
+        INSERT INTO tweet_provenance (tweet_id, provider, first_seen_at, last_seen_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(tweet_id, provider) DO UPDATE SET
+            last_seen_at = excluded.last_seen_at
+        """,
+        (tweet_id, provider, now, now),
     )
 
 

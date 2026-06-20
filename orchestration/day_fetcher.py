@@ -91,7 +91,7 @@ def _to_storage_rows(
             "is_deleted":      0,
             "fetched_at":      fetched_at,
             "source_provider": provider,
-            "raw_json":        None,
+            "raw_json":        t.raw_provider_json,
         }
         for t in tweets
     ]

@@ -7,7 +7,10 @@ import logging
 import urllib.parse
 from typing import Any
 
-from .base import TweetSource, Tweet, FetchResult, UserInfo, snowflake_to_utc, compute_type
+from .base import (
+    TweetSource, Tweet, FetchResult, UserInfo,
+    snowflake_to_utc, compute_type, serialize_raw_json,
+)
 from ._http import get_json, extract_media_urls, RateLimitExhausted, NetworkErrorExhausted
 
 logger = logging.getLogger(__name__)
@@ -173,4 +176,5 @@ def _normalize(raw: dict[str, Any]) -> Tweet:
         url=raw.get("url"),
         is_deleted=False,
         raw_json=raw,
+        raw_provider_json=serialize_raw_json(tweet_id, raw),
     )
