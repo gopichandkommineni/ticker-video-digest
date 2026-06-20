@@ -215,6 +215,7 @@ def get_eligible_jobs(
     *,
     max_attempts: int = 3,
     stale_threshold_sec: int = 600,
+    handles: list[str] | None = None,
 ) -> list[Job]:
     """Return up to *limit* rows eligible for a claim, oldest date first.
 
@@ -225,31 +226,77 @@ def get_eligible_jobs(
         threshold) — a crashed worker's row, attempts < max.
     Reconciliation outcomes (ok/mismatch) and terminal complete/exhausted rows
     are never returned.
+
+    *handles*, when given, restricts dispatch to those handles (PR B — lets a
+    per-handle ingest run a pool scoped to itself). Default None preserves the
+    global-dispatch behavior. An empty list is a caller bug (it would silently
+    match nothing), so it raises ValueError.
     """
+    if handles is not None and len(handles) == 0:
+        raise ValueError("get_eligible_jobs: handles=[] is ambiguous; pass None for all")
     now = now or _iso_now()
     cutoff = _stale_cutoff(now, stale_threshold_sec)
+    params: dict[str, Any] = {
+        "max": max_attempts, "now": now, "cutoff": cutoff, "limit": limit,
+    }
+    handle_clause = ""
+    if handles:
+        names = {f"h{i}": h for i, h in enumerate(handles)}
+        params.update(names)
+        handle_clause = f"AND handle IN ({','.join(':' + k for k in names)})"
     rows = conn.execute(
-        """
+        f"""
         SELECT handle, date, provider, status, retry_count
         FROM day_fetch_log
         WHERE
-            ( status IN ('pending', 'failed')
-              AND retry_count < :max
-              AND (next_eligible_at IS NULL OR next_eligible_at <= :now) )
-            OR
-            ( status = 'fetching'
-              AND retry_count < :max
-              AND (fetched_at IS NULL OR fetched_at < :cutoff) )
+            (
+              ( status IN ('pending', 'failed')
+                AND retry_count < :max
+                AND (next_eligible_at IS NULL OR next_eligible_at <= :now) )
+              OR
+              ( status = 'fetching'
+                AND retry_count < :max
+                AND (fetched_at IS NULL OR fetched_at < :cutoff) )
+            )
+            {handle_clause}
         ORDER BY date ASC, handle ASC, provider ASC
         LIMIT :limit
         """,
-        {"max": max_attempts, "now": now, "cutoff": cutoff, "limit": limit},
+        params,
     ).fetchall()
     return [
         Job(handle=r["handle"], date=r["date"], provider=r["provider"],
             status=r["status"], attempts=r["retry_count"])
         for r in rows
     ]
+
+
+def reopen_mismatch_days(
+    conn: sqlite3.Connection,
+    handle: str,
+    max_attempts: int,
+) -> int:
+    """Re-open outstanding mismatch days for a handle so the pool re-dispatches
+    them (PR B). Gated on the retry cap, mirroring get_retryable_days' mismatch
+    arm — so this preserves, not changes, the existing mismatch-retry semantics.
+
+    next_eligible_at is cleared so a reopened day is immediately eligible (it
+    should not inherit backoff from any prior failed state). Idempotent: returns
+    0 when no capped-under mismatch rows remain.
+    """
+    with conn:
+        cur = conn.execute(
+            """
+            UPDATE day_fetch_log
+            SET status = 'pending',
+                next_eligible_at = NULL
+            WHERE handle = ?
+              AND status = 'mismatch'
+              AND retry_count < ?
+            """,
+            (handle, max_attempts),
+        )
+    return cur.rowcount
 
 
 def claim_day(

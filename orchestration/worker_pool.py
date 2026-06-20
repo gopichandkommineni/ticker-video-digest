@@ -31,7 +31,7 @@ from storage.day_log import (
 )
 from storage.tweets import upsert_tweets
 from tweet_sources._http import use_rate_limiter
-from tweet_sources.factory import get_source as _factory_get_source
+from tweet_sources import factory
 from tweet_sources.base import (
     RateLimitExhausted,
     NetworkErrorExhausted,
@@ -49,6 +49,13 @@ from .day_fetcher import _to_storage_rows  # shared Tweet→storage-dict mapping
 logger = logging.getLogger(__name__)
 
 _UTC = datetime.timezone.utc
+
+
+def _factory_get_source(provider: str):
+    """Resolve the provider adapter at call time (not import time) so tests can
+    patch ``tweet_sources.factory.get_source`` and have it take effect through
+    the pool. Production behavior is unchanged."""
+    return factory.get_source(provider)
 
 
 def _iso_now() -> str:
@@ -321,6 +328,7 @@ def run_pool(
     db_path: Path | str | None = None,
     *,
     get_source_fn: Callable[[str], object] = _factory_get_source,
+    handles_filter: list[str] | None = None,
 ) -> dict:
     """Backfill *handles* over *date_range* through the per-provider worker pool.
 
@@ -363,6 +371,7 @@ def run_pool(
                 disp_conn, limit=config.dispatch_batch,
                 max_attempts=config.max_attempts,
                 stale_threshold_sec=config.stale_threshold_sec,
+                handles=handles_filter,
             )
             submitted_any = False
             for job in jobs:

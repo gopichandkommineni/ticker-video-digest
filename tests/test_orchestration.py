@@ -129,7 +129,7 @@ def test_t1_new_handle_backfill(tmp_db: Path) -> None:
     from orchestration.runner import ingest_handle
     with _patch_sources(gx, tw), _patch_delay():
         # _backfill_since limits range to 2 days so the test is fast.
-        result = ingest_handle("testuser", db_path=tmp_db, _backfill_since=yesterday)
+        result = ingest_handle("testuser", db_path=tmp_db, _backfill_since=yesterday, sequential=True)
 
     row = get_handle("testuser", db_path=tmp_db)
     print(f"\nT1: outcome={result.outcome}, floor={result.coverage_floor}, status={row['status']}")
@@ -168,7 +168,7 @@ def test_t2_delta_run_uses_last_3_days(tmp_db: Path) -> None:
     tw = FakeSource(provider_name="twitterapi")
 
     with _patch_sources(gx, tw), _patch_delay():
-        result = ingest_handle("testuser", db_path=tmp_db)
+        result = ingest_handle("testuser", db_path=tmp_db, sequential=True)
 
     print(f"\nT2: outcome={result.outcome}, gx_calls={gx.calls}, tw_calls={tw.calls}")
     assert result.outcome == "ok"
@@ -198,7 +198,7 @@ def test_t3_single_provider_failure_retried(tmp_db: Path) -> None:
     tw_fail = FakeSource({date_str: tweets}, fail_provider="twitterapi", provider_name="twitterapi")
 
     with _patch_sources(gx_ok, tw_fail), _patch_delay():
-        r1 = ingest_handle("testuser", db_path=tmp_db, _backfill_since=today)
+        r1 = ingest_handle("testuser", db_path=tmp_db, _backfill_since=today, sequential=True)
 
     summary = day_summary("testuser", db_path=tmp_db)
     print(f"\nT3 run1: outcome={r1.outcome}, day_summary={summary}")
@@ -210,7 +210,7 @@ def test_t3_single_provider_failure_retried(tmp_db: Path) -> None:
     tw_ok2 = FakeSource({date_str: tweets}, provider_name="twitterapi")
 
     with _patch_sources(gx_ok2, tw_ok2), _patch_delay():
-        r2 = ingest_handle("testuser", db_path=tmp_db, _backfill_since=today)
+        r2 = ingest_handle("testuser", db_path=tmp_db, _backfill_since=today, sequential=True)
 
     print(f"T3 run2: outcome={r2.outcome}")
     assert r2.outcome == "ok"
@@ -235,7 +235,7 @@ def test_t4_count_mismatch_marked_and_retried(tmp_db: Path) -> None:
     tw_many = FakeSource({date_str: many}, provider_name="twitterapi")
 
     with _patch_sources(gx_few, tw_many), _patch_delay():
-        r1 = ingest_handle("testuser", db_path=tmp_db, _backfill_since=today)
+        r1 = ingest_handle("testuser", db_path=tmp_db, _backfill_since=today, sequential=True)
 
     summary = day_summary("testuser", db_path=tmp_db)
     print(f"\nT4 run1: outcome={r1.outcome}, day_summary={summary}")
@@ -248,7 +248,7 @@ def test_t4_count_mismatch_marked_and_retried(tmp_db: Path) -> None:
     tw2 = FakeSource({date_str: same}, provider_name="twitterapi")
 
     with _patch_sources(gx2, tw2), _patch_delay():
-        r2 = ingest_handle("testuser", db_path=tmp_db, _backfill_since=today)
+        r2 = ingest_handle("testuser", db_path=tmp_db, _backfill_since=today, sequential=True)
 
     print(f"T4 run2: outcome={r2.outcome}")
     assert r2.outcome == "ok"
@@ -280,7 +280,7 @@ def test_t5_stale_handle_is_retried(tmp_db: Path) -> None:
     # Stale handle → should be re-run.
     upsert_handle("stuck", {"status": "backfilling", "status_since": old_ts}, db_path=tmp_db)
     with _patch_sources(gx, tw), _patch_delay():
-        r_stale = ingest_handle("stuck", db_path=tmp_db, _backfill_since=today)
+        r_stale = ingest_handle("stuck", db_path=tmp_db, _backfill_since=today, sequential=True)
 
     row = get_handle("stuck", db_path=tmp_db)
     print(f"\nT5(stale): outcome={r_stale.outcome}, status={row['status']}")
@@ -292,7 +292,7 @@ def test_t5_stale_handle_is_retried(tmp_db: Path) -> None:
     gx2 = FakeSource(provider_name="getxapi")
     tw2 = FakeSource(provider_name="twitterapi")
     with _patch_sources(gx2, tw2), _patch_delay():
-        r_fresh = ingest_handle("fresh", db_path=tmp_db)
+        r_fresh = ingest_handle("fresh", db_path=tmp_db, sequential=True)
 
     print(f"T5(fresh): outcome={r_fresh.outcome}, gx_calls={gx2.calls}")
     assert r_fresh.outcome == "skipped"
@@ -313,7 +313,7 @@ def test_t6_double_run_skipped(tmp_db: Path) -> None:
     gx = FakeSource(provider_name="getxapi")
     tw = FakeSource(provider_name="twitterapi")
     with _patch_sources(gx, tw), _patch_delay():
-        result = ingest_handle("testuser", db_path=tmp_db)
+        result = ingest_handle("testuser", db_path=tmp_db, sequential=True)
 
     assert result.outcome == "skipped"
     assert len(gx.calls) == 0
@@ -346,7 +346,7 @@ def test_t7_ingest_all_isolation(tmp_db: Path) -> None:
 
     with patch("orchestration.day_fetcher.get_source", side_effect=fake_get_source), \
          _patch_delay():
-        results = ingest_all(db_path=tmp_db, _backfill_since=today)
+        results = ingest_all(db_path=tmp_db, _backfill_since=today, sequential=True)
 
     by = {r.handle: r for r in results}
     print(f"\nT7: {[(r.handle, r.outcome) for r in results]}")
@@ -369,7 +369,7 @@ def test_t8_all_days_failed_is_incomplete(tmp_db: Path) -> None:
     tw_fail = FakeSource(fail_provider="twitterapi", provider_name="twitterapi")
 
     with _patch_sources(gx_fail, tw_fail), _patch_delay():
-        result = ingest_handle("testuser", db_path=tmp_db, _backfill_since=datetime.date.today())
+        result = ingest_handle("testuser", db_path=tmp_db, _backfill_since=datetime.date.today(), sequential=True)
 
     row = get_handle("testuser", db_path=tmp_db)
     print(f"\nT8: outcome={result.outcome}, floor={result.coverage_floor}, status={row['status']}")
