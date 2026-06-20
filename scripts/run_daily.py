@@ -63,5 +63,10 @@ summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null")
 with open(summary_path, "w") as f:
     f.write("\n".join(summary_lines) + "\n")
 
-if counts["failed"] or counts["incomplete"]:
+# Exit non-zero only on `failed` — a real error a human should look at (auth,
+# hard adapter exception, MAX_ATTEMPTS exhausted). `incomplete` is the normal
+# post-delta state after the worker-pool cutover (lingering mismatches the pool
+# re-tries on subsequent days), so it does not turn the Action red. Incomplete
+# handles are still surfaced in the summary above.
+if counts["failed"]:
     sys.exit(1)
