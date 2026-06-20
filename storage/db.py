@@ -147,6 +147,12 @@ def get_connection(db_path: Path | str | None = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    # Worker-pool claim protocol (spec §3.4) uses BEGIN IMMEDIATE from multiple
+    # threads racing for the same write lock. Without a busy_timeout the loser
+    # would raise "database is locked" instead of waiting; with it, the loser
+    # blocks briefly then re-reads the (now 'fetching') row and sees rowcount 0.
+    # Harmless for the single-threaded sequential path.
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 
@@ -185,6 +191,14 @@ def migrate_db(conn: sqlite3.Connection) -> None:
         _add_column_if_missing(conn, "day_fetch_log", "reached_floor", "INTEGER")
         _add_column_if_missing(conn, "day_fetch_log", "first_attempted_at", "TEXT")
         _add_column_if_missing(conn, "day_fetch_log", "last_succeeded_at", "TEXT")
+
+        # day_fetch_log: worker-pool count split (worker pool v1 spec §4.1). The
+        # legacy tweet_count is retained; tweets_fetched mirrors it (provider
+        # count) and tweets_written records rows actually inserted into
+        # raw_tweets. Both NULL on existing rows until the worker repopulates
+        # them; the v1 migration backfills tweets_fetched from tweet_count.
+        _add_column_if_missing(conn, "day_fetch_log", "tweets_fetched", "INTEGER")
+        _add_column_if_missing(conn, "day_fetch_log", "tweets_written", "INTEGER")
 
         # raw_tweets: ingest-tracking timestamps (spec §3.7). NULL on existing rows.
         _add_column_if_missing(conn, "raw_tweets", "first_seen_at", "TEXT")

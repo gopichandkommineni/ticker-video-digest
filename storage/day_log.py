@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import datetime
 import logging
+import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +18,23 @@ _UTC = datetime.timezone.utc
 
 def _iso_now() -> str:
     return datetime.datetime.now(tz=_UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _iso(dt: datetime.datetime) -> str:
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# Schema-mapping note (worker pool v1).
+# ------------------------------------
+# Spec §3.4/§9 are written against column names `attempts` and
+# `last_attempted_at`. The live ledger v1 schema (and §4.2 "no other schema
+# changes") provides neither; the worker pool maps onto the columns that DO
+# exist:
+#     spec `attempts`           -> day_fetch_log.retry_count
+#     spec `last_attempted_at`  -> day_fetch_log.fetched_at (set at claim time
+#                                  and reused as the last-activity timestamp for
+#                                  stale-`fetching` detection)
+# No columns are added beyond tweets_fetched / tweets_written (spec §4.1).
 
 
 def populate_pending_days(
@@ -165,6 +184,179 @@ def mark_day(
             )
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Worker-pool dispatch + claim + outcome (worker pool v1 spec §3.4, §3.5, §9).
+# These take an explicit connection because the worker owns one connection per
+# thread and the claim must control its own BEGIN IMMEDIATE transaction.
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Job:
+    """A dispatch-eligible day_fetch_log row (spec §3.4 unit of work)."""
+    handle: str
+    date: str
+    provider: str
+    status: str
+    attempts: int          # day_fetch_log.retry_count
+
+
+def _stale_cutoff(now: str, stale_threshold_sec: int) -> str:
+    """ISO timestamp before which a 'fetching' row is considered crashed (§9)."""
+    dt = datetime.datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=_UTC)
+    return _iso(dt - datetime.timedelta(seconds=stale_threshold_sec))
+
+
+def get_eligible_jobs(
+    conn: sqlite3.Connection,
+    limit: int,
+    now: str | None = None,
+    *,
+    max_attempts: int = 3,
+    stale_threshold_sec: int = 600,
+) -> list[Job]:
+    """Return up to *limit* rows eligible for a claim, oldest date first.
+
+    Eligible (spec §3.4 + §9):
+      - status in (pending, failed), attempts < max, and either no backoff set
+        or the backoff window (next_eligible_at) has elapsed; OR
+      - status = fetching but stale (last activity older than the stale
+        threshold) — a crashed worker's row, attempts < max.
+    Reconciliation outcomes (ok/mismatch) and terminal complete/exhausted rows
+    are never returned.
+    """
+    now = now or _iso_now()
+    cutoff = _stale_cutoff(now, stale_threshold_sec)
+    rows = conn.execute(
+        """
+        SELECT handle, date, provider, status, retry_count
+        FROM day_fetch_log
+        WHERE
+            ( status IN ('pending', 'failed')
+              AND retry_count < :max
+              AND (next_eligible_at IS NULL OR next_eligible_at <= :now) )
+            OR
+            ( status = 'fetching'
+              AND retry_count < :max
+              AND (fetched_at IS NULL OR fetched_at < :cutoff) )
+        ORDER BY date ASC, handle ASC, provider ASC
+        LIMIT :limit
+        """,
+        {"max": max_attempts, "now": now, "cutoff": cutoff, "limit": limit},
+    ).fetchall()
+    return [
+        Job(handle=r["handle"], date=r["date"], provider=r["provider"],
+            status=r["status"], attempts=r["retry_count"])
+        for r in rows
+    ]
+
+
+def claim_day(
+    conn: sqlite3.Connection,
+    handle: str,
+    date: str,
+    provider: str,
+    max_attempts: int,
+    *,
+    now: str | None = None,
+    stale_threshold_sec: int = 600,
+) -> bool:
+    """Atomically transition a row to 'fetching' (spec §3.4).
+
+    Uses BEGIN IMMEDIATE so two workers racing for the same row serialize: the
+    first wins (rowcount == 1), the second matches zero rows (rowcount == 0).
+    Eligible source states are pending/failed (respecting attempts + backoff)
+    and stale 'fetching' (a crashed worker's row, §9). Increments retry_count
+    and stamps fetched_at as the claim/last-activity time.
+
+    Returns True if this worker claimed the row, False otherwise.
+    """
+    now = now or _iso_now()
+    cutoff = _stale_cutoff(now, stale_threshold_sec)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        cur = conn.execute(
+            """
+            UPDATE day_fetch_log
+            SET status             = 'fetching',
+                retry_count        = retry_count + 1,
+                first_attempted_at = COALESCE(first_attempted_at, :now),
+                fetched_at         = :now
+            WHERE handle = :h AND date = :d AND provider = :p
+              AND (
+                ( status IN ('pending', 'failed')
+                  AND retry_count < :max
+                  AND (next_eligible_at IS NULL OR next_eligible_at <= :now) )
+                OR
+                ( status = 'fetching'
+                  AND retry_count < :max
+                  AND (fetched_at IS NULL OR fetched_at < :cutoff) )
+              )
+            """,
+            {"h": handle, "d": date, "p": provider,
+             "max": max_attempts, "now": now, "cutoff": cutoff},
+        )
+        claimed = cur.rowcount == 1
+        conn.commit()
+        return claimed
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def mark_day_outcome(
+    conn: sqlite3.Connection,
+    handle: str,
+    date: str,
+    provider: str,
+    status: str,
+    reached_floor: bool | None,
+    error_class: str | None,
+    tweets_fetched: int | None,
+    tweets_written: int | None,
+    next_eligible_at: str | None,
+    *,
+    attempts: int | None = None,
+    error: str | None = None,
+    now: str | None = None,
+) -> None:
+    """Write the terminal outcome of a single-provider fetch (spec §3.5).
+
+    Wraps the column writes the old mark_day performed and adds the worker-pool
+    columns. Does NOT increment retry_count — claim_day already did. Set
+    *attempts* to force retry_count (e.g. to MAX_ATTEMPTS on a permanent error,
+    so the row is never re-dispatched). error_class / reached_floor /
+    next_eligible_at are written directly (not COALESCEd) so success clears any
+    stale value: error_class is NULL on success (spec §10).
+    """
+    now = now or _iso_now()
+    reached = None if reached_floor is None else (1 if reached_floor else 0)
+    with conn:
+        conn.execute(
+            """
+            UPDATE day_fetch_log
+            SET status           = :status,
+                reached_floor    = :reached,
+                error_class      = :error_class,
+                tweets_fetched   = COALESCE(:fetched, tweets_fetched),
+                tweets_written   = COALESCE(:written, tweets_written),
+                tweet_count      = COALESCE(:fetched, tweet_count),
+                next_eligible_at = :next_eligible_at,
+                fetched_at       = :now,
+                last_succeeded_at = CASE
+                    WHEN :status IN ('complete', 'exhausted', 'ok') THEN :now
+                    ELSE last_succeeded_at END,
+                retry_count      = COALESCE(:attempts, retry_count),
+                error            = COALESCE(:error, error)
+            WHERE handle = :h AND date = :d AND provider = :p
+            """,
+            {"status": status, "reached": reached, "error_class": error_class,
+             "fetched": tweets_fetched, "written": tweets_written,
+             "next_eligible_at": next_eligible_at, "now": now,
+             "attempts": attempts, "error": error,
+             "h": handle, "d": date, "p": provider},
+        )
 
 
 def day_summary(

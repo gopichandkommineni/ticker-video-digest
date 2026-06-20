@@ -22,8 +22,10 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 from . import config as cfg
-from .day_fetcher import backfill_handle, delta_handle, DayFetchSummary
-from storage.db import init_db
+from .day_fetcher import backfill_handle, delta_handle, DayFetchSummary, PROVIDERS
+from .worker_pool import run_pool, PoolConfig
+from .reconciler import reconcile_completed_days
+from storage.db import init_db, get_connection
 from storage.day_log import day_summary, coverage_floor
 from storage.handles import get_handle, list_handles, normalize_handle, upsert_handle
 from tweet_sources.base import UserInfo
@@ -179,6 +181,54 @@ def ingest_handle(
         days_failed=summary.failed,
         coverage_floor=floor_date,
     )
+
+
+def run_days(
+    handles: list[str],
+    since: datetime.date,
+    until: datetime.date,
+    *,
+    sequential: bool = False,
+    db_path: Path | str | None = None,
+    config: PoolConfig | None = None,
+    get_source_fn=None,
+) -> dict:
+    """Backfill *handles* over [since, until] (worker pool v1 spec §5.2).
+
+    Default: dispatch to the worker pool, then run cross-provider
+    reconciliation. ``sequential=True`` falls back to the legacy per-handle
+    day loop (kept for debugging) — the same behavior as before the pool.
+
+    Returns a summary dict combining the pool's per-status counts with the
+    reconciliation verdict (or, in sequential mode, the aggregated
+    DayFetchSummary).
+    """
+    init_db(db_path)
+
+    if sequential:
+        agg = {"ok": 0, "mismatch": 0, "failed": 0, "tweets_inserted": 0}
+        for handle in handles:
+            summary = backfill_handle(handle, since, until, db_path=db_path)
+            agg["ok"] += summary.ok
+            agg["mismatch"] += summary.mismatch
+            agg["failed"] += summary.failed
+            agg["tweets_inserted"] += summary.tweets_inserted
+        return {"mode": "sequential", **agg}
+
+    pool_kwargs = {}
+    if get_source_fn is not None:
+        pool_kwargs["get_source_fn"] = get_source_fn
+    pool_summary = run_pool(
+        handles, (since, until), config=config, db_path=db_path, **pool_kwargs
+    )
+
+    conn = get_connection(db_path)
+    try:
+        recon = reconcile_completed_days(conn)
+    finally:
+        conn.close()
+
+    return {"mode": "pool", "pool": pool_summary, "reconcile": recon}
 
 
 def ingest_all(
