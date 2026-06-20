@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 import datetime
+import json
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# Per-row cap on the serialized provider payload stored in raw_tweets.raw_json
+# (spec §3.8). Prevents one pathological tweet from bloating the table.
+MAX_RAW_JSON_BYTES = 50 * 1024
 
 
 @dataclass
@@ -44,6 +52,25 @@ class Tweet:
     url: str | None
     is_deleted: bool = False        # always False at adapter layer
     raw_json: dict[str, Any] = field(default_factory=dict)
+    # Serialized (json.dumps) per-tweet provider payload, size-capped, for
+    # persistence to raw_tweets.raw_json (spec §3.8). None if not captured.
+    raw_provider_json: str | None = None
+
+
+def serialize_raw_json(tweet_id: str, raw: dict[str, Any]) -> str:
+    """Serialize a per-tweet provider payload, capped at MAX_RAW_JSON_BYTES.
+
+    If the JSON exceeds the cap it is truncated and a warning is logged. Used by
+    both adapters to populate Tweet.raw_provider_json for persistence.
+    """
+    raw_json_str = json.dumps(raw)
+    if len(raw_json_str) > MAX_RAW_JSON_BYTES:
+        logger.warning(
+            "raw_json for tweet %s truncated from %d to %d bytes",
+            tweet_id, len(raw_json_str), MAX_RAW_JSON_BYTES,
+        )
+        raw_json_str = raw_json_str[:MAX_RAW_JSON_BYTES]
+    return raw_json_str
 
 
 def snowflake_to_utc(tweet_id: str) -> str:
