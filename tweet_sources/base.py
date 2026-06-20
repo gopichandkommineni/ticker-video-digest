@@ -16,6 +16,59 @@ logger = logging.getLogger(__name__)
 MAX_RAW_JSON_BYTES = 50 * 1024
 
 
+# ---------------------------------------------------------------------------
+# Provider error hierarchy (PR A).
+#
+# All provider-side failures subclass ProviderError, which subclasses
+# RuntimeError so any pre-existing `except RuntimeError` keeps catching them
+# (Python MRO). The Transient/Permanent split is what the worker pool dispatches
+# on: transient → failed + backoff + retry; permanent → failed, no retry.
+#
+#   429              -> RateLimitExhausted      (transient)
+#   network/timeout  -> NetworkErrorExhausted   (transient)
+#   5xx              -> ServerError(status)      (transient)
+#   401/403          -> AuthError               (permanent)
+#   404              -> NotFoundError           (permanent)
+#   other 4xx        -> PermanentProviderError  (permanent)
+# ---------------------------------------------------------------------------
+
+class ProviderError(RuntimeError):
+    """Base for all provider-related errors."""
+
+
+class TransientProviderError(ProviderError):
+    """Provider error that should retry with backoff."""
+
+
+class PermanentProviderError(ProviderError):
+    """Provider error that should NOT retry."""
+
+
+class RateLimitExhausted(TransientProviderError):
+    """HTTP 429 — rate limit hit, retries exhausted."""
+
+
+class NetworkErrorExhausted(TransientProviderError):
+    """Network/connection/timeout — retries exhausted."""
+
+
+class ServerError(TransientProviderError):
+    """HTTP 5xx — upstream is unhealthy."""
+
+    def __init__(self, status_code: int, message: str = "") -> None:
+        self.status_code = status_code
+        super().__init__(message or f"HTTP {status_code}")
+
+
+class AuthError(PermanentProviderError):
+    """HTTP 401/403 — authentication or authorization failure."""
+
+
+class NotFoundError(PermanentProviderError):
+    """HTTP 404 — resource not found."""
+
+
+
 @dataclass
 class UserInfo:
     handle: str

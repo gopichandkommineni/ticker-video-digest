@@ -11,7 +11,7 @@ from .base import (
     TweetSource, Tweet, FetchResult, UserInfo,
     snowflake_to_utc, compute_type, serialize_raw_json,
 )
-from ._http import get_json, extract_media_urls, RateLimitExhausted, NetworkErrorExhausted
+from ._http import get_json, extract_media_urls
 
 logger = logging.getLogger(__name__)
 
@@ -91,16 +91,12 @@ class GetXApiSource(TweetSource):
 
             url = f"{_BASE}/twitter/tweet/advanced_search?{urllib.parse.urlencode(params)}"
             logger.info("getxapi request %d: %s", pages + 1, url)
-            try:
-                data = get_json(url, self._headers, retry_budget=retry_budget)
-            except (RateLimitExhausted, NetworkErrorExhausted) as exc:
-                logger.error(
-                    "getxapi: %s on page %d for %s — aborting fetch"
-                    " (reached_floor=False, partial tweets kept)",
-                    type(exc).__name__, pages + 1, handle,
-                )
-                # reached_floor stays False — this was NOT a clean stop
-                break
+            # PR A: errors (429 / 5xx / network / auth) propagate to the caller
+            # (the worker), which decides retry-with-backoff vs. permanent fail.
+            # Option A: partial pages collected before the error are discarded;
+            # the worker re-runs the (handle, date) window and INSERT OR IGNORE
+            # dedupes on retry. We no longer swallow to reached_floor=False.
+            data = get_json(url, self._headers, retry_budget=retry_budget)
             pages += 1
 
             batch = data.get("tweets") or []

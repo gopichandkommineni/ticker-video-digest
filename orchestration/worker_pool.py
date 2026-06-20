@@ -32,7 +32,15 @@ from storage.day_log import (
 from storage.tweets import upsert_tweets
 from tweet_sources._http import use_rate_limiter
 from tweet_sources.factory import get_source as _factory_get_source
-from tweet_sources._http import RateLimitExhausted, NetworkErrorExhausted
+from tweet_sources.base import (
+    RateLimitExhausted,
+    NetworkErrorExhausted,
+    ServerError,
+    AuthError,
+    NotFoundError,
+    PermanentProviderError,
+    TransientProviderError,
+)
 
 from .rate_limiter import RateLimiter, from_interval_ms
 from . import config as cfg
@@ -41,9 +49,6 @@ from .day_fetcher import _to_storage_rows  # shared Tweet→storage-dict mapping
 logger = logging.getLogger(__name__)
 
 _UTC = datetime.timezone.utc
-
-# error_class values that mean "do not retry" (spec §3.5: auth / parse).
-PERMANENT_CLASSES: frozenset[str] = frozenset({"permanent"})
 
 
 def _iso_now() -> str:
@@ -63,18 +68,31 @@ class PoolConfig:
     pool_sizes: dict[str, int]
     rate_intervals_ms: dict[str, int]
     max_attempts: int
+    # backoff_schedule_sec is the legacy single schedule (= rate-limit). The two
+    # explicit schedules (PR A) default to it when not supplied, so existing
+    # PoolConfig(...) callers keep working unchanged.
     backoff_schedule_sec: list[int]
+    backoff_rate_limit_sec: list[int] | None = None
+    backoff_transient_sec: list[int] | None = None
     stale_threshold_sec: int = 600
     dispatch_batch: int = 200
 
+    def __post_init__(self) -> None:
+        if self.backoff_rate_limit_sec is None:
+            self.backoff_rate_limit_sec = list(self.backoff_schedule_sec)
+        if self.backoff_transient_sec is None:
+            self.backoff_transient_sec = list(self.backoff_schedule_sec)
+
 
 def load_pool_config() -> PoolConfig:
-    """Build a PoolConfig from orchestration/config.py defaults (spec §5.3)."""
+    """Build a PoolConfig from orchestration/config.py defaults (spec §5.3, PR A)."""
     return PoolConfig(
         pool_sizes=dict(cfg.WORKER_POOL_SIZES),
         rate_intervals_ms=dict(cfg.RATE_LIMITER_INTERVALS_MS),
         max_attempts=cfg.MAX_ATTEMPTS,
-        backoff_schedule_sec=list(cfg.BACKOFF_SCHEDULE_SEC),
+        backoff_schedule_sec=list(cfg.BACKOFF_SCHEDULE_RATE_LIMIT_SEC),
+        backoff_rate_limit_sec=list(cfg.BACKOFF_SCHEDULE_RATE_LIMIT_SEC),
+        backoff_transient_sec=list(cfg.BACKOFF_SCHEDULE_TRANSIENT_SEC),
         stale_threshold_sec=cfg.STALE_FETCHING_THRESHOLD_SEC,
     )
 
@@ -92,66 +110,76 @@ class JobOutcome:
     tweets_written: int = 0
 
 
-def classify_exception(exc: BaseException) -> str:
-    """Map a fetch/upsert exception to an error_class (spec §3.5).
+def _commit_partials(partial_tweets, db_path) -> None:
+    """Idempotently commit any tweets that landed before the error (PR A).
 
-    rate_limit (HTTP 429) and network (timeout/transient) are retryable;
-    everything else — auth, parse, unexpected — is permanent (no retry).
+    For adapter-raised errors this is empty (Option A: the adapter discards
+    in-flight pages and the worker re-runs the window; INSERT OR IGNORE dedupes).
+    Kept as a seam so a caller that *does* have partials can persist them.
     """
-    if isinstance(exc, RateLimitExhausted):
-        return "rate_limit"
-    if isinstance(exc, NetworkErrorExhausted):
-        return "network"
-    return "permanent"
+    if partial_tweets:
+        upsert_tweets(partial_tweets, db_path=db_path)
 
 
-def _backoff_for(attempts: int, config: PoolConfig) -> int:
-    """Backoff seconds for the just-completed attempt (1-based)."""
-    idx = min(attempts - 1, len(config.backoff_schedule_sec) - 1)
-    return config.backoff_schedule_sec[idx]
-
-
-def _record_failure(
+def _mark_transient_failure(
     conn,
     job: Job,
     provider: str,
     attempts: int,
-    exc: BaseException,
     config: PoolConfig,
     now: str,
+    *,
+    error_class: str,
+    backoff_schedule: list[int],
+    error_detail: str,
+    db_path=None,
+    partial_tweets=None,
 ) -> JobOutcome:
+    """Mark a retryable failure: failed + next_eligible_at, unless attempts are
+    exhausted (then terminal failed with no next_eligible_at)."""
     key = (job.handle, job.date, provider)
-    error_class = classify_exception(exc)
-    permanent = error_class in PERMANENT_CLASSES
+    _commit_partials(partial_tweets, db_path)
 
-    if permanent:
-        # Skip retries: force attempts to the cap so dispatch never re-claims it.
-        mark_day_outcome(
-            conn, job.handle, job.date, provider, "failed",
-            reached_floor=None, error_class=error_class,
-            tweets_fetched=None, tweets_written=None, next_eligible_at=None,
-            attempts=config.max_attempts, error=str(exc), now=now,
-        )
-        logger.warning("[%s] %s %s — permanent error (%s); no retry",
-                       provider, job.handle, job.date, error_class)
-        return JobOutcome(key, "failed", error_class)
-
-    # Retryable: schedule a backoff unless this attempt exhausted the budget.
     if attempts >= config.max_attempts:
         next_eligible = None  # terminal (spec §3.5)
     else:
-        secs = _backoff_for(attempts, config)
+        idx = min(attempts - 1, len(backoff_schedule) - 1)
         dt = datetime.datetime.strptime(now, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=_UTC)
-        next_eligible = _iso(dt + datetime.timedelta(seconds=secs))
+        next_eligible = _iso(dt + datetime.timedelta(seconds=backoff_schedule[idx]))
+
     mark_day_outcome(
         conn, job.handle, job.date, provider, "failed",
         reached_floor=None, error_class=error_class,
         tweets_fetched=None, tweets_written=None, next_eligible_at=next_eligible,
-        error=str(exc), now=now,
+        error=error_detail, now=now,
     )
     logger.warning("[%s] %s %s — %s (attempt %d/%d); next_eligible_at=%s",
                    provider, job.handle, job.date, error_class,
                    attempts, config.max_attempts, next_eligible)
+    return JobOutcome(key, "failed", error_class)
+
+
+def _mark_permanent_failure(
+    conn,
+    job: Job,
+    provider: str,
+    config: PoolConfig,
+    now: str,
+    *,
+    error_class: str,
+    error_detail: str,
+) -> JobOutcome:
+    """Mark a permanent failure: failed with attempts forced to the cap so the
+    dispatch query never re-claims it; no next_eligible_at."""
+    key = (job.handle, job.date, provider)
+    mark_day_outcome(
+        conn, job.handle, job.date, provider, "failed",
+        reached_floor=None, error_class=error_class,
+        tweets_fetched=None, tweets_written=None, next_eligible_at=None,
+        attempts=config.max_attempts, error=error_detail, now=now,
+    )
+    logger.warning("[%s] %s %s — permanent error (%s); no retry",
+                   provider, job.handle, job.date, error_class)
     return JobOutcome(key, "failed", error_class)
 
 
@@ -187,13 +215,67 @@ def process_job(
         day = datetime.date.fromisoformat(job.date)
         src = get_source_fn(provider)
 
+        # Adapter errors propagate here (PR A). Dispatch on type: transient →
+        # failed + backoff; permanent → failed, no retry. Order matters — each
+        # specific subclass precedes its base in the MRO. partial_tweets is empty
+        # because the adapter discards in-flight pages on error (Option A); the
+        # re-run re-fetches and INSERT OR IGNORE dedupes.
         try:
             with use_rate_limiter(limiter):
                 result = src.fetch_tweets(job.handle, day, day)
             rows = _to_storage_rows(result.tweets, job.handle, provider)
             written = upsert_tweets(rows, db_path=db_path).inserted if rows else 0
-        except Exception as exc:  # noqa: BLE001 — mapped to error_class
-            return _record_failure(conn, job, provider, attempts, exc, config, now)
+        except RateLimitExhausted as exc:
+            return _mark_transient_failure(
+                conn, job, provider, attempts, config, now,
+                error_class="rate_limit",
+                backoff_schedule=config.backoff_rate_limit_sec,
+                error_detail=str(exc), db_path=db_path, partial_tweets=[],
+            )
+        except NetworkErrorExhausted as exc:
+            return _mark_transient_failure(
+                conn, job, provider, attempts, config, now,
+                error_class="network",
+                backoff_schedule=config.backoff_transient_sec,
+                error_detail=str(exc), db_path=db_path, partial_tweets=[],
+            )
+        except ServerError as exc:
+            return _mark_transient_failure(
+                conn, job, provider, attempts, config, now,
+                error_class="server",
+                backoff_schedule=config.backoff_transient_sec,
+                error_detail=str(exc), db_path=db_path, partial_tweets=[],
+            )
+        except AuthError as exc:
+            return _mark_permanent_failure(
+                conn, job, provider, config, now,
+                error_class="auth", error_detail=str(exc),
+            )
+        except NotFoundError as exc:
+            return _mark_permanent_failure(
+                conn, job, provider, config, now,
+                error_class="not_found", error_detail=str(exc),
+            )
+        except PermanentProviderError as exc:
+            return _mark_permanent_failure(
+                conn, job, provider, config, now,
+                error_class="permanent", error_detail=str(exc),
+            )
+        except TransientProviderError as exc:
+            # Catch-all for any future transient type not handled above.
+            return _mark_transient_failure(
+                conn, job, provider, attempts, config, now,
+                error_class="transient_unknown",
+                backoff_schedule=config.backoff_transient_sec,
+                error_detail=str(exc), db_path=db_path, partial_tweets=[],
+            )
+        except Exception as exc:  # noqa: BLE001 — truly unexpected; retry once
+            return _mark_transient_failure(
+                conn, job, provider, attempts, config, now,
+                error_class="unknown",
+                backoff_schedule=config.backoff_transient_sec,
+                error_detail=str(exc), db_path=db_path, partial_tweets=[],
+            )
 
         fetched = len(result.tweets)
         status = "complete" if result.reached_floor else "exhausted"

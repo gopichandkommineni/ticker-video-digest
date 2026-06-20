@@ -45,9 +45,17 @@ RATE_LIMITER_INTERVALS_MS: dict[str, int] = _json_env(
 # terminally failed (spec §2 decision 4 / §5.3).
 MAX_ATTEMPTS: int = int(os.environ.get("MAX_ATTEMPTS", "3"))
 
-# Backoff before the next eligible claim, indexed by attempt number
-# (60s after attempt 1, 5min after attempt 2, 30min after attempt 3).
-BACKOFF_SCHEDULE_SEC: list[int] = _json_env("BACKOFF_SCHEDULE_SEC", [60, 300, 1800])
+# Backoff before the next eligible claim, indexed by attempt number. Two
+# schedules (PR A): rate-limit (429) recovers fast; other transient failures
+# (5xx, network) get longer waits because the upstream is unhealthy.
+BACKOFF_SCHEDULE_RATE_LIMIT_SEC: list[int] = _json_env(
+    "BACKOFF_SCHEDULE_RATE_LIMIT_SEC", [60, 300, 1800]      # 60s, 5min, 30min
+)
+BACKOFF_SCHEDULE_TRANSIENT_SEC: list[int] = _json_env(
+    "BACKOFF_SCHEDULE_TRANSIENT_SEC", [300, 900, 3600]      # 5min, 15min, 1hr
+)
+# Back-compat alias: the worker pool v1 name referenced the single 429 schedule.
+BACKOFF_SCHEDULE_SEC: list[int] = BACKOFF_SCHEDULE_RATE_LIMIT_SEC
 
 # A row left in 'fetching' longer than this is treated as a crashed worker and
 # is eligible for re-claim by the dispatch query (spec §9).
