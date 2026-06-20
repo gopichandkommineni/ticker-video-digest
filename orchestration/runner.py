@@ -23,10 +23,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from . import config as cfg
 from .day_fetcher import backfill_handle, delta_handle, DayFetchSummary, PROVIDERS
-from .worker_pool import run_pool, PoolConfig
+from .worker_pool import run_pool, PoolConfig, load_pool_config
 from .reconciler import reconcile_completed_days
 from storage.db import init_db, get_connection
-from storage.day_log import day_summary, coverage_floor
+from storage.day_log import day_summary, coverage_floor, reopen_mismatch_days
 from storage.handles import get_handle, list_handles, normalize_handle, upsert_handle
 from tweet_sources.base import UserInfo
 from tweet_sources.factory import get_source  # used by refresh_user_info
@@ -84,14 +84,22 @@ def ingest_handle(
     provider: str | None = None,   # kept for API compat; day_fetcher always uses both
     db_path: Path | str | None = None,
     _backfill_since: datetime.date | None = None,  # test/override: skip Jan-1 default
+    *,
+    sequential: bool = False,
+    config: PoolConfig | None = None,
 ) -> RunResult:
     """
     Fetch and store tweets for a single handle using the day-queue architecture.
 
     - No day_fetch_log entries → backfill from Jan 1 of the current year.
     - Has prior ok entries    → delta: last 3 days + retry any outstanding mismatch/failed.
-    - Both paths use the same DayFetcher loop; reached_floor is never consulted.
     - A handle already in-progress and not stale is skipped (F4).
+
+    Fetch mechanism (PR B): the default routes the day window through the worker
+    pool (run_pool scoped to this handle, then reconcile). ``sequential=True``
+    falls back to the legacy day_fetcher loop (delta_handle/backfill_handle),
+    kept intact for debugging and one-commit rollback. Both write the same
+    tables, so Step 6 (status/RunResult) is identical either way.
     """
     handle = normalize_handle(handle)
     init_db(db_path)
@@ -130,14 +138,43 @@ def ingest_handle(
         db_path=db_path,
     )
 
-    # Step 5: run the day-queue fetcher.
+    # Step 5: fetch the day window — via the worker pool (default) or the legacy
+    # sequential loop (fallback). summary is a DayFetchSummary only in sequential
+    # mode; the pool path derives RunResult.days_* from the ledger in Step 6.
+    summary: DayFetchSummary | None = None
     try:
-        if has_prior_ok:
-            summary: DayFetchSummary = delta_handle(handle, overlap_days=3, db_path=db_path)
+        if sequential:
+            if has_prior_ok:
+                summary = delta_handle(handle, overlap_days=3, db_path=db_path)
+            else:
+                summary = backfill_handle(handle, floor, now.date(), db_path=db_path)
         else:
-            summary = backfill_handle(handle, floor, now.date(), db_path=db_path)
+            pool_config = config or load_pool_config()
+            if has_prior_ok:
+                # Delta: last 3 days, plus re-open outstanding mismatch days so the
+                # pool re-dispatches them (failed days are already pool-eligible).
+                since = now.date() - datetime.timedelta(days=2)
+                until = now.date()
+                conn = get_connection(db_path)
+                try:
+                    reopen_mismatch_days(conn, handle, pool_config.max_attempts)
+                finally:
+                    conn.close()
+            else:
+                since, until = floor, now.date()
+
+            run_pool(
+                [handle], (since, until), config=pool_config, db_path=db_path,
+                handles_filter=[handle],
+            )
+
+            conn = get_connection(db_path)
+            try:
+                reconcile_completed_days(conn)
+            finally:
+                conn.close()
     except Exception as exc:
-        logger.error("handle %s: day_fetcher raised unexpectedly: %s", handle, exc)
+        logger.error("handle %s: fetch raised unexpectedly: %s", handle, exc)
         upsert_handle(
             handle,
             {"status": "failed", "last_fetch_at": _iso(_now()), "last_fetch_status": "error"},
@@ -172,13 +209,24 @@ def ingest_handle(
         )
         logger.info("handle %s: ready; coverage_floor=%s", handle, floor_date)
 
+    # days_* counts: sequential reports this-run's loop counts; the pool path has
+    # no per-run summary, so it reports the handle's ledger counts (plan §4 — the
+    # outcome and handle-status above are identical either way, derived from the
+    # ledger).
+    if summary is not None:
+        days_ok, days_mismatch, days_failed = summary.ok, summary.mismatch, summary.failed
+    else:
+        days_ok = final_counts.get("ok", 0)
+        days_mismatch = final_counts.get("mismatch", 0)
+        days_failed = final_counts.get("failed", 0)
+
     return RunResult(
         handle=handle,
         outcome=outcome,
         reason=reason,
-        days_ok=summary.ok,
-        days_mismatch=summary.mismatch,
-        days_failed=summary.failed,
+        days_ok=days_ok,
+        days_mismatch=days_mismatch,
+        days_failed=days_failed,
         coverage_floor=floor_date,
     )
 
@@ -235,11 +283,18 @@ def ingest_all(
     provider: str | None = None,
     db_path: Path | str | None = None,
     _backfill_since: datetime.date | None = None,
+    *,
+    sequential: bool = False,
+    config: PoolConfig | None = None,
 ) -> list[RunResult]:
     """
     Run ingest_handle for every handle that is ready/failed/pending.
     Handles that are in-progress and not stale are skipped.
     One handle's failure does NOT abort the batch.
+
+    Stays a loop of per-handle (pool-scoped) ingest_handle calls — preserving
+    per-handle RunResult attribution and the F4 skip. ``sequential`` is threaded
+    through for the debug/rollback fallback (plan §2c).
     """
     init_db(db_path)
     results: list[RunResult] = []
@@ -252,6 +307,7 @@ def ingest_all(
             results.append(ingest_handle(
                 handle, provider=provider, db_path=db_path,
                 _backfill_since=_backfill_since,
+                sequential=sequential, config=config,
             ))
         except Exception as exc:
             logger.error("handle %s: unexpected error in ingest_all: %s", handle, exc)
