@@ -12,6 +12,20 @@ import urllib.request
 import urllib.error
 from typing import Any
 
+# Provider error hierarchy lives in base.py (PR A). Re-exported here so existing
+# `from ._http import RateLimitExhausted, NetworkErrorExhausted` callsites and
+# tests keep working unchanged.
+from .base import (  # noqa: F401  (re-exported)
+    ProviderError,
+    TransientProviderError,
+    PermanentProviderError,
+    RateLimitExhausted,
+    NetworkErrorExhausted,
+    ServerError,
+    AuthError,
+    NotFoundError,
+)
+
 logger = logging.getLogger(__name__)
 
 # Per-request retry schedule on HTTP 429 and transient network errors (seconds).
@@ -48,14 +62,6 @@ def use_rate_limiter(limiter):
         yield
     finally:
         _thread_limiter.limiter = prev
-
-
-class RateLimitExhausted(RuntimeError):
-    """Raised when a request is still 429 after all per-request retries are exhausted."""
-
-
-class NetworkErrorExhausted(RuntimeError):
-    """Raised when a transient network/timeout error persists after all retries."""
 
 
 def _is_transient_network_error(exc: BaseException) -> bool:
@@ -136,14 +142,26 @@ def get_json(
                     f"HTTP 429 from {url}: exhausted {len(retry_delays)} retries"
                 ) from exc
 
-            # Non-429 HTTP error — no retry.
+            # Non-429 HTTP error — single attempt, map to a typed error and
+            # raise immediately (PR A). 5xx is transient (the worker backs off);
+            # we do NOT retry-with-backoff inside the request, since that would
+            # stall the worker thread for the minutes-to-hours 5xx schedule.
             body = exc.read()
             try:
-                detail = json.loads(body)
+                detail = json.dumps(json.loads(body))
             except Exception:
                 detail = body.decode(errors="replace")
+            detail = detail[:200]
             logger.error("HTTP %d %s: %s", exc.code, url, detail)
-            raise RuntimeError(f"HTTP {exc.code} from {url}: {detail}") from exc
+            msg = f"HTTP {exc.code} from {url}: {detail}"
+            if 500 <= exc.code < 600:
+                raise ServerError(exc.code, msg) from exc
+            if exc.code in (401, 403):
+                raise AuthError(msg) from exc
+            if exc.code == 404:
+                raise NotFoundError(msg) from exc
+            # Any other 4xx (and any unexpected code) is a permanent client error.
+            raise PermanentProviderError(msg) from exc
 
         except BaseException as exc:
             if _is_transient_network_error(exc):

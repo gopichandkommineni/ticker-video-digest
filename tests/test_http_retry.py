@@ -6,14 +6,16 @@ H1. TRANSIENT 429: 429 on first attempt, 200 on second — get_json returns data
     sleep called once with the right delay, no exception raised.
 H2. EXHAUSTED RETRIES: 429 on all attempts — RateLimitExhausted raised,
     sleep called len(retry_delays) times total.
-H3. NON-429 HTTP ERROR: 500 response — RuntimeError raised immediately, no retry.
+H3. NON-429 HTTP ERROR: 500 response — ServerError (a RuntimeError subclass)
+    raised immediately, no retry.
 H4. BUDGET EXHAUSTED: retry_budget["remaining"] <= 0 before first retry sleep —
     RateLimitExhausted raised immediately without sleeping.
 H5. ADAPTER RECOVERY (integration): adapter gets 429 on page 2 then 200 — run
     continues pagination, reached_floor=True, all tweets collected.
-H6. ADAPTER ABORT (integration): adapter gets persistent 429 on page 3 (retries
-    exhausted mid-pagination) — reached_floor=False, status=incomplete (NOT ready),
-    partial tweets from pages 1-2 are persisted.
+H6. ADAPTER PROPAGATION (integration): adapter gets persistent 429 on page 3
+    (retries exhausted mid-pagination) — PR A: the adapter no longer swallows to
+    reached_floor=False; RateLimitExhausted propagates to the caller (the worker
+    decides retry vs. permanent). Partial pages are discarded (Option A).
 H7. TRANSIENT TIMEOUT: socket read-timeout on first attempt, 200 on second —
     get_json retries and returns data; sleep called once.
 H8. EXHAUSTED TIMEOUT RETRIES: persistent TimeoutError — NetworkErrorExhausted
@@ -22,8 +24,9 @@ H9. URLERROR WITH SOCKET REASON: URLError wrapping socket.timeout is treated as
     transient and retried, not propagated as-is.
 H10. ADAPTER RECOVERY ON TIMEOUT (integration): page 2 gets a transient timeout,
      recovers, run completes with reached_floor=True.
-H11. ADAPTER ABORT ON TIMEOUT (integration): persistent timeout on page 3 exhausts
-     retries — reached_floor=False, status NOT ready, partial tweets persisted.
+H11. ADAPTER PROPAGATION ON TIMEOUT (integration): persistent timeout on page 3
+     exhausts retries — PR A: NetworkErrorExhausted propagates to the caller
+     instead of swallowing to reached_floor=False. Partial pages discarded.
 """
 
 from __future__ import annotations
@@ -253,14 +256,12 @@ def test_h5_adapter_recovery_continues_pagination():
 
 def test_h6_adapter_abort_on_exhausted_429():
     """
-    GetXApiSource.fetch_tweets: pages 1-2 succeed, page 3 gets persistent 429 (all
-    retries exhausted). Adapter breaks with reached_floor=False.
-    Then ingest_handle: outcome must NOT be 'ok', status must NOT be 'ready'.
-    Partial tweets from pages 1-2 are persisted (self-healing).
+    PR A: GetXApiSource.fetch_tweets: pages 1-2 succeed, page 3 gets persistent
+    429 (all retries exhausted). The adapter no longer swallows to
+    reached_floor=False — RateLimitExhausted propagates to the caller. The worker
+    is what turns that into a failed+backoff ledger row (see PR A worker tests).
     """
-    from storage import init_db, get_handle
     from tweet_sources.getxapi import GetXApiSource
-    import tempfile
 
     year = datetime.datetime.now(UTC).year
 
@@ -297,24 +298,15 @@ def test_h6_adapter_abort_on_exhausted_429():
     with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
          patch("tweet_sources.getxapi._normalize", side_effect=fake_normalize), \
          patch("tweet_sources._http.time.sleep", side_effect=slept.append):
-        result = GetXApiSource(api_key="test-key").fetch_tweets(
-            "throttled_user",
-            datetime.date(year, 1, 1),
-            datetime.date(year, 6, 1),
-        )
+        with pytest.raises(RateLimitExhausted):
+            GetXApiSource(api_key="test-key").fetch_tweets(
+                "throttled_user",
+                datetime.date(year, 1, 1),
+                datetime.date(year, 6, 1),
+            )
 
-    print(f"\nH6 adapter: tweets={len(result.tweets)} reached_floor={result.reached_floor} slept={slept}")
-
-    # reached_floor must be False — this was NOT a clean stop
-    assert result.reached_floor is False, (
-        "exhausted 429 mid-pagination must NOT set reached_floor=True"
-    )
-    # Partial tweets from pages 1+2 are returned for storage
-    assert len(result.tweets) == 4
-
-    # Adapter-level: reached_floor=False and partial tweets are the contract.
-    # Orchestrator-level 429 handling (mismatch detection via cross-provider agreement)
-    # is covered by test_t8_all_days_failed_is_incomplete in test_orchestration.py.
+    # Exhausted 429 mid-pagination now propagates (PR A) — no FetchResult is
+    # returned. The worker maps RateLimitExhausted → failed + rate-limit backoff.
 
 
 # ---------------------------------------------------------------------------
@@ -454,10 +446,9 @@ def test_h10_adapter_recovery_on_timeout():
 # ---------------------------------------------------------------------------
 
 def test_h11_adapter_abort_on_persistent_timeout():
-    """Persistent timeout on page 3 exhausts retries → reached_floor=False, status≠ready."""
+    """PR A: persistent timeout on page 3 exhausts retries → NetworkErrorExhausted
+    propagates to the caller (no swallow to reached_floor=False)."""
     from tweet_sources.getxapi import GetXApiSource
-    from storage import init_db, get_handle
-    import tempfile
 
     year = datetime.datetime.now(UTC).year
     page1_tweets = [_tweet_raw("401"), _tweet_raw("402")]
@@ -489,23 +480,18 @@ def test_h11_adapter_abort_on_persistent_timeout():
             has_media=False, media_urls=[], url=None,
         )
 
-    # Adapter-level check first
     with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
          patch("tweet_sources.getxapi._normalize", side_effect=fake_normalize), \
          patch("tweet_sources._http.time.sleep", side_effect=slept.append):
-        result = GetXApiSource(api_key="test-key").fetch_tweets(
-            "timeout_user",
-            datetime.date(year, 1, 1),
-            datetime.date(year, 6, 1),
-        )
+        with pytest.raises(NetworkErrorExhausted):
+            GetXApiSource(api_key="test-key").fetch_tweets(
+                "timeout_user",
+                datetime.date(year, 1, 1),
+                datetime.date(year, 6, 1),
+            )
 
-    print(f"\nH11 adapter: tweets={len(result.tweets)} reached_floor={result.reached_floor} slept={slept}")
-    assert result.reached_floor is False
-    assert len(result.tweets) == 4
+    # Three retry sleeps happened before the exception propagated.
     assert slept == [5, 30, 120]
-
-    # Adapter-level: reached_floor=False and partial tweets are the contract.
-    # Orchestrator-level timeout handling is covered by test_t8_all_days_failed_is_incomplete.
 
 
 # ---------------------------------------------------------------------------

@@ -13,8 +13,11 @@ from pathlib import Path
 
 from storage.db import get_connection, init_db
 from storage.tweets import upsert_tweets
-from tweet_sources.base import Tweet, FetchResult, UserInfo
-from tweet_sources._http import RateLimitExhausted, NetworkErrorExhausted
+from tweet_sources.base import (
+    Tweet, FetchResult, UserInfo,
+    RateLimitExhausted, NetworkErrorExhausted, ServerError,
+    AuthError, NotFoundError, PermanentProviderError,
+)
 
 UTC = datetime.timezone.utc
 
@@ -193,5 +196,17 @@ def network_exc(msg: str = "timeout") -> NetworkErrorExhausted:
     return NetworkErrorExhausted(msg)
 
 
-def permanent_exc(msg: str = "HTTP 401 auth") -> RuntimeError:
-    return RuntimeError(msg)
+def server_exc(status: int = 503, msg: str = "") -> ServerError:
+    return ServerError(status, msg or f"HTTP {status}")
+
+
+def auth_exc(msg: str = "HTTP 401 auth") -> AuthError:
+    return AuthError(msg)
+
+
+def notfound_exc(msg: str = "HTTP 404") -> NotFoundError:
+    return NotFoundError(msg)
+
+
+def permanent_exc(msg: str = "HTTP 400 bad request") -> PermanentProviderError:
+    return PermanentProviderError(msg)
