@@ -45,6 +45,18 @@ def _fetch_once(ticker: str, lookback_days: int) -> list[TickerSnapshot]:
     snapshots: list[TickerSnapshot] = []
     last_idx = len(hist) - 1
     for i, (ts, row) in enumerate(hist.iterrows()):
+        # yfinance occasionally returns rows with NaN OHLC/volume (e.g. a
+        # halted session or a not-yet-settled latest bar). Pydantic accepts
+        # float('nan') as a valid float, but Python's sqlite3 stores NaN as
+        # NULL — which then trips the NOT NULL constraint on ticker_snapshots
+        # at insert time. Skip such rows here so a single bad bar can't fail
+        # the whole daily refresh.
+        prices = (row["Open"], row["High"], row["Low"], row["Close"],
+                  row[adj_close_col], row["Volume"])
+        if any(v is None or (isinstance(v, float) and math.isnan(v)) for v in prices):
+            logger.debug("Skipping %s row %s with NaN price data", ticker, ts.date())
+            continue
+
         avg_vol = rolling_avg.iloc[i]
         snapshots.append(TickerSnapshot(
             ticker=ticker,

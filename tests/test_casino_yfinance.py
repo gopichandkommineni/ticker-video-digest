@@ -1,3 +1,4 @@
+import math
 from datetime import date, datetime, timezone
 from unittest.mock import MagicMock, patch
 
@@ -123,6 +124,37 @@ def test_fetch_returns_empty_list_on_empty_history():
         snaps = fetch_ticker_history("EMPTY")
 
     assert snaps == []
+
+
+# ── NaN price rows ──────────────────────────────────────────────────────────────
+
+def test_skips_rows_with_nan_close():
+    """yfinance NaN bars must be dropped: sqlite3 stores NaN as NULL, which
+    would otherwise trip the NOT NULL constraint on ticker_snapshots.close."""
+    hist = _make_history(10)
+    # Punch a NaN into the Close of row 5 (e.g. a halted/partial session).
+    hist.iloc[5, hist.columns.get_loc("Close")] = float("nan")
+
+    mock_ticker = _make_mock_ticker(hist=hist)
+
+    with patch("casino_dashboard.data.yfinance_client.yf.Ticker", return_value=mock_ticker):
+        snaps = fetch_ticker_history("NANROW")
+
+    assert len(snaps) == 9
+    assert all(not math.isnan(s.close) for s in snaps)
+
+
+def test_no_nan_in_any_price_field():
+    hist = _make_history(8)
+    hist.iloc[2, hist.columns.get_loc("Open")] = float("nan")
+    hist.iloc[4, hist.columns.get_loc("Volume")] = float("nan")
+
+    mock_ticker = _make_mock_ticker(hist=hist)
+
+    with patch("casino_dashboard.data.yfinance_client.yf.Ticker", return_value=mock_ticker):
+        snaps = fetch_ticker_history("NANROW2")
+
+    assert len(snaps) == 6
 
 
 # ── retry logic ───────────────────────────────────────────────────────────────
