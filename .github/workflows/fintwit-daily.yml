@@ -1,11 +1,17 @@
-name: FinTwit Daily Delta
+name: FinTwit — Daily Tweet Ingest
+
+# Pulls the latest day of tweets for every tracked handle into data/fintwit.db
+# and commits the updated DB. Each run posts a per-handle summary report under
+# the Actions run ("Summary" tab).
 
 on:
   schedule:
-    - cron: "0 6 * * *"   # 2am ET — runs before the snapshots.db refresh at 0 13
-  workflow_dispatch:
+    - cron: "0 6 * * *"   # 2am ET — overnight ingest (shares the db-writer queue
+                          #          with Daily Refresh, which also starts at 0 6)
+  workflow_dispatch:        # also runnable on demand from the Actions tab
 
-# R1: all .db-writing workflows share one concurrency group; queue, never cancel.
+# Only one DB-writing job runs at a time (see Daily Refresh for the full note):
+# all workflows that commit to the shared DBs queue here instead of racing.
 concurrency:
   group: db-writer
   cancel-in-progress: false
@@ -31,26 +37,28 @@ jobs:
       - name: Install project
         run: pip install -e ".[dev]"
 
-      # R4: write secrets to .env in cwd; scripts load it with load_dotenv(".env").
+      # Write API keys to a .env file in the working dir; the scripts load it
+      # with load_dotenv(".env"). Keys never appear in logs.
       - name: Write .env from secrets
         run: |
           printf 'GETXAPI_KEY=%s\n'        "${{ secrets.GETXAPI_KEY }}"        > .env
           printf 'TWITTERAPI_IO_KEY=%s\n'  "${{ secrets.TWITTERAPI_IO_KEY }}"  >> .env
 
-      - name: Run ingest_all and report outcomes
+      - name: Ingest tweets & write run report
         id: ingest
         env:
           PYTHONPATH: .
         run: python scripts/run_daily.py
 
-      # R2+R3: commit .db unconditionally (partial progress must persist even on failure).
-      - name: Commit data/fintwit.db if changed
+      # Commit even if the ingest step failed (if: always) so partial progress
+      # is never lost — stage only the DB file, never `git add -A`.
+      - name: Commit updated fintwit.db to main
         if: always()
         run: |
           test -f data/fintwit.db || { echo "data/fintwit.db not present — nothing to commit"; exit 0; }
           git config user.name  "fintwit-bot"
           git config user.email "bot@users.noreply.github.com"
-          # R3: only the db file — never git add -A
+          # Stage only the DB file — never git add -A.
           git add data/fintwit.db
           git diff --cached --quiet && echo "No changes to commit" && exit 0
           git commit -m "FinTwit delta: $(date -u +%Y-%m-%dT%H:%M)Z"
