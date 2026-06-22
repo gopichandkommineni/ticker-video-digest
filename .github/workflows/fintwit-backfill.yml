@@ -1,4 +1,8 @@
-name: FinTwit Manual Backfill
+name: FinTwit — Manual Handle Backfill
+
+# On-demand: pulls the full tweet history for one handle into data/fintwit.db
+# and commits it. Use this to add a new handle or fill gaps the daily ingest
+# missed. Posts a summary report under the Actions run ("Summary" tab).
 
 on:
   workflow_dispatch:
@@ -8,7 +12,7 @@ on:
         required: true
         type: string
 
-# R1: same concurrency group as daily-delta and snapshots refresh.
+# Same db-writer queue as the other DB-writing workflows (see Daily Refresh).
 concurrency:
   group: db-writer
   cancel-in-progress: false
@@ -34,26 +38,28 @@ jobs:
       - name: Install project
         run: pip install -e ".[dev]"
 
-      # R4: write secrets to .env in cwd; scripts load it with load_dotenv(".env").
+      # Write API keys to a .env file in the working dir; the scripts load it
+      # with load_dotenv(".env"). Keys never appear in logs.
       - name: Write .env from secrets
         run: |
           printf 'GETXAPI_KEY=%s\n'        "${{ secrets.GETXAPI_KEY }}"        > .env
           printf 'TWITTERAPI_IO_KEY=%s\n'  "${{ secrets.TWITTERAPI_IO_KEY }}"  >> .env
 
-      - name: Run ingest_handle and report result
+      - name: Backfill handle & write run report
         id: backfill
         env:
           PYTHONPATH: .
         run: python scripts/run_backfill.py "${{ inputs.handle }}"
 
-      # R2+R3: commit .db unconditionally (partial progress must persist even on failure).
-      - name: Commit data/fintwit.db if changed
+      # Commit even if the backfill step failed (if: always) so partial progress
+      # is never lost — stage only the DB file, never `git add -A`.
+      - name: Commit updated fintwit.db to main
         if: always()
         run: |
           test -f data/fintwit.db || { echo "data/fintwit.db not present — nothing to commit"; exit 0; }
           git config user.name  "fintwit-bot"
           git config user.email "bot@users.noreply.github.com"
-          # R3: only the db file — never git add -A
+          # Stage only the DB file — never git add -A.
           git add data/fintwit.db
           git diff --cached --quiet && echo "No changes to commit" && exit 0
           git commit -m "FinTwit backfill ${{ inputs.handle }}: $(date -u +%Y-%m-%dT%H:%M)Z"

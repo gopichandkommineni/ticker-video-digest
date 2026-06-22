@@ -1,4 +1,8 @@
-name: FinTwit API Variance Probe
+name: FinTwit — API Variance Probe
+
+# On-demand diagnostic: fetches the same handle N times from each tweet provider
+# and reports how stable/complete each provider's results are. Writes a verdict
+# report under the Actions run ("Summary" tab) plus fixtures under probes/.
 
 on:
   workflow_dispatch:
@@ -48,7 +52,7 @@ jobs:
           printf 'GETXAPI_KEY=%s\n'        "${{ secrets.GETXAPI_KEY }}"        > .env
           printf 'TWITTERAPI_IO_KEY=%s\n'  "${{ secrets.TWITTERAPI_IO_KEY }}"  >> .env
 
-      - name: Run variance probe
+      - name: Run variance probe & write verdict report
         env:
           PYTHONPATH: .
         run: |
@@ -57,7 +61,7 @@ jobs:
           ARGS="$ARGS --runs ${{ inputs.runs }}"
           python scripts/run_variance.py $ARGS
 
-      - name: Commit probe outputs + seeded DB to main
+      - name: Commit probe fixtures + seeded fintwit.db to main
         if: always()
         run: |
           # Probe fixtures plus the seeded tweet DB (run_variance persists into

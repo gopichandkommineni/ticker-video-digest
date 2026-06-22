@@ -1,14 +1,20 @@
-name: Daily Refresh
+name: Daily Refresh — Market Data & Signals
+
+# Extracts prices, social mentions, metadata, ETF flows, deal log, sector heat,
+# and congress trades into data/snapshots.db, then commits the updated DB to main.
+# Each run posts a summary report under the Actions run ("Summary" tab).
 
 on:
   schedule:
-    - cron: "0 6 * * *"      # 2am ET — single overnight refresh (market closed)
+    - cron: "0 6 * * *"      # 2am ET — overnight refresh (market closed)
     - cron: "0 13 * * 1-5"   # 9am ET — pre-market refresh (before 9:30am open)
     - cron: "0 17 * * 1-5"   # 1pm ET — mid-session refresh (~4h after open)
     - cron: "0 21 * * 1-5"   # 5pm ET — post-close refresh (after 4pm close)
-  workflow_dispatch:
+  workflow_dispatch:           # also runnable on demand from the Actions tab
 
-# R1: serialize with FinTwit workflows — all share one db-writer concurrency group.
+# Only one DB-writing job runs at a time. Every workflow that commits to
+# snapshots.db / fintwit.db shares this group so their commits never race;
+# queued runs wait their turn instead of being cancelled.
 concurrency:
   group: db-writer
   cancel-in-progress: false
@@ -39,18 +45,20 @@ jobs:
       - name: Install project
         run: pip install -e ".[dev]"
 
-      - name: Run daily refresh
+      - name: Extract market data & write run report
         run: python -m casino_dashboard.jobs.daily_refresh
 
-      - name: Commit snapshots.db if changed
+      - name: Commit updated snapshots.db to main
         run: |
           test -f data/snapshots.db || { echo "data/snapshots.db not present — nothing to commit"; exit 0; }
           git config user.name "casino-dashboard-bot"
           git config user.email "bot@users.noreply.github.com"
-          # R3: only snapshots.db — never git add -A (fixes branch-pollution bug)
+          # Stage only the DB file — never `git add -A`, which would sweep up
+          # stray files and pollute the branch.
           git add data/snapshots.db
           git diff --cached --quiet && echo "No changes to commit" && exit 0
           git commit -m "Refresh: $(date -u +%Y-%m-%dT%H:%M)Z"
-          # Absorb concurrent commits before pushing (concurrency group makes this rare).
+          # Absorb any commit that landed while we ran before pushing
+          # (the db-writer concurrency group makes a race rare, not impossible).
           git pull --rebase origin main
           git push origin HEAD:main

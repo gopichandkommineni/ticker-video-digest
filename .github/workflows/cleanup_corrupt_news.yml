@@ -1,7 +1,17 @@
-name: One-time Cleanup — Corrupt news_items
+name: Maintenance — Remove Corrupt News Rows
+
+# On-demand one-off: deletes corrupted rows from the news_items table in
+# data/snapshots.db and commits the cleaned DB. Runs in the db-writer queue so
+# it never races the Daily Refresh, which also writes snapshots.db.
 
 on:
   workflow_dispatch:
+
+# Share the db-writer queue with Daily Refresh so two jobs never write
+# snapshots.db at the same time.
+concurrency:
+  group: db-writer
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -11,7 +21,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
 
       - uses: actions/setup-python@v5
         with:
@@ -23,10 +36,15 @@ jobs:
       - name: Delete corrupted news_items rows
         run: python scripts/cleanup_corrupt_news.py
 
-      - name: Commit snapshots.db if changed
+      - name: Commit cleaned snapshots.db to main
         run: |
+          test -f data/snapshots.db || { echo "data/snapshots.db not present — nothing to commit"; exit 0; }
           git config user.name "casino-dashboard-bot"
           git config user.email "bot@users.noreply.github.com"
+          # Stage only the DB file — never git add -A.
           git add data/snapshots.db
-          git commit -m "One-time cleanup: remove corrupted news_items rows" || echo "No changes"
-          git push
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "Maintenance: remove corrupted news_items rows"
+          # Absorb any commit that landed while we ran before pushing.
+          git pull --rebase origin main
+          git push origin HEAD:main
