@@ -51,10 +51,12 @@ BATCH_TEXT_TRUNCATE = 300      # per-tweet chars sent inside a batch (smaller = 
 DELAY_SECONDS = 4.5            # politeness: keep under 15 req/min on free tier
 REQUEST_TIMEOUT = 150          # large batched responses are slow; allow headroom
 RUN_DATE = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-REPORT_PATH = (
-    Path(__file__).parent / "probes" / "gemini_digest" / f"{RUN_DATE}_30d"
-    / "report.md"
-)
+REPORT_DIR = Path(__file__).parent / "probes" / "gemini_digest" / f"{RUN_DATE}_30d"
+REPORT_PATH = REPORT_DIR / "report.md"
+# Resumable ledger: one JSON line per tweet_id already extracted, so re-runs
+# only process uncovered tweets (no DB writes — a file artifact in the probe).
+LEDGER_PATH = REPORT_DIR / "thesis.jsonl"
+SECTOR_CACHE_PATH = REPORT_DIR / "sectors.json"
 
 CASHTAG_RE = re.compile(r"\$[A-Z]{1,5}\b")
 
@@ -145,6 +147,33 @@ def _oneline(s: object) -> str:
 def _chunk(items: list, n: int):
     for i in range(0, len(items), n):
         yield items[i:i + n]
+
+
+def load_ledger(path: Path) -> dict[str, dict]:
+    """Load already-extracted thesis records keyed by tweet_id."""
+    if not path.exists():
+        return {}
+    out: dict[str, dict] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+            out[str(rec["tweet_id"])] = rec
+        except (json.JSONDecodeError, KeyError):
+            continue
+    return out
+
+
+def append_ledger(path: Path, records: list[dict]) -> None:
+    """Append thesis records as JSON lines (idempotent caller skips dupes)."""
+    if not records:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        for rec in records:
+            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
 def _strip_fences(s: str) -> str:
@@ -298,8 +327,18 @@ def main() -> int:
     R()
 
     sector_map: dict[str, str] = {}
+    cached_sectors = {}
+    if SECTOR_CACHE_PATH.exists():
+        try:
+            cached_sectors = json.loads(SECTOR_CACHE_PATH.read_text("utf-8"))
+        except json.JSONDecodeError:
+            cached_sectors = {}
     if not api_key:
         R("_GEMINI_API_KEY not set — Stage 3 & 4 skipped._")
+    elif cached_sectors:
+        # Reuse a prior sector call; spend no quota.
+        sector_map = {tk: cached_sectors.get(tk, "unmapped") for tk in unique_tickers}
+        R("_Sector map loaded from cache (`sectors.json`); no Gemini call spent._")
     elif unique_tickers:
         prompt = SECTOR_PROMPT.format(tickers=", ".join(unique_tickers))
         try:
@@ -311,6 +350,9 @@ def main() -> int:
                      for k, v in raw.items() }
             for tk in unique_tickers:
                 sector_map[tk] = norm.get(tk.upper(), "unmapped")
+            SECTOR_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            SECTOR_CACHE_PATH.write_text(
+                json.dumps(sector_map, ensure_ascii=False, indent=2), "utf-8")
         except RateLimited as e:
             rate_limited += 1
             R(f"_Stage 3 rate-limited (HTTP 429): {_oneline(e)[:160]}_")
@@ -357,24 +399,29 @@ def main() -> int:
     R("fits within the free-tier daily request cap (one per-tweet call would not).")
     R()
 
-    ok_rows: list[dict] = []
     stance_counts: Counter = Counter()
+    ledger = load_ledger(LEDGER_PATH)          # {tweet_id: record} from prior runs
+    done_before = len(ledger)
     if not api_key:
         R("_GEMINI_API_KEY not set — Stage 4 skipped._")
     else:
-        # Cover the whole month, batched; bound batches as a daily-quota backstop.
-        all_batches = list(_chunk(ticker_bearing, BATCH_SIZE))
-        batches = all_batches[:MAX_THESIS_BATCHES]
+        # Resume: only process tweets not already in the ledger.
+        todo = [t for t in ticker_bearing if str(t["tweet_id"]) not in ledger]
+        R(f"_Ledger (`{LEDGER_PATH.name}`): {done_before} tweet(s) already "
+          f"extracted; **{len(todo)}** remaining this run._")
+        R()
+        # Batch the remainder; bound batches as a daily-quota backstop.
+        batches = list(_chunk(todo, BATCH_SIZE))[:MAX_THESIS_BATCHES]
         covered = sum(len(b) for b in batches)
-        skipped = bearing - covered
+        skipped = len(todo) - covered
         if skipped > 0:
             R(f"_Batch backstop: processing {len(batches)} batches "
-              f"({covered} tweets); skipping {skipped} to stay under the daily "
-              f"quota._")
+              f"({covered} tweets); {skipped} remaining tweet(s) deferred to a "
+              f"later run to stay under the daily quota._")
             R()
 
         def run_batch(bi: int, batch: list[dict], label: str) -> bool:
-            """Process one batch. Returns True on success, False to retry."""
+            """Process one batch; append results to the ledger. False ⇒ retry."""
             nonlocal succeeded, rate_limited, llm_calls
             payload = [
                 {"id": j, "text": (t["text"] or "")[:BATCH_TEXT_TRUNCATE]}
@@ -394,21 +441,30 @@ def main() -> int:
                     )
                 by_id = {int(o["id"]): o for o in parsed
                          if isinstance(o, dict) and "id" in o}
-                got = 0
+                new_recs = []
                 for j, t in enumerate(batch):
                     res = by_id.get(j)
                     if not res:
                         continue
-                    got += 1
-                    res["stance"] = str(res.get("stance", "")).strip().lower()
-                    stance_counts[res["stance"]] += 1
-                    ok_rows.append({
+                    claim = res.get("claim", {}) or {}
+                    rec = {
+                        "tweet_id": str(t["tweet_id"]),
                         "handle": t["account_handle"],
-                        "tickers": t["tickers"],
                         "created": t["created_at_utc"],
-                        "result": res,
-                    })
-                print(f"[{label} {bi}] {len(batch)} tweets -> {got} parsed")
+                        "tickers": t["tickers"],
+                        "thesis": res.get("thesis", ""),
+                        "claim": {
+                            "falsifiable": claim.get("falsifiable"),
+                            "horizon": claim.get("horizon"),
+                            "checkpoint": claim.get("checkpoint"),
+                        },
+                        "stance": str(res.get("stance", "")).strip().lower(),
+                    }
+                    ledger[rec["tweet_id"]] = rec
+                    new_recs.append(rec)
+                append_ledger(LEDGER_PATH, new_recs)
+                print(f"[{label} {bi}] {len(batch)} tweets -> "
+                      f"{len(new_recs)} parsed")
                 return True
             except RateLimited as e:
                 rate_limited += 1
@@ -445,32 +501,37 @@ def main() -> int:
 
         if failed:
             lost = sum(len(b) for _, b in failed)
-            R(f"_Note: {len(failed)} batch(es) (~{lost} tweets) could not be "
-              f"recovered this run (transient errors / budget). Counts below "
-              f"reflect what was extracted._")
+            R(f"_Note: {len(failed)} batch(es) (~{lost} tweets) not recovered "
+              f"this run (transient errors / budget); the ledger lets a later "
+              f"run pick them up._")
             R()
 
+    # Build the table from the FULL ledger union (all runs), newest first.
+    all_recs = sorted(ledger.values(), key=lambda r: r.get("created", ""),
+                      reverse=True)
+    for rec in all_recs:
+        stance_counts[rec.get("stance", "")] += 1
+    added = len(ledger) - done_before
+    R()
+    R(f"Thesis ledger now holds **{len(all_recs)}** of {bearing} ticker-bearing "
+      f"tweets (**+{added}** this run).")
+    R()
+    if stance_counts:
+        R("Stance distribution: "
+          + ", ".join(f"{s or '(blank)'} ({n})"
+                      for s, n in stance_counts.most_common()))
         R()
-        R(f"Successful extractions: **{len(ok_rows)}** of {covered} tweets "
-          f"across {len(batches)} batched call(s).")
+    if all_recs:
+        R("| Handle | Tickers | Stance | Falsifiable | Horizon | Thesis |")
+        R("|---|---|---|---|---|---|")
+        for rec in all_recs:
+            claim = rec.get("claim", {}) or {}
+            thesis = _oneline(rec.get("thesis", "")).replace("|", "\\|")
+            horizon = _oneline(claim.get("horizon", "")).replace("|", "\\|")
+            R(f"| @{rec['handle']} | {', '.join(rec.get('tickers', []))} | "
+              f"{rec.get('stance', '')} | {claim.get('falsifiable', '')} | "
+              f"{horizon} | {thesis} |")
         R()
-        if stance_counts:
-            R("Stance distribution: "
-              + ", ".join(f"{s or '(blank)'} ({n})"
-                          for s, n in stance_counts.most_common()))
-            R()
-        if ok_rows:
-            R("| Handle | Tickers | Stance | Falsifiable | Horizon | Thesis |")
-            R("|---|---|---|---|---|---|")
-            for r in ok_rows:
-                res = r["result"]
-                claim = res.get("claim", {}) or {}
-                thesis = _oneline(res.get("thesis", "")).replace("|", "\\|")
-                horizon = _oneline(claim.get("horizon", "")).replace("|", "\\|")
-                R(f"| @{r['handle']} | {', '.join(r['tickers'])} | "
-                  f"{res.get('stance', '')} | {claim.get('falsifiable', '')} | "
-                  f"{horizon} | {thesis} |")
-            R()
 
     # ---- Run summary --------------------------------------------------------
     R("## Run summary")
