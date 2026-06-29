@@ -50,7 +50,11 @@ MAX_LLM_CALLS = 19             # hard daily budget guard (free tier = 20/day/mod
 BATCH_TEXT_TRUNCATE = 300      # per-tweet chars sent inside a batch (smaller = faster)
 DELAY_SECONDS = 4.5            # politeness: keep under 15 req/min on free tier
 REQUEST_TIMEOUT = 150          # large batched responses are slow; allow headroom
-REPORT_PATH = Path(__file__).parent / "gemini_month_report.md"
+RUN_DATE = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+REPORT_PATH = (
+    Path(__file__).parent / "probes" / "gemini_digest" / f"{RUN_DATE}_30d"
+    / "report.md"
+)
 
 CASHTAG_RE = re.compile(r"\$[A-Z]{1,5}\b")
 
@@ -191,6 +195,7 @@ class Report:
         self.lines.append(line)
 
     def save(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("\n".join(self.lines) + "\n", encoding="utf-8")
 
 
