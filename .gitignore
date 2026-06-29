@@ -195,6 +195,9 @@ cython_debug/
 data/*.db
 !data/snapshots.db
 !data/fintwit.db
+# Transient SQLite WAL/shared-memory sidecars — never track
+data/*.db-wal
+data/*.db-shm
 
 # PyPI configuration file
 .pypirc
