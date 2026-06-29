@@ -33,7 +33,7 @@ from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "data" / "fintwit.db"
 DAYS_BACK = 7
-GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-2.5-flash"
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
     f"{GEMINI_MODEL}:generateContent"
