@@ -8,8 +8,16 @@ on:
   workflow_dispatch:
     inputs:
       handle:
-        description: "Twitter handle to backfill (without @)"
+        description: "Twitter handle(s) to backfill, without @ (comma-separated for several)"
         required: true
+        type: string
+      since:
+        description: "Optional gap-fill start date YYYY-MM-DD (use with 'until' to fill an interior gap)"
+        required: false
+        type: string
+      until:
+        description: "Optional gap-fill end date YYYY-MM-DD (use with 'since')"
+        required: false
         type: string
 
 # Same db-writer queue as the other DB-writing workflows (see Daily Refresh).
@@ -49,7 +57,12 @@ jobs:
         id: backfill
         env:
           PYTHONPATH: .
-        run: python scripts/run_backfill.py "${{ inputs.handle }}"
+        run: |
+          ARGS=("${{ inputs.handle }}")
+          if [ -n "${{ inputs.since }}" ] || [ -n "${{ inputs.until }}" ]; then
+            ARGS+=(--since "${{ inputs.since }}" --until "${{ inputs.until }}")
+          fi
+          python scripts/run_backfill.py "${ARGS[@]}"
 
       # Commit even if the backfill step failed (if: always) so partial progress
       # is never lost — stage only the DB file, never `git add -A`.
