@@ -35,5 +35,20 @@ See [`gemini_digest/README.md`](gemini_digest/README.md) for full documentation.
 
 ---
 
+## groq_digest
+
+**Question:** Same descriptive 30-day analysis as `gemini_digest`, but run on
+Groq's OpenAI-compatible free tier — does the much higher free-tier budget let
+the full month complete in a single run?
+
+Answer: yes. Groq's free `llama-3.1-8b-instant` (14,400 req/day, 500k tokens/day)
+covered all ~741 ticker-bearing tweets in ~12 minutes at $0, where Gemini's
+20/day cap needed many days. TPM is the binding throttle; the probe paces on
+`retry-after`.
+
+See [`groq_digest/README.md`](groq_digest/README.md) for full documentation.
+
+---
+
 *To add a new probe type, create `probes/<type>/README.md` and append a section
 here summarizing the question it answers.*

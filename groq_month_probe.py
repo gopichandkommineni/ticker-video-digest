@@ -227,6 +227,9 @@ def groq_json(prompt: str, api_key: str, model: str) -> tuple[dict, dict]:
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            # Cloudflare 403s the default Python-urllib UA (error 1010); send a
+            # normal UA so requests are accepted.
+            "User-Agent": "ticker-digest-probe/1.0 (+groq)",
         },
         method="POST",
     )
@@ -356,24 +359,31 @@ def main() -> int:
         sector_map = {tk: cached_sectors.get(tk, "unmapped") for tk in unique_tickers}
         R("_Sector map loaded from cache (`sectors.json`); no call spent._")
     elif unique_tickers:
-        try:
-            llm_calls += 1
-            raw, _ = groq_json(
-                SECTOR_PROMPT.format(tickers=", ".join(unique_tickers)),
-                api_key, SECTOR_MODEL)
-            succeeded += 1
-            norm = {(k if k.startswith("$") else f"${k}").upper(): str(v)
-                    for k, v in raw.items()}
-            for tk in unique_tickers:
-                sector_map[tk] = norm.get(tk.upper(), "unmapped")
-            SECTOR_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            SECTOR_CACHE_PATH.write_text(
-                json.dumps(sector_map, ensure_ascii=False, indent=2), "utf-8")
-        except RateLimited as e:
-            rate_limited += 1
-            R(f"_Stage 3 rate-limited (429): {_oneline(e)[:140]}_")
-        except Exception as e:  # noqa: BLE001
-            R(f"_Stage 3 failed: {type(e).__name__}: {_oneline(e)[:140]}_")
+        sector_prompt = SECTOR_PROMPT.format(tickers=", ".join(unique_tickers))
+        for attempt in range(MAX_BATCH_RETRIES):
+            try:
+                llm_calls += 1
+                raw, _ = groq_json(sector_prompt, api_key, SECTOR_MODEL)
+                succeeded += 1
+                norm = {(k if k.startswith("$") else f"${k}").upper(): str(v)
+                        for k, v in raw.items()}
+                for tk in unique_tickers:
+                    sector_map[tk] = norm.get(tk.upper(), "unmapped")
+                SECTOR_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+                SECTOR_CACHE_PATH.write_text(
+                    json.dumps(sector_map, ensure_ascii=False, indent=2), "utf-8")
+                break
+            except RateLimited as e:
+                rate_limited += 1
+                wait = min(e.retry_after or DELAY_SECONDS * 2, RETRY_AFTER_CAP)
+                print(f"[sector] 429 (attempt {attempt + 1}); sleeping {wait:.0f}s")
+                time.sleep(wait)
+            except Exception as e:  # noqa: BLE001
+                print(f"[sector] ERROR (attempt {attempt + 1}): {e}")
+                time.sleep(DELAY_SECONDS * (attempt + 1))
+        if not sector_map:
+            R("_Stage 3 could not complete (rate-limited); sector rollups "
+              "deferred to a later run._")
         time.sleep(DELAY_SECONDS)
 
     if sector_map:
