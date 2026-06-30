@@ -35,5 +35,22 @@ See [`gemini_digest/README.md`](gemini_digest/README.md) for full documentation.
 
 ---
 
+## groq_digest
+
+**Question:** Can Groq (Llama 3.3 70B) reliably summarize ticker-bearing FinTwit
+tweets into a strict-JSON `{thesis, claim, stance}` structure, and does a 30-day
+all-handles run fit the free-tier budget?
+
+The direct counterpart of `gemini_digest` — same read-only, descriptive-only
+pipeline, same strict-JSON contracts — so the two providers can be compared head
+to head. Cashtags are extracted deterministically by regex; only the
+thesis/sector summarization uses the LLM. Groq's free tier is bound by
+tokens-per-minute (not requests-per-day), so the month probe waits out the token
+bucket and uses a resumable ledger.
+
+See [`groq_digest/README.md`](groq_digest/README.md) for full documentation.
+
+---
+
 *To add a new probe type, create `probes/<type>/README.md` and append a section
 here summarizing the question it answers.*
