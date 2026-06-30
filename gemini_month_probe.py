@@ -50,8 +50,9 @@ MAX_LLM_CALLS = 19             # hard daily budget guard (free tier = 20/day/mod
 BATCH_TEXT_TRUNCATE = 300      # per-tweet chars sent inside a batch (smaller = faster)
 DELAY_SECONDS = 4.5            # politeness: keep under 15 req/min on free tier
 REQUEST_TIMEOUT = 150          # large batched responses are slow; allow headroom
-RUN_DATE = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-REPORT_DIR = Path(__file__).parent / "probes" / "gemini_digest" / f"{RUN_DATE}_30d"
+# Stable folder (NOT dated): the thesis ledger accumulates across runs and may
+# span multiple days / quota resets, so it must live in one fixed location.
+REPORT_DIR = Path(__file__).parent / "probes" / "gemini_digest" / "30d_rolling"
 REPORT_PATH = REPORT_DIR / "report.md"
 # Resumable ledger: one JSON line per tweet_id already extracted, so re-runs
 # only process uncovered tweets (no DB writes — a file artifact in the probe).
