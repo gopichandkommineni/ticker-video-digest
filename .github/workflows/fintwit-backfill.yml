@@ -58,6 +58,14 @@ jobs:
           printf 'GETXAPI_KEY=%s\n'        "${{ secrets.GETXAPI_KEY }}"        > .env
           printf 'TWITTERAPI_IO_KEY=%s\n'  "${{ secrets.TWITTERAPI_IO_KEY }}"  >> .env
 
+      # One-time (idempotent) shrink: drop the stored raw_json payloads that
+      # pushed data/fintwit.db past GitHub's 100MB limit. After the first run
+      # clears them this is a no-op (0 rows changed → VACUUM skipped).
+      - name: Shrink DB (drop raw_json)
+        env:
+          PYTHONPATH: .
+        run: python scripts/shrink_fintwit_db.py
+
       - name: Backfill handle & write run report
         id: backfill
         env:
