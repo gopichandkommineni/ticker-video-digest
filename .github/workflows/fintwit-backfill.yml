@@ -24,6 +24,11 @@ on:
         required: false
         default: false
         type: boolean
+      chunk_days:
+        description: "For a windowed backfill (since+until), commit+push every N days so a mid-run crash/timeout keeps completed chunks instead of losing the whole run. Smaller N = safer but more DB snapshots in git history. Default 7."
+        required: false
+        default: "7"
+        type: string
 
 # Same db-writer queue as the other DB-writing workflows (see Daily Refresh).
 concurrency:
@@ -76,18 +81,62 @@ jobs:
           # intentionally skipped here; the daily delta uses getxapi.
           WORKER_POOL_SIZES: '{"twitterapi": 5}'
         run: |
-          ARGS=("${{ inputs.handle }}")
-          if [ -n "${{ inputs.since }}" ] || [ -n "${{ inputs.until }}" ]; then
-            ARGS+=(--since "${{ inputs.since }}" --until "${{ inputs.until }}")
-          fi
-          if [ "${{ inputs.reset_failed }}" = "true" ]; then
-            ARGS+=(--reset-failed)
-          fi
-          python scripts/run_backfill.py "${ARGS[@]}"
+          set -euo pipefail
+          git config user.name  "fintwit-bot"
+          git config user.email "bot@users.noreply.github.com"
 
-      # Commit even if the backfill step failed (if: always) so partial progress
-      # is never lost — stage only the DB file, never `git add -A`.
-      - name: Commit updated fintwit.db to main
+          HANDLE="${{ inputs.handle }}"
+          SINCE="${{ inputs.since }}"
+          UNTIL="${{ inputs.until }}"
+          CHUNK_DAYS="${{ inputs.chunk_days }}"
+          CHUNK_DAYS="${CHUNK_DAYS:-7}"
+          RESET=""
+          if [ "${{ inputs.reset_failed }}" = "true" ]; then RESET="--reset-failed"; fi
+
+          # Commit + push the DB as it currently stands. Stages ONLY the DB file.
+          # Each chunk ran as its own process, so WAL is already checkpointed and
+          # the committed .db is at rest (a consistent snapshot).
+          commit_push() {
+            git add data/fintwit.db
+            if git diff --cached --quiet; then
+              echo "  (no DB change to commit for $1)"
+            else
+              git commit -m "FinTwit backfill ${HANDLE} ${1}"
+              git pull --rebase origin main
+              git push origin HEAD:main
+            fi
+          }
+
+          # No window → single backfill-or-delta run. Chunking only applies to an
+          # explicit [since, until] range; the final commit step persists it.
+          if [ -z "$SINCE" ] || [ -z "$UNTIL" ]; then
+            python scripts/run_backfill.py "$HANDLE"
+            exit 0
+          fi
+
+          # Windowed: walk [SINCE, UNTIL] in CHUNK_DAYS-day slices and commit each
+          # so a mid-run crash/timeout keeps every completed chunk on origin
+          # instead of losing the whole run. run_backfill is idempotent per
+          # window (already-ok days are skipped), and --reset-failed is scoped to
+          # each chunk's dates.
+          CUR="$SINCE"
+          while [ "$(date -d "$CUR" +%s)" -le "$(date -d "$UNTIL" +%s)" ]; do
+            END="$(date -d "$CUR +$((CHUNK_DAYS - 1)) days" +%Y-%m-%d)"
+            if [ "$(date -d "$END" +%s)" -gt "$(date -d "$UNTIL" +%s)" ]; then
+              END="$UNTIL"
+            fi
+            echo "=== chunk ${CUR} → ${END} ==="
+            python scripts/run_backfill.py "$HANDLE" --since "$CUR" --until "$END" $RESET
+            commit_push "${CUR}..${END}"
+            CUR="$(date -d "$END +1 day" +%Y-%m-%d)"
+          done
+
+      # Backstop: runs even if the backfill step failed mid-chunk (if: always).
+      # Commits any DB changes the loop didn't reach (a crashed chunk's partial
+      # writes, or the no-window path) AND flushes any chunk that was committed
+      # locally but whose push failed — so partial progress always reaches
+      # origin. Stages only the DB file, never `git add -A`.
+      - name: Commit any remaining fintwit.db changes to main
         if: always()
         run: |
           test -f data/fintwit.db || { echo "data/fintwit.db not present — nothing to commit"; exit 0; }
@@ -95,7 +144,12 @@ jobs:
           git config user.email "bot@users.noreply.github.com"
           # Stage only the DB file — never git add -A.
           git add data/fintwit.db
-          git diff --cached --quiet && echo "No changes to commit" && exit 0
-          git commit -m "FinTwit backfill ${{ inputs.handle }}: $(date -u +%Y-%m-%dT%H:%M)Z"
+          if git diff --cached --quiet; then
+            echo "No new DB changes to stage"
+          else
+            git commit -m "FinTwit backfill ${{ inputs.handle }}: $(date -u +%Y-%m-%dT%H:%M)Z"
+          fi
+          # Always reconcile with origin and push: this flushes any locally
+          # committed-but-unpushed chunk. A true no-op push is harmless.
           git pull --rebase origin main
-          git push origin HEAD:main
+          git push origin HEAD:main || echo "nothing to push"
