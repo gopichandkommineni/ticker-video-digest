@@ -91,7 +91,14 @@ def _to_storage_rows(
             "is_deleted":      0,
             "fetched_at":      fetched_at,
             "source_provider": provider,
-            "raw_json":        t.raw_provider_json,
+            # raw_json is intentionally NOT persisted: the full provider payload
+            # (capped at 50KB/tweet) was ~half of data/fintwit.db and pushed the
+            # git-tracked file past GitHub's 100MB limit. Nothing reads the
+            # stored column — cross-provider reconciliation uses the in-memory
+            # Tweet.raw_json instead — so dropping it is lossless for the
+            # pipeline. See scripts/shrink_fintwit_db.py for the one-time
+            # backfill of existing rows.
+            "raw_json":        None,
         }
         for t in tweets
     ]
