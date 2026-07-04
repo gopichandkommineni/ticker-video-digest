@@ -20,6 +20,8 @@ from dotenv import load_dotenv
 load_dotenv(".env")
 
 from storage import close_connection, normalize_handle, upsert_handle  # noqa: E402
+from storage.db import get_connection  # noqa: E402
+from storage.day_log import reopen_failed_days  # noqa: E402
 from orchestration.runner import ingest_handle, run_days  # noqa: E402
 
 
@@ -34,7 +36,16 @@ def main() -> None:
     parser.add_argument("handles", help="comma-separated handle(s), with or without @")
     parser.add_argument("--since", type=datetime.date.fromisoformat, metavar="YYYY-MM-DD")
     parser.add_argument("--until", type=datetime.date.fromisoformat, metavar="YYYY-MM-DD")
+    parser.add_argument(
+        "--reset-failed",
+        action="store_true",
+        help="Re-open terminally-failed day-slots in the window (retry_count reset "
+             "to 0) before backfilling. Use to resume days that maxed out their "
+             "attempts on a provider outage — e.g. HTTP 402 when credits ran out.",
+    )
     args = parser.parse_args()
+    if args.reset_failed and not args.since:
+        parser.error("--reset-failed requires --since/--until")
 
     handles = [normalize_handle(h) for h in args.handles.split(",") if h.strip()]
     if not handles:
@@ -44,6 +55,16 @@ def main() -> None:
 
     # Windowed range backfill: fills interior gaps that delta runs can't reach.
     if args.since:
+        if args.reset_failed:
+            conn = get_connection()
+            try:
+                reopened = sum(
+                    reopen_failed_days(conn, h, args.since, args.until)
+                    for h in handles
+                )
+            finally:
+                conn.close()
+            print(f"--reset-failed: reopened {reopened} failed day-slot(s)")
         print(f"Range backfill {handles} over {args.since} → {args.until}")
         result = run_days(handles, args.since, args.until)
         # Register the handles so the daily delta job keeps them fresh. The

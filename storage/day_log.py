@@ -299,6 +299,45 @@ def reopen_mismatch_days(
     return cur.rowcount
 
 
+def reopen_failed_days(
+    conn: sqlite3.Connection,
+    handle: str,
+    since: datetime.date | None = None,
+    until: datetime.date | None = None,
+    providers: tuple[str, ...] | None = None,
+) -> int:
+    """Re-open terminally-failed days so a re-run re-fetches them.
+
+    Sets status → 'pending', retry_count → 0, and clears next_eligible_at /
+    error / error_class. Unlike reopen_mismatch_days this is deliberately NOT
+    gated on the retry cap: it exists to unstick days that *exhausted* their
+    attempts because of a provider-side outage (e.g. HTTP 402 when a credit
+    balance ran out mid-backfill), giving them a clean retry budget once the
+    balance is topped up. Optional [since, until] and provider filters scope
+    the reset so unrelated failures aren't touched. Returns rows reopened.
+    """
+    clauses = ["status = 'failed'", "handle = ?"]
+    params: list = [handle]
+    if since is not None:
+        clauses.append("date >= ?")
+        params.append(since.isoformat())
+    if until is not None:
+        clauses.append("date <= ?")
+        params.append(until.isoformat())
+    if providers:
+        clauses.append("provider IN (%s)" % ",".join("?" * len(providers)))
+        params.extend(providers)
+    with conn:
+        cur = conn.execute(
+            "UPDATE day_fetch_log "
+            "SET status = 'pending', retry_count = 0, next_eligible_at = NULL, "
+            "    error = NULL, error_class = NULL "
+            "WHERE " + " AND ".join(clauses),
+            params,
+        )
+    return cur.rowcount
+
+
 def claim_day(
     conn: sqlite3.Connection,
     handle: str,
