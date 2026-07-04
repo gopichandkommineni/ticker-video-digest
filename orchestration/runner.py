@@ -170,7 +170,9 @@ def ingest_handle(
 
             conn = get_connection(db_path)
             try:
-                reconcile_completed_days(conn)
+                reconcile_completed_days(
+                    conn, providers=tuple(pool_config.pool_sizes.keys())
+                )
             finally:
                 conn.close()
     except Exception as exc:
@@ -263,16 +265,19 @@ def run_days(
             agg["tweets_inserted"] += summary.tweets_inserted
         return {"mode": "sequential", **agg}
 
+    resolved = config or load_pool_config()
     pool_kwargs = {}
     if get_source_fn is not None:
         pool_kwargs["get_source_fn"] = get_source_fn
     pool_summary = run_pool(
-        handles, (since, until), config=config, db_path=db_path, **pool_kwargs
+        handles, (since, until), config=resolved, db_path=db_path, **pool_kwargs
     )
 
     conn = get_connection(db_path)
     try:
-        recon = reconcile_completed_days(conn)
+        recon = reconcile_completed_days(
+            conn, providers=tuple(resolved.pool_sizes.keys())
+        )
     finally:
         conn.close()
 

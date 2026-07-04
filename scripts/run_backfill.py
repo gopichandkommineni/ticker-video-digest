@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 
 load_dotenv(".env")
 
-from storage import close_connection, normalize_handle  # noqa: E402
+from storage import close_connection, normalize_handle, upsert_handle  # noqa: E402
 from orchestration.runner import ingest_handle, run_days  # noqa: E402
 
 
@@ -46,6 +46,14 @@ def main() -> None:
     if args.since:
         print(f"Range backfill {handles} over {args.since} → {args.until}")
         result = run_days(handles, args.since, args.until)
+        # Register the handles so the daily delta job keeps them fresh. The
+        # --since/--until path calls run_days directly and never creates the
+        # handle row that ingest_all() iterates via list_handles(); do it now
+        # that run_days has initialised the DB. ingest_handle re-derives
+        # backfill-vs-delta from the day ledger, so 'ready' is a status hint,
+        # not a correctness dependency.
+        for h in handles:
+            upsert_handle(h, {"status": "ready"})
         print(result)
         _write_summary(
             f"## FinTwit Range Backfill — {', '.join('@' + h for h in handles)}\n"
