@@ -41,8 +41,28 @@ def _verdict(counts: list[int]) -> str:
     return "ok" if diff_frac <= MISMATCH_THRESHOLD else "mismatch"
 
 
-def reconcile_completed_days(conn: sqlite3.Connection) -> dict:
+def reconcile_completed_days(
+    conn: sqlite3.Connection,
+    providers: tuple[str, ...] | None = None,
+) -> dict:
     """Collapse terminal single-provider rows into ok/mismatch (spec §3.6).
+
+    ``providers`` is the configured provider set for the run. A day is
+    reconciled once every configured provider has reached a terminal
+    (complete/exhausted) status for it:
+
+      - Multi-provider config → all must be terminal, then count-agreement
+        decides ok vs mismatch (the original cross-provider check).
+      - Single-provider config → a lone terminal row reconciles straight to
+        'ok'; count-agreement is trivially satisfied with one source. This is
+        the deliberate tradeoff for running one provider per job (backfill on
+        twitterapi, delta on getxapi): no cross-provider verification, but the
+        day still reaches 'ok' so it is never mistaken for un-backfilled and
+        re-pulled from scratch.
+
+    When ``providers`` is None the legacy rule applies (reconcile only when
+    >= 2 providers are present and all terminal), preserving prior behaviour
+    for callers that don't pass a set.
 
     Idempotent: rows already reconciled to ok/mismatch are not terminal and are
     skipped. Returns a summary dict: {'ok', 'mismatch', 'skipped'}.
@@ -60,14 +80,24 @@ def reconcile_completed_days(conn: sqlite3.Connection) -> dict:
 
     summary: Counter = Counter()
     for (handle, date), provs in groups.items():
-        statuses = {s for (s, _) in provs.values()}
-        # Reconcile only when BOTH providers reached a terminal single-provider
-        # status. A failed/pending/fetching row (or a lone provider) → skip.
-        if len(provs) < 2 or not statuses.issubset(_TERMINAL):
+        if providers is None:
+            # Legacy rule: >= 2 providers present and all terminal.
+            statuses = {s for (s, _) in provs.values()}
+            ready = len(provs) >= 2 and statuses.issubset(_TERMINAL)
+            count_providers = list(provs.keys())
+        else:
+            # Reconcile once every *configured* provider is terminal for the day.
+            # A single-provider config collapses a lone terminal row to 'ok'.
+            ready = all(
+                p in provs and provs[p][0] in _TERMINAL for p in providers
+            )
+            count_providers = [p for p in providers if p in provs]
+
+        if not ready:
             summary["skipped"] += 1
             continue
 
-        counts = [(c or 0) for (_, c) in provs.values()]
+        counts = [(provs[p][1] or 0) for p in count_providers]
         verdict = _verdict(counts)
         with conn:
             conn.execute(

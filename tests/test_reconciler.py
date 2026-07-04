@@ -82,3 +82,67 @@ def test_reconcile_is_idempotent(tmp_path):
     # Second pass: rows are already 'ok' (not terminal) → nothing to do.
     assert second["ok"] == 0
     assert row(db, "acct", "2026-06-10", "getxapi")["status"] == "ok"
+
+
+# --- Single-provider mode (backfill=twitterapi / delta=getxapi split) --------
+
+
+def test_single_provider_lone_terminal_marks_ok(tmp_path):
+    """With a one-provider config, a lone terminal day reconciles to 'ok'."""
+    db = fresh_db(tmp_path)
+    _terminal(db, "acct", "2026-06-10", "twitterapi", "complete", 42)
+
+    summary = reconcile_completed_days(
+        get_connection(db), providers=("twitterapi",)
+    )
+    assert summary["ok"] == 1
+    assert summary["mismatch"] == 0
+    assert row(db, "acct", "2026-06-10", "twitterapi")["status"] == "ok"
+
+
+def test_single_provider_zero_tweet_day_marks_ok(tmp_path):
+    """An empty (0-tweet) single-provider day still reaches 'ok'."""
+    db = fresh_db(tmp_path)
+    _terminal(db, "acct", "2026-06-10", "getxapi", "complete", 0)
+
+    summary = reconcile_completed_days(get_connection(db), providers=("getxapi",))
+    assert summary["ok"] == 1
+    assert row(db, "acct", "2026-06-10", "getxapi")["status"] == "ok"
+
+
+def test_single_provider_non_terminal_skipped(tmp_path):
+    """A failed/pending row for the configured provider is not reconciled."""
+    db = fresh_db(tmp_path)
+    seed_pending(db, "acct", "2026-06-10", "twitterapi")
+    conn = get_connection(db)
+    try:
+        mark_day_outcome(
+            conn, "acct", "2026-06-10", "twitterapi", "failed",
+            reached_floor=None, error_class="rate_limit",
+            tweets_fetched=None, tweets_written=None, next_eligible_at=None,
+        )
+    finally:
+        conn.close()
+
+    summary = reconcile_completed_days(
+        get_connection(db), providers=("twitterapi",)
+    )
+    assert summary["ok"] == 0
+    assert summary["skipped"] == 1
+    assert row(db, "acct", "2026-06-10", "twitterapi")["status"] == "failed"
+
+
+def test_configured_providers_wait_for_all(tmp_path):
+    """With a 2-provider config, a day is not reconciled until BOTH are terminal
+    — even though the group transiently holds a single terminal row."""
+    db = fresh_db(tmp_path)
+    _terminal(db, "acct", "2026-06-10", "getxapi", "complete", 100)
+    # twitterapi hasn't reported yet (still pending).
+    seed_pending(db, "acct", "2026-06-10", "twitterapi")
+
+    summary = reconcile_completed_days(
+        get_connection(db), providers=("getxapi", "twitterapi")
+    )
+    assert summary["ok"] == 0
+    assert summary["skipped"] == 1
+    assert row(db, "acct", "2026-06-10", "getxapi")["status"] == "complete"

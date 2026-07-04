@@ -57,6 +57,11 @@ jobs:
         id: backfill
         env:
           PYTHONPATH: .
+          # Backfill runs on twitterapi only (credits account). Single-provider
+          # runs reconcile a lone terminal day straight to 'ok' (see
+          # reconciler.reconcile_completed_days). Cross-provider verification is
+          # intentionally skipped here; the daily delta uses getxapi.
+          WORKER_POOL_SIZES: '{"twitterapi": 5}'
         run: |
           ARGS=("${{ inputs.handle }}")
           if [ -n "${{ inputs.since }}" ] || [ -n "${{ inputs.until }}" ]; then

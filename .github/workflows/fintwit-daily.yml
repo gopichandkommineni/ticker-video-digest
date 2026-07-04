@@ -48,6 +48,10 @@ jobs:
         id: ingest
         env:
           PYTHONPATH: .
+          # Daily delta runs on getxapi only (dollar account). Single-provider
+          # runs reconcile a lone terminal day straight to 'ok'; backfill uses
+          # twitterapi. See reconciler.reconcile_completed_days.
+          WORKER_POOL_SIZES: '{"getxapi": 3}'
         run: python scripts/run_daily.py
 
       # Commit even if the ingest step failed (if: always) so partial progress
