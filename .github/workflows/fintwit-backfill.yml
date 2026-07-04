@@ -19,6 +19,11 @@ on:
         description: "Optional gap-fill end date YYYY-MM-DD (use with 'since')"
         required: false
         type: string
+      reset_failed:
+        description: "Re-open terminally-failed day-slots in the window before backfilling (resume days that maxed out attempts on a provider outage, e.g. HTTP 402). Requires since/until."
+        required: false
+        default: false
+        type: boolean
 
 # Same db-writer queue as the other DB-writing workflows (see Daily Refresh).
 concurrency:
@@ -66,6 +71,9 @@ jobs:
           ARGS=("${{ inputs.handle }}")
           if [ -n "${{ inputs.since }}" ] || [ -n "${{ inputs.until }}" ]; then
             ARGS+=(--since "${{ inputs.since }}" --until "${{ inputs.until }}")
+          fi
+          if [ "${{ inputs.reset_failed }}" = "true" ]; then
+            ARGS+=(--reset-failed)
           fi
           python scripts/run_backfill.py "${ARGS[@]}"
 
