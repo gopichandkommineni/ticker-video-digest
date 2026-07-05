@@ -53,7 +53,13 @@ graded accordingly.
 | Buybacks | 10-K/Q Item 5 + 8-K authorizations | Quarterly + ad hoc | High |
 | Executive changes | 8-K Item 5.02, proxies | Per filing | High |
 | Short interest + squeeze score | FINRA semi-monthly + daily short volume | 2×/month (+3–5d lag); volume T+1 | High |
-| Macro (VIX, put/call, EFFR, INDPRO) | CBOE + FRED | EOD / daily / monthly | High |
+| Fails-to-deliver | SEC FTD files | Per settlement date | High |
+| Proposed insider sales | SEC EDGAR Form 144 | Per filing | High |
+| Fund/ETF holdings of a stock | SEC EDGAR Form NPORT-P | Monthly/quarterly per fund | High |
+| Congress trades (ticker- and member-keyed) | House/Senate STOCK Act disclosures | Per disclosure (~30–45d lag) | High |
+| Private/exempt offerings | SEC EDGAR Form D | Per filing (SEC-registered issuers only) | High |
+| Macro | Full FRED catalog (any series) + CBOE VIX/put-call | Series-dependent; EOD | High |
+| IR news/events | Company IR-site scrape | Per publication (sparse — empty for TSLA in probe) | Medium |
 | KPIs, guidance | NLP extraction from earnings releases/transcripts | Per earnings event | Medium |
 | Earnings-call transcripts + audio | IR/transcript vendor (likely paid) | Per call | Medium |
 
@@ -86,21 +92,39 @@ ingestion for all of it.
 
 1. **Orchestration (6):** `spawn_research_agent(name, focus)`,
    `collect_research_briefs()` (barrier), `update_plan`, `render_a2ui`,
-   `find_tools`/`call_tool` (two-tier deferred tool catalog; catalog can
-   advertise tools that aren't callable — catalog/runtime drift observed).
+   `find_tools`/`call_tool` (two-tier deferred tool catalog). A full
+   catalog sweep (10 themed `find_tools` queries + live calls) found
+   **every advertised tool callable** — an earlier claim of
+   catalog/runtime drift was retracted by the model as confabulated
+   (see §9).
 2. **Workspace (18):** tabs, notes (write/append/edit/read), filing
    reader, earnings-call transcript + audio control, full spreadsheet
    (cells/format/sheets/rows/columns). Every workspace call ENDS the
    turn — mutating/UI tools checkpoint; read-only data tools compose.
-3. **Equity data (16):** one entity resolver (`get_company`) in front of
-   typed getters (`get_current_price`, `get_price_history`,
+3. **Equity data (~32 after full catalog sweep; 16 loaded by default):**
+   one entity resolver (`get_company`) in front of typed getters
+   (`get_current_price`, `get_price_history`,
    `get_institutional_holdings`, `get_insider_sentiment`,
    `get_valuation_multiples`, `get_short_interest`, `get_buybacks`,
    `get_company_kpis`, `get_guidance`, `get_earnings_call_events`,
    `get_executive_changes`, `get_financial_facts`) plus a document store
    with line addressing (`search_filings` → passages with
    `{documentId, fromLine, toLine}`; `list_company_documents`;
-   `read_document_lines`).
+   `read_document_lines`). The deferred catalog adds 16 more, all
+   verified callable: `get_proposed_sales` (Form 144),
+   `get_funds_holding_stock` (NPORT-P), `get_congress_trades` +
+   `get_member_trades` (STOCK Act, ticker- and member-keyed),
+   `get_exempt_offerings` (Form D), `get_customer_concentration`
+   (NLP over risk factors), `get_financial_fact_history` (XBRL time
+   series, back to 2011), `get_financial_statements` (packaged
+   latest statements), `get_valuation_multiples_history`
+   (**point-in-time** multiples — recomputed with only facts filed by
+   each date, avoiding look-ahead bias), `get_fails_to_deliver` (SEC
+   FTD), `get_on_balance_volume` + `get_bollinger_bands` (derived
+   technicals), `get_investor_relations_news`/`_events` (IR-site
+   scrape), `search_economic_indicators` + `get_economic_indicator`
+   (**full FRED catalog**, any series id — not just the 4 named macro
+   feeds).
 4. **Derived scores are platform-side** (squeeze score, insider
    sentiment 0–100): the LLM reads scores, it never computes them.
 
@@ -265,5 +289,12 @@ answer quality.
 - Price-tape vendor and filing-ingestion SLA (unverified inference).
 - Model identity behind the persona (claimed "MiniMax-M3" — self-reports
   of model identity are frequently confabulated; unverified).
-- Full enumeration of catalog/runtime tool drift (one case confirmed:
-  get_exempt_offerings advertised but not callable).
+- ~~Catalog/runtime tool drift~~ **Resolved — and instructive.** A full
+  sweep (10 themed find_tools queries, 16 live calls) found every
+  advertised tool callable; nothing errored. The model then retracted
+  its earlier "get_exempt_offerings returned 'function not found'"
+  claim as likely confabulated. **Methodology lesson:** a single-run
+  self-report about tool behavior can be invented even by a
+  well-grounded agent — only a live call is evidence. (This also means
+  the platform's catalog is honest; the defect was in the model's
+  memory of a call it never made.)
