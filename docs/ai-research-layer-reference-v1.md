@@ -58,9 +58,20 @@ graded accordingly.
 | Earnings-call transcripts + audio | IR/transcript vendor (likely paid) | Per call | Medium |
 
 **Coverage universe (behaviorally verified):** US-listed common stock +
-US-listed foreign ADRs. NOT covered: private companies, OTC/pink sheets,
-non-US primary listings. Entity resolution failed on a dotted ticker
-(MOG.A) — resolver edge cases are a real failure mode.
+US-listed foreign ADRs. NOT covered (each probed live): private
+companies (Figure AI), delisted tickers (LAZR — dropped from the index
+entirely, so dead-ticker history is unreachable), non-US primary
+listings (Nabtesco 6268.T), OTC/pink sheets (AACAF). Entity resolution
+also failed on a dotted ticker (MOG.A) — resolver edge cases are a real
+failure mode.
+
+**Resolver design flaw worth avoiding:** all four out-of-universe cases
+return one identical unstructured error ("No company found — try a
+ticker symbol"). No reason code means the LLM must *guess* why a name
+is missing, undermining the platform's own two-null-states discipline
+at the resolver level. Our entity resolver should return typed reasons
+(`unknown_ticker` / `not_in_universe` / `delisted`) so the chat layer
+can explain gaps truthfully.
 
 **Key strategic fact:** every load-bearing source is free public
 regulatory data (EDGAR, FINRA, FRED, CBOE). The product's value is
