@@ -161,14 +161,33 @@ verbatim:
 ## 7. Rendering plane
 
 - `render_a2ui` emits A2UI v0.9 (Google's open generative-UI protocol,
-  a2ui.org): declarative JSON (`createSurface` + `updateComponents`)
-  against a pre-approved component catalog — the model composes vetted
-  components, so no UI injection. Render failures surface as
-  "This visual couldn't be displayed."
-- **Self-fetching components:** cards like `StockCard` fetch their own
-  live data client-side. Two data paths by design — the LLM path
-  (briefs; citable; can fail) and the component path (live; never
-  hallucinated because the LLM never writes those numbers).
+  a2ui.org): declarative JSON (`createSurface` with a required
+  `catalogId` + `updateComponents`, flat component list, one `root`,
+  parents name children by string id) against a pre-approved component
+  catalog — the model composes vetted components, so no UI injection.
+  Render failures surface as "This visual couldn't be displayed."
+- **The catalog mirrors the two data paths as two component classes:**
+  1. **Data-bearing components** (LLM supplies the figures, from
+     briefs): `MetricGrid`, `DataTable` (columns + rows-as-array-of-
+     arrays, optional citation), `EntityChip` (stock ticker or fund
+     CIK), `Citation {documentId, fromLine, toLine, label, text}`,
+     plus `Column`/`Row`/`Text` layout.
+  2. **Self-fetching cards** (take only `{ticker}`, fetch live data
+     client-side; render nothing — silently — when no data exists):
+     `StockCard`, `Ownership`, `PriceChart`, `Valuation`, `Financials`,
+     `RevenueBreakdown`, `Buyback`, `Guidance`, `EarningsCalls`,
+     `InsiderActivity`, `CongressionalTrades`, `ShortInterest`,
+     `ShortVolume`, `ExecutiveChanges`, `ExecutiveCompensation`,
+     `Filings`. (Note `CongressionalTrades`: the platform carries
+     congress-trade data — its domain list is a near-superset of
+     Equibles'.)
+- **Observed/likely failure modes** (per the platform's own debrief):
+  placeholder or fabricated citation ids/line numbers (top cause of
+  broken renders), `DataTable.rows` flattened to 1-D, missing
+  `catalogId`, self-fetching card for an uncovered ticker (silent
+  empty region). Lesson for any component protocol: validate payloads
+  before render and fail loudly — silent empty cards cost the platform
+  answer quality twice this session.
 
 ## 8. Mapping to this repo's future chat/DD layer
 
@@ -199,7 +218,5 @@ verbatim:
 - Price-tape vendor and filing-ingestion SLA (unverified inference).
 - Model identity behind the persona (claimed "MiniMax-M3" — self-reports
   of model identity are frequently confabulated; unverified).
-- A2UI component catalog beyond StockCard/DataTable/Valuation/
-  Ownership/Citation (probe drafted, not yet run).
 - Full enumeration of catalog/runtime tool drift (one case confirmed:
   get_exempt_offerings advertised but not callable).
