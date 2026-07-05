@@ -278,9 +278,23 @@ answer quality.
   placeholder or fabricated citation ids/line numbers (top cause of
   broken renders), `DataTable.rows` flattened to 1-D, missing
   `catalogId`, self-fetching card for an uncovered ticker (silent
-  empty region). Lesson for any component protocol: validate payloads
-  before render and fail loudly — silent empty cards cost the platform
-  answer quality twice this session.
+  empty region). **Root cause confirmed from an exported session's
+  reasoning trace:** sub-agent briefs hand documentIds to the
+  orchestrator through prose, sometimes truncated (`cc1e598e…`), and
+  components citing them fail validation. Lesson: pass provenance IDs
+  structurally between agents (schema fields), never through prose;
+  validate payloads before render and fail loudly.
+- **Frontend identified: CopilotKit** (open-source React copilot
+  framework — `copilotKitMessage` classes in the DOM) + Cloudflare
+  Turnstile. With this, every layer of the stack is open-source or
+  free: CopilotKit UI, A2UI components, free regulatory data,
+  open-source ingestion backend. The proprietary surface is the
+  prompts and glue only.
+- **Reasoning traces ship to the client:** saved-page DOM contains the
+  model's full internal deliberation, including verbatim sub-agent
+  focus prompts. (Also observed there: the planner adapts the injected
+  playbook — a theme query got 4 component-themed agents instead of
+  the 7+1 company template, by explicit in-reasoning judgment.)
 
 ## 8. Mapping to this repo's future chat/DD layer
 
