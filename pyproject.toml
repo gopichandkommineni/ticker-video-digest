@@ -30,13 +30,16 @@ dev = [
     "pytest-mock",
     "ruff",
 ]
+mcp = [
+    "mcp>=1.10",
+]
 
 [project.scripts]
 ticker-digest = "ticker_digest.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["ticker_digest*", "casino_dashboard*"]
+include = ["ticker_digest*", "casino_dashboard*", "casino_mcp*"]
 
 [tool.ruff]
 line-length = 100
@@ -53,4 +56,5 @@ markers = [
 dev = [
     "pytest>=9.0.3",
     "pytest-mock>=3.15.1",
+    "mcp>=1.10",
 ]
