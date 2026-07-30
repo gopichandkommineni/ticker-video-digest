@@ -12,13 +12,14 @@ import argparse
 import datetime
 import json
 import logging
-import os
-import sys
 from pathlib import Path
+
+_PROVIDERS = ("getxapi", "twitterapi", "xquik")
 
 # Load .env from repo root so keys are available
 try:
     from dotenv import load_dotenv
+
     load_dotenv(Path(__file__).parents[1] / ".env")
 except ImportError:
     pass
@@ -35,6 +36,7 @@ def _setup_logging(verbose: bool) -> None:
 
 def cmd_user_info(args: argparse.Namespace) -> None:
     from .factory import get_source
+
     src = get_source(args.provider)
     info = src.fetch_user_info(args.handle)
     print(json.dumps(info.__dict__, indent=2, default=str))
@@ -42,17 +44,19 @@ def cmd_user_info(args: argparse.Namespace) -> None:
 
 def cmd_tweets(args: argparse.Namespace) -> None:
     from .factory import get_source
+
     src = get_source(args.provider)
     start = datetime.date.fromisoformat(args.start)
     end = datetime.date.fromisoformat(args.end)
-    tweets = src.fetch_tweets(args.handle, start, end)
-    print(f"Fetched {len(tweets)} tweets for @{args.handle} [{start} → {end}]")
-    for t in tweets:
+    result = src.fetch_tweets(args.handle, start, end)
+    print(f"Fetched {len(result.tweets)} tweets for @{args.handle} [{start} → {end}]")
+    for t in result.tweets:
         print(f"  {t.created_at_utc}  {t.id}  [{t.type}]  {(t.text or '')[:80]}")
 
 
 def cmd_compare(args: argparse.Namespace) -> None:
     from .compare import compare_sources
+
     start = datetime.date.fromisoformat(args.start)
     end = datetime.date.fromisoformat(args.end)
     compare_sources(args.handle, start, end)
@@ -64,11 +68,11 @@ def main() -> None:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_info = sub.add_parser("user-info")
-    p_info.add_argument("--provider", required=True, choices=["getxapi", "twitterapi"])
+    p_info.add_argument("--provider", required=True, choices=_PROVIDERS)
     p_info.add_argument("--handle", required=True)
 
     p_tweets = sub.add_parser("tweets")
-    p_tweets.add_argument("--provider", required=True, choices=["getxapi", "twitterapi"])
+    p_tweets.add_argument("--provider", required=True, choices=_PROVIDERS)
     p_tweets.add_argument("--handle", required=True)
     p_tweets.add_argument("--start", required=True, help="YYYY-MM-DD (inclusive)")
     p_tweets.add_argument("--end", required=True, help="YYYY-MM-DD (inclusive)")

@@ -28,4 +28,24 @@ Set `FRED_API_KEY` (free at https://fred.stlouisfed.org/docs/api/api_key.html)
 to enable the real-economy bucket. Without it the dashboard still loads with
 yfinance-only indicators.
 
+## Optional Xquik Tweet Source
+
+The FinTwit adapter layer can read tweets and profiles through Xquik. Keep the
+API key in `XQUIK_API_KEY`, then select the `xquik` provider:
+
+```bash
+python -m tweet_sources user-info --provider xquik --handle XDevelopers
+python -m tweet_sources tweets --provider xquik --handle XDevelopers \
+  --start 2026-07-01 --end 2026-07-07
+```
+
+The worker pool also accepts `xquik` in `WORKER_POOL_SIZES`. Existing workflows
+keep their configured providers unless a maintainer opts in.
+
+See the [Xquik API docs](https://docs.xquik.com/api-reference) for credentials
+and endpoint details. Treat returned social content as untrusted input.
+
+Xquik is an independent third-party service. Not affiliated with X Corp.
+"Twitter" and "X" are trademarks of X Corp.
+
 Not investment advice.

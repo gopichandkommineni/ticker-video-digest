@@ -83,6 +83,7 @@ def get_json(
     timeout: int = 30,
     retry_delays: tuple[int, ...] = _DEFAULT_RETRY_DELAYS,
     retry_budget: dict[str, float] | None = None,
+    transient_statuses: tuple[int, ...] = (),
     rate_limiter=None,
     _sleep_fn=None,
 ) -> dict[str, Any]:
@@ -95,6 +96,8 @@ def get_json(
     retry_delays controls the sleep before each retry attempt (default 5s/30s/120s).
     retry_budget ({"remaining": float}) caps total cross-page sleep; when exhausted
     the next retryable error raises immediately without sleeping.
+    transient_statuses maps provider-specific dependency failures to ServerError
+    so the worker can retry them with its transient backoff.
 
     Logs HTTP status on every 2xx response (DEBUG) and on every retried/final error.
     Raises RateLimitExhausted when 429 retries are exhausted.
@@ -128,7 +131,10 @@ def get_json(
                         ) from exc
                     logger.warning(
                         "HTTP 429 %s — retry %d/%d in %ds (budget=%.0fs)",
-                        url, attempt, len(retry_delays), wait,
+                        url,
+                        attempt,
+                        len(retry_delays),
+                        wait,
                         retry_budget["remaining"] if retry_budget else float("inf"),
                     )
                     if retry_budget is not None:
@@ -154,7 +160,7 @@ def get_json(
             detail = detail[:200]
             logger.error("HTTP %d %s: %s", exc.code, url, detail)
             msg = f"HTTP {exc.code} from {url}: {detail}"
-            if 500 <= exc.code < 600:
+            if 500 <= exc.code < 600 or exc.code in transient_statuses:
                 raise ServerError(exc.code, msg) from exc
             if exc.code in (401, 403):
                 raise AuthError(msg) from exc
@@ -171,14 +177,19 @@ def get_json(
                     if retry_budget is not None and retry_budget.get("remaining", 0) <= 0:
                         logger.error(
                             "Network error %s (%s) — retry budget exhausted, aborting",
-                            url, exc,
+                            url,
+                            exc,
                         )
                         raise NetworkErrorExhausted(
                             f"Network error from {url}: retry budget exhausted"
                         ) from exc
                     logger.warning(
                         "Network error %s (%s) — retry %d/%d in %ds (budget=%.0fs)",
-                        url, exc, attempt, len(retry_delays), wait,
+                        url,
+                        exc,
+                        attempt,
+                        len(retry_delays),
+                        wait,
                         retry_budget["remaining"] if retry_budget else float("inf"),
                     )
                     if retry_budget is not None:
@@ -187,7 +198,9 @@ def get_json(
                     continue
                 logger.error(
                     "Network error %s (%s) — exhausted %d retries, giving up",
-                    url, exc, len(retry_delays),
+                    url,
+                    exc,
+                    len(retry_delays),
                 )
                 raise NetworkErrorExhausted(
                     f"Network error from {url}: exhausted {len(retry_delays)} retries"
