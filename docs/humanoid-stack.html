@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Humanoid Robotics — The Eight-Layer Technology Stack (mid-2026)</title>
+<meta name="description" content="Layer-by-layer humanoid robotics stack, layer to public-ticker map, verified findings and caveats. As of mid-2026. Not investment advice.">
+</head>
+<body>
+<style>
+  :root{
+    --paper:#EDF0F3; --paper-2:#E3E7EC; --card:#FFFFFF; --ink:#141922; --ink-soft:#3C4653;
+    --muted:#6A7686; --line:#D2D9E0; --line-soft:#E0E5EB;
+    --accent:#C6771B; --accent-soft:#F3E0C6; --steel:#4E6E8C; --steel-soft:#DCE6EE;
+    --good:#2F8F5B; --warn:#C08421; --crit:#C0432E;
+    --good-bg:#DCEEE3; --warn-bg:#F5E7C9; --crit-bg:#F3D9D1;
+    --shadow:0 1px 2px rgba(20,25,34,.06),0 8px 24px rgba(20,25,34,.05);
+    --mono:ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#0F1318; --paper-2:#131920; --card:#171E27; --ink:#E9EDF2; --ink-soft:#B9C3CE;
+      --muted:#7E8B9A; --line:#242E3A; --line-soft:#1E262F;
+      --accent:#E4922E; --accent-soft:#3A2C15; --steel:#7CA0BF; --steel-soft:#1B2833;
+      --good:#4FB37B; --warn:#D9A83C; --crit:#DB6249;
+      --good-bg:#16281E; --warn-bg:#2A2312; --crit-bg:#2C1712;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#EDF0F3; --paper-2:#E3E7EC; --card:#FFFFFF; --ink:#141922; --ink-soft:#3C4653;
+    --muted:#6A7686; --line:#D2D9E0; --line-soft:#E0E5EB;
+    --accent:#C6771B; --accent-soft:#F3E0C6; --steel:#4E6E8C; --steel-soft:#DCE6EE;
+    --good:#2F8F5B; --warn:#C08421; --crit:#C0432E;
+    --good-bg:#DCEEE3; --warn-bg:#F5E7C9; --crit-bg:#F3D9D1;
+    --shadow:0 1px 2px rgba(20,25,34,.06),0 8px 24px rgba(20,25,34,.05);
+  }
+  :root[data-theme="dark"]{
+    --paper:#0F1318; --paper-2:#131920; --card:#171E27; --ink:#E9EDF2; --ink-soft:#B9C3CE;
+    --muted:#7E8B9A; --line:#242E3A; --line-soft:#1E262F;
+    --accent:#E4922E; --accent-soft:#3A2C15; --steel:#7CA0BF; --steel-soft:#1B2833;
+    --good:#4FB37B; --warn:#D9A83C; --crit:#DB6249;
+    --good-bg:#16281E; --warn-bg:#2A2312; --crit-bg:#2C1712;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+    line-height:1.6;-webkit-font-smoothing:antialiased;font-size:16px}
+  .wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+  .prose{max-width:70ch}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  h1,h2,h3{text-wrap:balance;line-height:1.12;letter-spacing:-.02em;font-weight:750}
+  .mono{font-family:var(--mono)}
+  .eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;
+    color:var(--muted);font-weight:600}
+
+  /* ---- hero ---- */
+  header.hero{border-bottom:1px solid var(--line);background:
+    linear-gradient(180deg,var(--paper-2),var(--paper))}
+  .hero-grid{display:grid;grid-template-columns:1.5fr .9fr;gap:40px;padding:64px 0 48px;align-items:end}
+  @media(max-width:820px){.hero-grid{grid-template-columns:1fr;gap:28px;padding:44px 0 32px}}
+  h1{font-size:clamp(32px,5vw,54px);margin:14px 0 0}
+  h1 .amber{color:var(--accent)}
+  .lede{font-size:clamp(16px,2vw,19px);color:var(--ink-soft);margin:18px 0 0;max-width:52ch}
+  .provenance{display:flex;flex-direction:column;gap:10px;font-family:var(--mono);font-size:12.5px}
+  .prov-row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px dashed var(--line)}
+  .prov-row span:first-child{color:var(--muted)}
+  .prov-row b{font-weight:600;font-variant-numeric:tabular-nums}
+  .verdict{color:var(--good)}
+
+  /* ---- stat band ---- */
+  .band{background:var(--card);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .band-inner{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line)}
+  @media(max-width:820px){.band-inner{grid-template-columns:repeat(2,1fr)}}
+  .stat{background:var(--card);padding:26px 22px}
+  .stat .num{font-family:var(--mono);font-size:clamp(28px,4vw,40px);font-weight:600;
+    color:var(--accent);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .stat .lab{font-size:13px;color:var(--ink-soft);margin-top:6px;line-height:1.4}
+  .band-note{padding:14px 22px;font-family:var(--mono);font-size:11.5px;color:var(--muted);
+    text-align:center;background:var(--card)}
+
+  section{padding:56px 0}
+  section.tight{padding:40px 0}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:8px}
+  .sec-head h2{font-size:clamp(22px,3vw,30px);margin:0}
+  .sec-idx{font-family:var(--mono);font-size:13px;color:var(--accent);font-weight:600}
+  .sec-sub{color:var(--muted);max-width:64ch;margin:6px 0 28px;font-size:15px}
+
+  /* ---- taxonomy ---- */
+  .tiers{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media(max-width:820px){.tiers{grid-template-columns:1fr}}
+  .tier{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px;box-shadow:var(--shadow)}
+  .tier h3{font-size:16px;margin:0 0 4px}
+  .tier .tag{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--steel)}
+  .tier p{font-size:14px;color:var(--ink-soft);margin:12px 0 0}
+  .tier .lead{font-family:var(--mono);font-size:12.5px;color:var(--muted);margin-top:12px;
+    padding-top:12px;border-top:1px solid var(--line-soft)}
+
+  /* ---- layer cards ---- */
+  .layers{display:flex;flex-direction:column;gap:16px}
+  .layer{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:24px 26px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .layer::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--steel)}
+  .layer[data-flag="crit"]::before{background:var(--crit)}
+  .layer[data-flag="warn"]::before{background:var(--warn)}
+  .layer[data-flag="lead"]::before{background:var(--good)}
+  .layer-top{display:grid;grid-template-columns:1fr 300px;gap:26px;align-items:start}
+  @media(max-width:820px){.layer-top{grid-template-columns:1fr;gap:18px}}
+  .layer .lnum{font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:600}
+  .layer h3{font-size:20px;margin:4px 0 0}
+  .layer .what{color:var(--ink-soft);font-size:14.5px;margin:12px 0 0}
+  .layer .lead-line{font-family:var(--mono);font-size:12.5px;color:var(--ink-soft);
+    margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft)}
+  .layer .lead-line b{color:var(--ink);font-weight:600}
+  .flag{display:inline-block;font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;
+    text-transform:uppercase;padding:3px 8px;border-radius:5px;font-weight:600;margin-left:8px;vertical-align:2px}
+  .flag.crit{background:var(--crit-bg);color:var(--crit)}
+  .flag.warn{background:var(--warn-bg);color:var(--warn)}
+  .flag.lead{background:var(--good-bg);color:var(--good)}
+
+  /* parity gauge */
+  .gauge{background:var(--paper-2);border-radius:10px;padding:16px}
+  .gauge .glab{display:flex;justify-content:space-between;font-family:var(--mono);
+    font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+  .track{position:relative;height:8px;background:var(--line);border-radius:5px;margin:12px 0 6px}
+  .fill{position:absolute;left:0;top:0;bottom:0;border-radius:5px;
+    background:linear-gradient(90deg,var(--crit),var(--warn) 55%,var(--good))}
+  .scale{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--muted)}
+  .gnote{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.45}
+  .gstate{font-family:var(--mono);font-size:11px;font-weight:600;margin-top:2px}
+
+  /* ---- tables ---- */
+  .tscroll{overflow-x:auto;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+  table{border-collapse:collapse;width:100%;min-width:720px;background:var(--card)}
+  th,td{text-align:left;padding:13px 16px;border-bottom:1px solid var(--line-soft);font-size:14px;vertical-align:top}
+  thead th{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--muted);font-weight:600;background:var(--paper-2);position:sticky;top:0}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:var(--paper-2)}
+  td.layercell{font-weight:600}
+  .tk{font-family:var(--mono);font-weight:600;font-size:13px}
+  .tickers{display:flex;flex-wrap:wrap;gap:6px}
+  .pill{font-family:var(--mono);font-size:11px;padding:2px 7px;border-radius:5px;
+    border:1px solid var(--line);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .ex-us{color:var(--steel);border-color:var(--steel-soft);background:var(--steel-soft)}
+  .ex-jp{color:var(--accent);border-color:var(--accent-soft);background:var(--accent-soft)}
+  .ex-cn{color:var(--crit);border-color:var(--crit-bg);background:var(--crit-bg)}
+  .ex-pv{color:var(--muted)}
+  .perf{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600;font-size:13px}
+  .up{color:var(--good)}.down{color:var(--crit)}.flat{color:var(--muted)}
+
+  /* ---- bottlenecks ---- */
+  .bn{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  @media(max-width:820px){.bn{grid-template-columns:1fr}}
+  .bcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;
+    box-shadow:var(--shadow);border-left:4px solid var(--crit)}
+  .bcard.b2{border-left-color:var(--warn)}
+  .bcard h3{font-size:16px;margin:0 0 6px;display:flex;align-items:center;gap:10px}
+  .bcard .sev{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+    padding:3px 8px;border-radius:5px;background:var(--crit-bg);color:var(--crit);font-weight:600}
+  .bcard.b2 .sev{background:var(--warn-bg);color:var(--warn)}
+  .bcard p{font-size:14px;color:var(--ink-soft);margin:0}
+
+  /* ---- honesty / caveats ---- */
+  .note-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:820px){.note-grid{grid-template-columns:1fr}}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px;box-shadow:var(--shadow)}
+  .panel h3{font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:9px}
+  .panel ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:11px}
+  .panel li{font-size:13.5px;color:var(--ink-soft);padding-left:18px;position:relative;line-height:1.5}
+  .panel li::before{content:"—";position:absolute;left:0;color:var(--muted)}
+  .refuted li::before{content:"✕";color:var(--crit);font-size:11px;top:1px}
+  .refuted .vote{font-family:var(--mono);font-size:11px;color:var(--crit);font-weight:600}
+
+  .callout{background:var(--accent-soft);border:1px solid var(--accent);border-radius:12px;
+    padding:18px 22px;font-size:14px;color:var(--ink);display:flex;gap:14px;align-items:flex-start}
+  .callout .k{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--accent);font-weight:700;white-space:nowrap;padding-top:2px}
+
+  /* ---- sources / footer ---- */
+  .srcs{columns:2;column-gap:28px;font-size:12.5px;font-family:var(--mono)}
+  @media(max-width:640px){.srcs{columns:1}}
+  .srcs div{break-inside:avoid;padding:6px 0;color:var(--muted);border-bottom:1px dashed var(--line-soft)}
+  .srcs .q{color:var(--good)}.srcs .qb{color:var(--warn)}
+  footer{border-top:1px solid var(--line);padding:30px 0 60px;color:var(--muted);font-size:12.5px;font-family:var(--mono)}
+
+  .kbd{font-family:var(--mono);font-size:12.5px;background:var(--paper-2);border:1px solid var(--line);
+    padding:1px 6px;border-radius:5px;color:var(--ink-soft)}
+  @media (prefers-reduced-motion:no-preference){
+    .layer,.tier,.stat{animation:rise .5s cubic-bezier(.2,.7,.3,1) both}
+    @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  }
+</style>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="hero-grid">
+      <div>
+        <div class="eyebrow">Technology Dossier · Embodied AI · as of mid-2026</div>
+        <h1>What makes a humanoid <span class="amber">a humanoid</span> — the eight-layer stack</h1>
+        <p class="lede">Human <em>form</em> buys generality; human <em>parity</em> demands an integrated stack. No layer is at reliable parity today — and one country holds the physical base of nearly all of it.</p>
+      </div>
+      <div class="provenance" aria-label="research provenance">
+        <div class="prov-row"><span>Sources fetched</span><b>30</b></div>
+        <div class="prov-row"><span>Claims extracted</span><b>43</b></div>
+        <div class="prov-row"><span>Adversarially verified</span><b>25</b></div>
+        <div class="prov-row"><span>Confirmed / killed</span><b class="verdict">22 / 3</b></div>
+        <div class="prov-row"><span>Vote rule</span><b>2-of-3 refute</b></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="band">
+  <div class="wrap" style="padding:0">
+    <div class="band-inner">
+      <div class="stat"><div class="num">~69%</div><div class="lab">of global rare-earth <b>mining</b> is China-controlled</div></div>
+      <div class="stat"><div class="num">~90%</div><div class="lab">of humanoid <b>permanent magnets</b> &amp; magnet processing</div></div>
+      <div class="stat"><div class="num">~70%</div><div class="lab">of Tesla <b>Optimus</b> supplier share is Chinese</div></div>
+      <div class="stat"><div class="num">~2.8×</div><div class="lab">Optimus BOM if built <b>without</b> China ($46k→$131k)</div></div>
+    </div>
+    <div class="band-note">Source: McKinsey (2026) · corroborated by Mining Technology, IEA, SCMP · verified 3-0</div>
+  </div>
+</div>
+
+<section class="tight">
+  <div class="wrap prose">
+    <div class="eyebrow">Definition</div>
+    <h2 style="font-size:clamp(20px,2.6vw,26px);margin:8px 0 0">Form is the easy part</h2>
+    <p style="color:var(--ink-soft)">A robot is <b>humanoid</b> by form and generality: a bipedal body with torso, two dexterous arms/hands, and a sensor head, built to work in human spaces with human tools. The human shape is a bet on <em>generality</em> — one machine for many tasks instead of a fixed-function arm. But form ≠ parity. Matching a person requires the eight layers below to work <em>together</em>, and as of mid-2026 the hardest ones — dexterous manipulation, tactile sensing, battery life, and AI generalization — remain unsolved.</p>
+  </div>
+</section>
+
+<section class="tight">
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-idx">MAP</span><h2>The investable value chain — three tiers</h2></div>
+    <p class="sec-sub">Morgan Stanley's "Humanoid 100" frames the market in three layers. The 100 firms split roughly 35 China / 35 US-Canada / 18 rest-of-Asia / 12 EMEA. <span class="mono" style="font-size:12px;color:var(--muted)">[verified 3-0]</span></p>
+    <div class="tiers">
+      <div class="tier">
+        <div class="tag">Tier 1 · strongest West</div>
+        <h3>Brain</h3>
+        <p>AI models + on-robot compute. The layer where the West still leads decisively.</p>
+        <div class="lead">Nvidia · Google · Microsoft · Amazon</div>
+      </div>
+      <div class="tier">
+        <div class="tag">Tier 2 · China-led</div>
+        <h3>Body</h3>
+        <p>Actuators, reducers, sensors, batteries — the electro-mechanical guts. Cost + iteration favor China/Asia.</p>
+        <div class="lead">Harmonic Drive · Nabtesco · Nidec · Rockwell</div>
+      </div>
+      <div class="tier">
+        <div class="tag">Tier 3 · split</div>
+        <h3>Integrators</h3>
+        <p>Full-system developers who assemble the robot and own the customer.</p>
+        <div class="lead">Tesla Optimus · Figure · Agility Digit</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-idx">L1–L8</span><h2>The stack, layer by layer</h2></div>
+    <p class="sec-sub">Each layer shows a <b>qualitative</b> maturity-vs-human-parity read (my synthesis, not a benchmarked score — the research corpus was thin on hard parity data), plus who leads and the outlook.</p>
+    <div class="layers">
+
+      <!-- L1 -->
+      <div class="layer" data-flag="warn">
+        <div class="layer-top">
+          <div>
+            <div class="lnum">LAYER 01</div>
+            <h3>Mechanical / Actuation<span class="flag warn">cost bottleneck</span></h3>
+            <p class="what">The "muscles": frameless motors, <b>harmonic (strain-wave) reducers</b> for rotary joints, and <b>planetary roller screws</b> for high-force linear joints. An Optimus uses ~28 actuators (≈14 rotary + 14 roller-screw); actuators are the largest BOM block.</p>
+            <p class="lead-line"><b>Leaders:</b> Harmonic Drive Systems (JP, premium) vs. Leader Drive (CN, ~40–60% cheaper, through Tesla validation) · Nidec · Regal Rexnord · RBC Bearings · Sanhua</p>
+          </div>
+          <div class="gauge">
+            <div class="glab"><span>Human parity</span><span>~70</span></div>
+            <div class="track"><div class="fill" style="width:70%"></div></div>
+            <div class="scale"><span>0</span><span>parity</span></div>
+            <div class="gstate" style="color:var(--warn)">Capable, not cheap</div>
+            <div class="gnote">Mechanics work; scaling them cheaply doesn't. ⚠️ The "gear = huge BOM share" thesis was <b>refuted 0-3</b>.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- L2 -->
+      <div class="layer" data-flag="crit">
+        <div class="layer-top">
+          <div>
+            <div class="lnum">LAYER 02</div>
+            <h3>Dexterity / Hands / End-effectors<span class="flag crit">top bottleneck</span></h3>
+            <p class="what">Multi-DoF hands with in-finger sensing — the gap between "picks up a box" and "threads a cable." Most 2026 demos are still teleoperated or narrow. Human-parity dexterity is years out.</p>
+            <p class="lead-line"><b>Leaders:</b> proprietary to integrators (Tesla, Figure, Sanctuary AI) · tactile suppliers (PaXini, private) — <b>no clean public pure-play</b></p>
+          </div>
+          <div class="gauge">
+            <div class="glab"><span>Human parity</span><span>~30</span></div>
+            <div class="track"><div class="fill" style="width:30%"></div></div>
+            <div class="scale"><span>0</span><span>parity</span></div>
+            <div class="gstate" style="color:var(--crit)">Far from parity</div>
+            <div class="gnote">The layer most likely to gate credible "human parity" claims.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- L3 -->
+      <div class="layer" data-flag="warn">
+        <div class="layer-top">
+          <div>
+            <div class="lnum">LAYER 03</div>
+            <h3>Sensing &amp; Perception<span class="flag warn">split: vision ok, touch weak</span></h3>
+            <p class="what">Cameras/vision, <b>lidar</b> for depth, <b>IMUs</b> for balance, and <b>6-axis force-torque + tactile</b> skin for contact. Vision is strong; tactile is nascent and pre-standardization.</p>
+            <p class="lead-line"><b>Leaders:</b> Ouster &amp; Aeva (lidar, US) · Vishay Precision Group (force-torque, US) · Cognex (machine vision, US) · PaXini (tactile, private — ⚠️ "world-first" is marketing; its 0.01N spec was <b>refuted 1-2</b>)</p>
+          </div>
+          <div class="gauge">
+            <div class="glab"><span>Human parity</span><span>vision ~75 · touch ~25</span></div>
+            <div class="track"><div class="fill" style="width:75%"></div><div class="fill" style="width:25%;background:var(--crit);opacity:.55"></div></div>
+            <div class="scale"><span>0</span><span>parity</span></div>
+            <div class="gstate" style="color:var(--warn)">Eyes yes, skin no</div>
+            <div class="gnote">Perception hardware is investable and rallied hard into a June peak.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- L4 -->
+      <div class="layer" data-flag="lead">
+        <div class="layer-top">
+          <div>
+            <div class="lnum">LAYER 04</div>
+            <h3>Compute<span class="flag lead">strongest West</span></h3>
+            <p class="what">On-robot edge-AI inference, anchored by <b>Nvidia Jetson Thor</b> (Blackwell, 128GB, ~2,070 FP4 TFLOPS, ~7.5× Orin) — the "physical intelligence core." Dev kit $3,499 (~2× Orin), so cost-sensitive vendors may go cheaper.</p>
+            <p class="lead-line"><b>Leaders:</b> Nvidia (dominant) · Ambarella &amp; Qualcomm (edge vision/SoC) · Micron (the "10× memory vs L2+ AV" thesis)</p>
+          </div>
+          <div class="gauge">
+            <div class="glab"><span>Human parity</span><span>~85</span></div>
+            <div class="track"><div class="fill" style="width:85%"></div></div>
+            <div class="scale"><span>0</span><span>parity</span></div>
+            <div class="gstate" style="color:var(--good)">Ahead of the bottleneck</div>
+            <div class="gnote">Best Western moat. ⚠️ TrendForce's "$48M by 2028" is a narrow Thor-class segment, not TAM.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- L5 -->
+      <div class="layer" data-flag="crit">
+        <div class="layer-top">
+          <div>
+            <div class="lnum">LAYER 05</div>
+            <h3>The "Brain" / AI Software<span class="flag crit">generalization crux</span></h3>
+            <p class="what">Converging on <b>dual-system Vision-Language-Action (VLA)</b> models — a slow "System 2" reasoner + a fast "System 1" motor policy, trained end-to-end. Exemplar: Nvidia <b>GR00T N1</b> (~2.2B params), beats SOTA imitation baselines.</p>
+            <p class="lead-line"><b>Leaders:</b> Nvidia GR00T · Google DeepMind · Figure Helix · Tesla (FSD-derived) — open vs. closed is a live split</p>
+          </div>
+          <div class="gauge">
+            <div class="glab"><span>Human parity</span><span>~35</span></div>
+            <div class="track"><div class="fill" style="width:35%"></div></div>
+            <div class="scale"><span>0</span><span>parity</span></div>
+            <div class="gstate" style="color:var(--crit)">Brittle out-of-distribution</div>
+            <div class="gnote">The real gate. ⚠️ GR00T's "+40% from synthetic data" is a vendor best-case (paper: ~4–9%).</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- L6 -->
+      <div class="layer" data-flag="warn">
+        <div class="layer-top">
+          <div>
+            <div class="lnum">LAYER 06</div>
+            <h3>Power / Energy<span class="flag warn">under-benchmarked</span></h3>
+            <p class="what">Batteries, power density, thermal. Runtime is hours (not a shift) and high-torque actuators run hot. Meaningfully below human endurance and efficiency.</p>
+            <p class="lead-line"><b>Leaders:</b> broad battery supply chain (CATL, LG, Panasonic) — <b>not humanoid-specific</b>; no clean pure-play</p>
+          </div>
+          <div class="gauge">
+            <div class="glab"><span>Human parity</span><span>~40</span></div>
+            <div class="track"><div class="fill" style="width:40%"></div></div>
+            <div class="scale"><span>0</span><span>parity</span></div>
+            <div class="gstate" style="color:var(--warn)">Runtime-limited</div>
+            <div class="gnote">Thinly covered in sources — treat vendor runtime claims cautiously.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- L7 -->
+      <div class="layer" data-flag="warn">
+        <div class="layer-top">
+          <div>
+            <div class="lnum">LAYER 07</div>
+            <h3>Locomotion, Balance &amp; Whole-body Control<span class="flag warn">visibly good, not robust</span></h3>
+            <p class="what">Bipedal walking, dynamic balance, whole-body coordination. The most <em>visibly</em> solved layer (Boston Dynamics, Unitree demos), yet real-world robustness on stairs, clutter, and slips still trails humans.</p>
+            <p class="lead-line"><b>Leaders:</b> embedded in integrators — Boston Dynamics (Hyundai) · Unitree (private) · Tesla</p>
+          </div>
+          <div class="gauge">
+            <div class="glab"><span>Human parity</span><span>~65</span></div>
+            <div class="track"><div class="fill" style="width:65%"></div></div>
+            <div class="scale"><span>0</span><span>parity</span></div>
+            <div class="gstate" style="color:var(--warn)">Demo-ready, not deploy-hardened</div>
+            <div class="gnote">Thin on hard parity benchmarks in the verified sources.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- L8 -->
+      <div class="layer" data-flag="crit">
+        <div class="layer-top">
+          <div>
+            <div class="lnum">LAYER 08</div>
+            <h3>Materials &amp; Upstream Inputs<span class="flag crit">China chokepoint</span></h3>
+            <p class="what">The base everything rests on: <b>rare-earth NdFeB permanent magnets</b> (neodymium + heavy Dy/Tb) for every high-torque motor. Capability exists globally; <em>supply</em> is gated.</p>
+            <p class="lead-line"><b>Leaders / exposure:</b> China dominant (~90% magnets) · Western plays: MP Materials, Lynas · Japan holds furnace/high-end chokepoints</p>
+          </div>
+          <div class="gauge">
+            <div class="glab"><span>Supply resilience (West)</span><span>~30</span></div>
+            <div class="track"><div class="fill" style="width:30%"></div></div>
+            <div class="scale"><span>0</span><span>secure</span></div>
+            <div class="gstate" style="color:var(--crit)">Single-country dependent</div>
+            <div class="gnote">The biggest structural risk; reshoring is slow and ~2.8× more expensive.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="tight">
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-idx">MAP</span><h2>Layer → public-ticker map</h2></div>
+    <p class="sec-sub">Where each layer is publicly investable, by exchange, with the ~2-month price move (close 13-May → 10-Jul 2026, from the price pull earlier in this thread). Exchange key: <span class="pill ex-us">US</span> <span class="pill ex-jp">JP/TSE</span> <span class="pill ex-cn">CN</span> <span class="pill ex-pv">private</span></p>
+    <div class="tscroll">
+      <table>
+        <thead>
+          <tr><th style="min-width:150px">Layer</th><th style="min-width:260px">Public tickers</th><th>Lead / role</th><th style="min-width:110px">~2-mo move</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="layercell">01 · Actuation</td>
+            <td><div class="tickers"><span class="pill ex-jp">6324.T Harmonic Drive</span><span class="pill ex-cn">688017 Leader Drive</span><span class="pill ex-us">RRX Regal</span><span class="pill ex-us">ROLL RBC</span><span class="pill ex-jp">6594 Nidec</span></div></td>
+            <td>Reducers, roller screws, motors, bearings</td>
+            <td><span class="perf flat">mixed</span></td>
+          </tr>
+          <tr>
+            <td class="layercell">02 · Dexterity</td>
+            <td><div class="tickers"><span class="pill ex-pv">Sanctuary (pvt)</span><span class="pill ex-pv">PaXini (pvt)</span></div></td>
+            <td>Hands, tactile skin — no public pure-play</td>
+            <td><span class="perf flat">n/a</span></td>
+          </tr>
+          <tr>
+            <td class="layercell">03 · Sensing</td>
+            <td><div class="tickers"><span class="pill ex-us">OUST Ouster</span><span class="pill ex-us">AEVA Aeva</span><span class="pill ex-us">VPG Vishay P.</span><span class="pill ex-us">CGNX Cognex</span></div></td>
+            <td>Lidar, force-torque, machine vision</td>
+            <td><span class="perf up">OUST +27% · VPG +13%</span></td>
+          </tr>
+          <tr>
+            <td class="layercell">04 · Compute</td>
+            <td><div class="tickers"><span class="pill ex-us">NVDA Nvidia</span><span class="pill ex-us">AMBA Ambarella</span><span class="pill ex-us">QCOM</span><span class="pill ex-us">MU Micron</span></div></td>
+            <td>Edge inference, SoC, memory</td>
+            <td><span class="perf up">MU +22%</span> · <span class="perf down">AMBA −6%</span></td>
+          </tr>
+          <tr>
+            <td class="layercell">05 · AI Brain</td>
+            <td><div class="tickers"><span class="pill ex-us">NVDA</span><span class="pill ex-us">GOOGL</span><span class="pill ex-us">MSFT</span><span class="pill ex-us">TSLA</span><span class="pill ex-pv">Figure (pvt)</span></div></td>
+            <td>VLA foundation models (GR00T, Helix)</td>
+            <td><span class="perf down">NVDA −7%</span></td>
+          </tr>
+          <tr>
+            <td class="layercell">06 · Power</td>
+            <td><div class="tickers"><span class="pill ex-cn">300750 CATL</span><span class="pill ex-pv">LG / Panasonic</span></div></td>
+            <td>Batteries — not humanoid-specific</td>
+            <td><span class="perf flat">n/a</span></td>
+          </tr>
+          <tr>
+            <td class="layercell">07 · Locomotion</td>
+            <td><div class="tickers"><span class="pill ex-pv">Boston Dynamics → Hyundai (KR)</span><span class="pill ex-pv">Unitree (pvt)</span></div></td>
+            <td>Balance / whole-body — inside integrators</td>
+            <td><span class="perf flat">n/a</span></td>
+          </tr>
+          <tr>
+            <td class="layercell">08 · Materials</td>
+            <td><div class="tickers"><span class="pill ex-us">MP Materials</span><span class="pill ex-pv">LYC.AX Lynas</span></div></td>
+            <td>Rare-earth magnets vs. China dominance</td>
+            <td><span class="perf flat">theme-driven</span></td>
+          </tr>
+          <tr>
+            <td class="layercell">— · Integrators</td>
+            <td><div class="tickers"><span class="pill ex-us">TSLA Optimus</span><span class="pill ex-us">AGLT Agility*</span><span class="pill ex-us">XPEV</span><span class="pill ex-pv">Figure/1X/Apptronik (pvt)</span></div></td>
+            <td>Full-system developers</td>
+            <td><span class="perf down">TSLA −8% · XPEV −22%</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:12px">*AGLT (Agility via CCXI SPAC) — merger announced Jun 2026, <b>not yet closed</b>; CCXI shell +52% over the window on the listing news. Moves are price only, not adjusted; "mixed/n-a" where no clean same-window pure-play exists.</p>
+  </div>
+</section>
+
+<section class="tight">
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-idx">WHO</span><h2>Full-system integrators</h2></div>
+    <div class="tscroll">
+      <table>
+        <thead><tr><th>Developer</th><th>Status</th><th>Outlook / note</th></tr></thead>
+        <tbody>
+          <tr><td class="layercell">Tesla Optimus</td><td><span class="pill ex-us">TSLA · public</span></td><td>Furthest on vertical integration + FSD-derived brain; ~70% China supply chain is the key vulnerability.</td></tr>
+          <tr><td class="layercell">Agility Robotics (Digit)</td><td><span class="pill ex-us">AGLT · pending</span></td><td>Real traction: 65,000+ operational hours; paying — GXO, Schaeffler, Toyota (Canada), Mercado Libre. ~$2.5B SPAC, Foxconn-led PIPE. <b>Not yet closed.</b></td></tr>
+          <tr><td class="layercell">Figure AI</td><td><span class="pill ex-pv">private ~$39B</span></td><td>Helix VLA brain; a Western leader on the AI side.</td></tr>
+          <tr><td class="layercell">Boston Dynamics</td><td><span class="pill ex-pv">Hyundai (KR)</span></td><td>Best-in-class locomotion; electric Atlas on Jetson Thor.</td></tr>
+          <tr><td class="layercell">Apptronik · 1X · Sanctuary</td><td><span class="pill ex-pv">private</span></td><td>Apptronik (~$5.5B, Google DeepMind); 1X (~$10B, home); Sanctuary dexterity-focused.</td></tr>
+          <tr><td class="layercell">Unitree · UBTech · Agibot · Fourier · XPeng</td><td><span class="pill ex-cn">China (XPEV public)</span></td><td>Cost/scale leaders; Unitree G1 drives the low-cost narrative.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="tight">
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-idx">RISK</span><h2>The hardest bottlenecks</h2></div>
+    <p class="sec-sub">Where "parity" actually breaks — severity-ranked.</p>
+    <div class="bn">
+      <div class="bcard"><h3>Dexterous manipulation <span class="sev">critical</span></h3><p>Hands can't match human fingers on general, contact-rich tasks. Most demos are narrow or teleoperated.</p></div>
+      <div class="bcard"><h3>AI generalization <span class="sev">critical</span></h3><p>VLA models are brittle outside their training distribution — the true gate on "can it do <em>any</em> task."</p></div>
+      <div class="bcard"><h3>Tactile sensing <span class="sev">critical</span></h3><p>Robots barely "feel." Pre-standardization; the strongest supplier spec claims didn't survive verification.</p></div>
+      <div class="bcard b2"><h3>Battery life / power <span class="sev">high</span></h3><p>Hours, not a shift; high-torque actuators run hot. Under-benchmarked against human endurance.</p></div>
+      <div class="bcard b2" style="grid-column:1/-1"><h3>The chicken-and-egg supply constraint <span class="sev">high</span></h3><p>&lt;10 global precision high-torque actuator suppliers won't build dedicated lines while orders are "in the dozens" — which keeps component costs (and robot prices) high, which keeps volume low. Robotics VC ~tripled to $40.7B (2023→2025); the market <em>could</em> reach ~$370B by 2040 — but those are forecasts, and a "&lt;100k units until ~2032" adoption claim was <b>refuted 1-2</b>. Timeline genuinely unsettled.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="tight">
+  <div class="wrap">
+    <div class="callout"><span class="k">Bottom line</span><span>The West's durable edge is the <b>Brain</b> (Nvidia compute + VLA models) and full-system integration. China owns the <b>Body</b> and the <b>materials base</b> beneath it. The investable pure-plays cluster in compute/sensing (US-listed) and actuation (Japan- and China-listed); the marquee integrators are mostly still private — with Agility (AGLT) the first real public-market test, pending close.</span></div>
+  </div>
+</section>
+
+<section class="tight">
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-idx">HONESTY</span><h2>Caveats &amp; what the verifier killed</h2></div>
+    <div class="note-grid">
+      <div class="panel">
+        <h3>Read these before trading on it</h3>
+        <ul>
+          <li>Parity gauges are <b>my qualitative synthesis</b>, not benchmarked — sources were thin on hard human-parity data for dexterity, locomotion, and battery.</li>
+          <li>$370B-by-2040, $40.7B VC, $48M chip market, GR00T "+40%" are <b>projections or vendor best-cases</b>, not facts.</li>
+          <li>The McKinsey &amp; Morgan Stanley primary PDFs were <b>403-blocked</b>; verified via consistent secondary reproductions.</li>
+          <li>Some actuation facts lean on a single research blog; two findings carried split 2-1 votes.</li>
+        </ul>
+      </div>
+      <div class="panel refuted">
+        <h3>Claims that failed verification</h3>
+        <ul>
+          <li>Harmonic gear = a very large share of humanoid BOM. <span class="vote">✕ 0-3</span></li>
+          <li>PaXini tactile: 0.01N resolution across 15 sensing dimensions. <span class="vote">✕ 1-2</span></li>
+          <li>Shipments won't pass 100k units until ~2032 (TrendForce). <span class="vote">✕ 1-2</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="tight">
+  <div class="wrap">
+    <div class="sec-head"><span class="sec-idx">SRC</span><h2>Key sources</h2></div>
+    <p class="sec-sub"><span class="q">green</span> = primary · <span class="qb">amber</span> = secondary/blog. All 2025–2026 vintage.</p>
+    <div class="srcs">
+      <div><span class="q">primary</span> · McKinsey — Humanoid supply-chain constraints (2026)</div>
+      <div><span class="qb">secondary</span> · Morgan Stanley — The Humanoid 100 value chain</div>
+      <div><span class="q">primary</span> · arXiv 2503.14734 — Nvidia GR00T N1 foundation model</div>
+      <div><span class="q">primary</span> · TrendForce — Jetson Thor / humanoid chip market</div>
+      <div><span class="q">primary</span> · BusinessWire/SEC — Agility × Churchill Capital XI (CCXI→AGLT)</div>
+      <div><span class="qb">secondary</span> · 36Kr — Optimus actuator supply-chain teardown</div>
+      <div><span class="qb">secondary</span> · Yahoo Finance — humanoid component-stock rally</div>
+      <div><span class="qb">primary</span> · PaXini CES 2026 PR — tactile (claims hedged)</div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    Humanoid technology-stack dossier · synthesized from a 6-angle deep-research pass (30 sources → 43 claims → 25 adversarially verified) plus FinTwit-DB supply-chain intel and a same-thread AlphaVantage price pull · figures current as of mid-2026 · <b>not investment advice.</b> Toggle light/dark with the viewer control.
+  </div>
+</footer>
+</body>
+</html>
