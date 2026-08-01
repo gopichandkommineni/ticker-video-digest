@@ -1,9 +1,33 @@
-# Repository Reorganization Plan — v1 (proposal, for review)
+# Repository Reorganization Plan — v1
 
-**Status:** PROPOSAL. No files moved yet. This document is the plan to review
-before any code moves.
-**Date:** 2026-08-01
+**Status:** EXECUTED (2026-08-01) on branch `claude/ticker-video-digest-structure-sm6sct`.
 **Scope:** Structural cleanup only — no behavior changes, no feature work.
+
+## Execution summary (what actually shipped)
+
+The plan below was the proposal; execution diverged in three places once the
+real coupling was traced:
+
+1. **Shared layer landed as `src/core/`, not `market_data/`, and not folded
+   into `casino_dashboard`.** `market/` and `social_media/` shared
+   `config`/`cache`/`models` with the YouTube feature, so the neutral package
+   holds that whole substrate (`models`, `config`, `cache`, `market/`,
+   `social_media/`). Both `casino_dashboard` and `ticker_digest` import `core`.
+2. **`probes/` was a live output path**, not inert — `scripts/run_variance.py`
+   writes it and `fintwit-variance.yml` commits it. It moved to
+   `research/probes/` with those path references updated.
+3. **The `docs/` specs-vs-notes split was dropped** — it would have broken ~20
+   cross-links between spec files (some already dangling) for little gain.
+
+Result: top-level is now `config/ data/ docs/ pages/ research/ scripts/ src/
+tests/`; `src/` holds `casino_dashboard`, `core`, `ticker_digest`, `fintwit`.
+Full test suite unchanged (same 21 pre-existing failures, zero regressions).
+The distribution/repo were **not** renamed (deferred); only `CLAUDE.md` /
+`README.md` were rewritten around the dashboard.
+
+---
+
+*The original proposal follows, for reference.*
 
 ---
 

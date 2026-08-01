@@ -8,29 +8,30 @@ product — personal/small-team use.
 
 > **Note on names.** The GitHub repo is `ticker-video-digest` and the
 > installable package is still `ticker-digest` for historical reasons. The
-> **product** is this dashboard (`casino_dashboard`). A repository
-> reorganization is planned — see `docs/reorg-plan-v1.md`.
+> **product** is this dashboard (`casino_dashboard`). The repository was
+> reorganized into the layout below — see `docs/reorg-plan-v1.md` for the
+> rationale and history.
 
 ## Subsystems
 
-The repo currently hosts several subsystems that grew over time:
+All importable code lives under `src/` in four packages:
 
 - **`casino_dashboard`** (`src/casino_dashboard/`) — THE PRODUCT. The live
   Streamlit dashboard: data layer, SQLite repository, daily signals, and UI.
   Entrypoints are `app.py` and `pages/` at the repo root.
-- **`ticker_digest`** (`src/ticker_digest/`) — two things today:
-  - the original **YouTube digest** feature (`youtube_client`, `transcripts`,
-    `analyzer`, `cache`, and the `ticker` CLI subcommand). Currently a
-    placeholder; still on the roadmap.
-  - shared **market/social data infra** (`market/`, `social_media/`) that the
-    dashboard, the CLI, and the daily-refresh job all depend on. (The reorg
-    plan proposes lifting these into a neutral shared layer.)
-- **FinTwit ingestion** (`orchestration/`, `storage/`, `tweet_sources/`) — a
-  standalone tweet-ingestion pipeline writing to `data/fintwit.db`, driven by
-  its own GitHub Actions. The reorg plan proposes grouping these under a
-  single `fintwit` namespace.
-- **Research** (`probes/`, root `*_probe.py`, `fetch_options.py`) — one-off
-  diagnostics and committed run outputs.
+- **`core`** (`src/core/`) — shared substrate imported by both the dashboard
+  and the YouTube feature: `models`, `config`, `cache`, and the `market/` +
+  `social_media/` data sources.
+- **`ticker_digest`** (`src/ticker_digest/`) — the original **YouTube digest**
+  feature (`youtube_client`, `transcripts`, `analyzer`, and the `ticker` CLI
+  subcommand), importing shared bits from `core`. Currently a placeholder;
+  still on the roadmap.
+- **`fintwit`** (`src/fintwit/`) — a standalone tweet-ingestion pipeline
+  (`orchestration/`, `storage/`, `tweet_sources/`) writing to
+  `data/fintwit.db`, driven by its own GitHub Actions.
+
+Non-package trees: **`research/`** (one-off probes + committed run outputs),
+**`scripts/`** (operational + migration scripts), **`config/`**, **`data/`**.
 
 ## Usage shapes
 - Streamlit dashboard: `streamlit run app.py` (root page + `pages/`).
@@ -38,7 +39,7 @@ The repo currently hosts several subsystems that grew over time:
   (runs in GitHub Actions — see Daily refresh ops).
 - Market Reality Score CLI: `python -m ticker_digest market --thesis`.
 - YouTube digest CLI (placeholder): `python -m ticker_digest ticker RKLB`.
-- FinTwit ingestion: `python -m storage` / `python -m tweet_sources`
+- FinTwit ingestion: `python -m fintwit.storage` / `python -m fintwit.tweet_sources`
   (see each package's `__main__`).
 
 ## Stack
@@ -55,19 +56,18 @@ The repo currently hosts several subsystems that grew over time:
 - praw / tweepy — social scrapers
 - pytest — tests
 
-## File layout (current, pre-reorg)
+## File layout
 ```
 src/casino_dashboard/   # live dashboard: data/ db/ jobs/ signals/ ui/ models.py universe.py
-src/ticker_digest/      # YouTube digest + shared market/ + social_media/
-orchestration/          # FinTwit: worker pool, rate limiter, reconciler, runner
-storage/                # FinTwit: SQLite layer for tweets/handles
-tweet_sources/          # FinTwit: provider adapters (getxapi, twitterapi)
+src/core/               # shared: models.py config.py cache.py market/ social_media/
+src/ticker_digest/      # YouTube digest feature: youtube_client transcripts analyzer cli
+src/fintwit/            # tweet ingestion: orchestration/ storage/ tweet_sources/
 app.py                  # Streamlit dashboard entrypoint (root)
 pages/                  # Streamlit dashboard pages 00–06
 config/                 # themes.yaml (canonical universe), etf_mapping, star_traders, ...
 data/                   # snapshots.db + fintwit.db (version-controlled prod data)
 scripts/                # operational + one-time migration scripts
-probes/                 # committed research run outputs
+research/               # one-off probes + committed run outputs
 docs/                   # specs, context, and the reorg plan
 tests/                  # pytest suite (mirrors the packages above)
 pyproject.toml

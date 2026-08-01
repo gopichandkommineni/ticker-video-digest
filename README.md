@@ -19,13 +19,16 @@ universe of sectors/tickers is defined in `config/themes.yaml`.
 
 ## Subsystems
 
-- **Dashboard** (`src/casino_dashboard/`, `app.py`, `pages/`) — the product.
-- **Broader Market Reality Check** — benchmarks equity prices against
-  real-economy fundamentals (see below).
-- **ticker_digest** (`src/ticker_digest/`) — the original YouTube-digest
-  feature (placeholder) plus shared `market/` and `social_media/` data infra.
-- **FinTwit ingestion** (`orchestration/`, `storage/`, `tweet_sources/`) — a
-  standalone tweet-ingestion pipeline writing to `data/fintwit.db`.
+All packages live under `src/`:
+
+- **`casino_dashboard`** (`app.py`, `pages/`) — the product.
+- **`core`** — shared substrate: data models, config, cache, and the
+  `market/` + `social_media/` data sources (imported by the dashboard and
+  the ticker_digest feature). Powers the Broader Market Reality Check below.
+- **`ticker_digest`** — the original YouTube-digest feature (placeholder),
+  importing shared bits from `core`.
+- **`fintwit`** — a standalone tweet-ingestion pipeline (`orchestration`,
+  `storage`, `tweet_sources`) writing to `data/fintwit.db`.
 
 ## Broader Market Reality Check
 
