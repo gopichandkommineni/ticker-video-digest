@@ -2,7 +2,7 @@ name: FinTwit — API Variance Probe
 
 # On-demand diagnostic: fetches the same handle N times from each tweet provider
 # and reports how stable/complete each provider's results are. Writes a verdict
-# report under the Actions run ("Summary" tab) plus fixtures under probes/.
+# report under the Actions run ("Summary" tab) plus fixtures under research/probes/.
 
 on:
   workflow_dispatch:
@@ -66,7 +66,7 @@ jobs:
         run: |
           # Probe fixtures plus the seeded tweet DB (run_variance persists into
           # data/fintwit.db unless --no-persist). Never git add -A.
-          git add probes/ data/fintwit.db
+          git add research/probes/ data/fintwit.db
           git diff --cached --quiet && echo "Nothing to commit — skipping" && exit 0
           git config user.name  "fintwit-bot"
           git config user.email "bot@users.noreply.github.com"

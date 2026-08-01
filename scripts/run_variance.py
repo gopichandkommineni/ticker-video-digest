@@ -5,7 +5,7 @@ Usage (GitHub Actions only — needs GETXAPI_KEY and TWITTERAPI_IO_KEY in env):
 
 Defaults: since=<current year>-01-01, runs=3.
 
-Outputs land in:  probes/variance/YYYY-MM-DD_<handle>/
+Outputs land in:  research/probes/variance/YYYY-MM-DD_<handle>/
   report.md              human-readable verdict + sample tweets
   getxapi_run<N>.json    full normalized Tweet objects for each GetXAPI run
   twitterapi_run<N>.json full normalized Tweet objects for each twitterapi run
@@ -67,8 +67,8 @@ class RunRecord:
 # ---------------------------------------------------------------------------
 
 def _dated_folder(handle: str, base_date: str) -> Path:
-    """Return probes/variance/YYYY-MM-DD_<handle>/, adding _2/_3/… if it exists."""
-    base = Path("probes") / "variance" / f"{base_date}_{handle}"
+    """Return research/probes/variance/YYYY-MM-DD_<handle>/, adding _2/_3/… if it exists."""
+    base = Path("research") / "probes" / "variance" / f"{base_date}_{handle}"
     if not base.exists():
         return base
     n = 2
