@@ -24,9 +24,9 @@ import sys
 from pathlib import Path
 
 # Allow running as a plain script (python scripts/migrate_ingestion_ledger_v1.py).
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from storage.db import _DEFAULT_DB, get_connection, init_db  # noqa: E402
+from fintwit.storage.db import _DEFAULT_DB, get_connection, init_db  # noqa: E402
 
 
 def _count(conn: sqlite3.Connection, table: str) -> int:

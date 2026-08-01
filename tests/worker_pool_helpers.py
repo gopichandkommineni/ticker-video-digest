@@ -11,9 +11,9 @@ import threading
 import time
 from pathlib import Path
 
-from storage.db import get_connection, init_db
-from storage.tweets import upsert_tweets
-from tweet_sources.base import (
+from fintwit.storage.db import get_connection, init_db
+from fintwit.storage.tweets import upsert_tweets
+from fintwit.tweet_sources.base import (
     Tweet, FetchResult, UserInfo,
     RateLimitExhausted, NetworkErrorExhausted, ServerError,
     AuthError, NotFoundError, PermanentProviderError,

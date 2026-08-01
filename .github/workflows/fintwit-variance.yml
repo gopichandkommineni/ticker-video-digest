@@ -54,7 +54,7 @@ jobs:
 
       - name: Run variance probe & write verdict report
         env:
-          PYTHONPATH: .
+          PYTHONPATH: src
         run: |
           ARGS="${{ inputs.handle }}"
           [ -n "${{ inputs.since }}" ] && ARGS="$ARGS --since ${{ inputs.since }}"

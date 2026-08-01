@@ -6,9 +6,9 @@ import json
 import logging
 from pathlib import Path
 
-from storage.db import get_connection, init_db
-from storage.tweets import upsert_tweets
-from tweet_sources.base import MAX_RAW_JSON_BYTES, serialize_raw_json
+from fintwit.storage.db import get_connection, init_db
+from fintwit.storage.tweets import upsert_tweets
+from fintwit.tweet_sources.base import MAX_RAW_JSON_BYTES, serialize_raw_json
 
 
 def _db(tmp_path: Path) -> Path:
@@ -52,7 +52,7 @@ def test_upsert_writes_raw_json(tmp_path):
 def test_upsert_writes_first_seen_and_last_seen(tmp_path, monkeypatch):
     db = _db(tmp_path)
 
-    import storage.tweets as st
+    import fintwit.storage.tweets as st
     monkeypatch.setattr(st, "_iso_now", lambda: "2026-06-01T00:00:00Z")
     upsert_tweets([_tweet("t1")], db_path=db)
     first = _raw_row(db, "t1")
@@ -86,7 +86,7 @@ def test_upsert_writes_tweet_provenance(tmp_path):
 
 def test_provenance_last_seen_refreshes_same_provider(tmp_path, monkeypatch):
     db = _db(tmp_path)
-    import storage.tweets as st
+    import fintwit.storage.tweets as st
     monkeypatch.setattr(st, "_iso_now", lambda: "2026-06-01T00:00:00Z")
     upsert_tweets([_tweet("t1", provider="getxapi")], db_path=db)
     monkeypatch.setattr(st, "_iso_now", lambda: "2026-06-05T00:00:00Z")

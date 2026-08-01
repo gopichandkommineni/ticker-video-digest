@@ -68,13 +68,13 @@ jobs:
       # clears them this is a no-op (0 rows changed → VACUUM skipped).
       - name: Shrink DB (drop raw_json)
         env:
-          PYTHONPATH: .
+          PYTHONPATH: src
         run: python scripts/shrink_fintwit_db.py
 
       - name: Backfill handle & write run report
         id: backfill
         env:
-          PYTHONPATH: .
+          PYTHONPATH: src
           # Backfill runs on twitterapi only (credits account). Single-provider
           # runs reconcile a lone terminal day straight to 'ok' (see
           # reconciler.reconcile_completed_days). Cross-provider verification is

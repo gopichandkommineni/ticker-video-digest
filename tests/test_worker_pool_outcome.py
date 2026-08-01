@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from storage.db import get_connection
-from storage.day_log import Job
-from orchestration.worker_pool import process_job, PoolConfig
+from fintwit.storage.db import get_connection
+from fintwit.storage.day_log import Job
+from fintwit.orchestration.worker_pool import process_job, PoolConfig
 
 from tests.worker_pool_helpers import (
     fresh_db, seed_pending, row, now_iso,
     MockAdapter, source_factory, make_tweet_dicts,
     rate_limit_exc, permanent_exc,
 )
-from storage.tweets import upsert_tweets
+from fintwit.storage.tweets import upsert_tweets
 
 
 def _cfg() -> PoolConfig:

@@ -26,13 +26,13 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from storage.db import init_db, close_connection  # noqa: E402
-from storage.handles import normalize_handle, upsert_handle  # noqa: E402
-from storage.tweets import upsert_tweets  # noqa: E402
-from storage.day_log import populate_pending_days  # noqa: E402
-from orchestration.day_fetcher import PROVIDERS, _verify_and_mark, _iso_now  # noqa: E402
+from fintwit.storage.db import init_db, close_connection  # noqa: E402
+from fintwit.storage.handles import normalize_handle, upsert_handle  # noqa: E402
+from fintwit.storage.tweets import upsert_tweets  # noqa: E402
+from fintwit.storage.day_log import populate_pending_days  # noqa: E402
+from fintwit.orchestration.day_fetcher import PROVIDERS, _verify_and_mark, _iso_now  # noqa: E402
 
 _PROBE_ROOT = Path(__file__).parent.parent / "research" / "probes" / "variance"
 

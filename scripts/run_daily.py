@@ -11,8 +11,8 @@ from dotenv import load_dotenv
 
 load_dotenv(".env")
 
-from storage import close_connection  # noqa: E402
-from orchestration.runner import ingest_all  # noqa: E402
+from fintwit.storage import close_connection  # noqa: E402
+from fintwit.orchestration.runner import ingest_all  # noqa: E402
 
 results = ingest_all()
 

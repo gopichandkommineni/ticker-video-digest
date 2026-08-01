@@ -41,8 +41,8 @@ from unittest.mock import patch, MagicMock, call
 
 import pytest
 
-from tweet_sources._http import get_json, RateLimitExhausted, NetworkErrorExhausted
-from tweet_sources.base import Tweet, FetchResult
+from fintwit.tweet_sources._http import get_json, RateLimitExhausted, NetworkErrorExhausted
+from fintwit.tweet_sources.base import Tweet, FetchResult
 
 UTC = datetime.timezone.utc
 
@@ -194,7 +194,7 @@ def test_h5_adapter_recovery_continues_pagination():
     GetXApiSource.fetch_tweets: page 1 returns 2 tweets, page 2 gets a transient 429
     (recovers on retry), page 3 returns empty → reached_floor=True, all tweets collected.
     """
-    from tweet_sources.getxapi import GetXApiSource
+    from fintwit.tweet_sources.getxapi import GetXApiSource
 
     # Snowflake IDs that decode to dates in the current year (within test tolerance).
     # We'll use deterministic IDs; the adapter uses snowflake_to_utc to parse them.
@@ -229,7 +229,7 @@ def test_h5_adapter_recovery_continues_pagination():
 
     def fake_normalize(raw):
         # Return a Tweet with a created_at_utc well within the fetch window
-        from tweet_sources.base import Tweet
+        from fintwit.tweet_sources.base import Tweet
         return Tweet(
             id=raw["id"], created_at_utc=f"{year}-03-01T10:00:00Z",
             text=raw.get("text"), type="original", is_reply=False, is_quote=False,
@@ -240,8 +240,8 @@ def test_h5_adapter_recovery_continues_pagination():
         )
 
     with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
-         patch("tweet_sources.getxapi._normalize", side_effect=fake_normalize), \
-         patch("tweet_sources._http.time.sleep", side_effect=slept.append):
+         patch("fintwit.tweet_sources.getxapi._normalize", side_effect=fake_normalize), \
+         patch("fintwit.tweet_sources._http.time.sleep", side_effect=slept.append):
         result = src.fetch_tweets("testuser", start, end)
 
     print(f"\nH5: tweets={len(result.tweets)} reached_floor={result.reached_floor} slept={slept}")
@@ -261,7 +261,7 @@ def test_h6_adapter_abort_on_exhausted_429():
     reached_floor=False — RateLimitExhausted propagates to the caller. The worker
     is what turns that into a failed+backoff ledger row (see PR A worker tests).
     """
-    from tweet_sources.getxapi import GetXApiSource
+    from fintwit.tweet_sources.getxapi import GetXApiSource
 
     year = datetime.datetime.now(UTC).year
 
@@ -285,7 +285,7 @@ def test_h6_adapter_abort_on_exhausted_429():
         return resp
 
     def fake_normalize(raw):
-        from tweet_sources.base import Tweet
+        from fintwit.tweet_sources.base import Tweet
         return Tweet(
             id=raw["id"], created_at_utc=f"{year}-03-15T10:00:00Z",
             text=raw.get("text"), type="original", is_reply=False, is_quote=False,
@@ -296,8 +296,8 @@ def test_h6_adapter_abort_on_exhausted_429():
         )
 
     with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
-         patch("tweet_sources.getxapi._normalize", side_effect=fake_normalize), \
-         patch("tweet_sources._http.time.sleep", side_effect=slept.append):
+         patch("fintwit.tweet_sources.getxapi._normalize", side_effect=fake_normalize), \
+         patch("fintwit.tweet_sources._http.time.sleep", side_effect=slept.append):
         with pytest.raises(RateLimitExhausted):
             GetXApiSource(api_key="test-key").fetch_tweets(
                 "throttled_user",
@@ -390,7 +390,7 @@ def test_h9_urlerror_socket_timeout_retried():
 
 def test_h10_adapter_recovery_on_timeout():
     """Page 2 gets a transient timeout, recovers on retry, run completes normally."""
-    from tweet_sources.getxapi import GetXApiSource
+    from fintwit.tweet_sources.getxapi import GetXApiSource
 
     year = datetime.datetime.now(UTC).year
     page1_tweets = [_tweet_raw("301"), _tweet_raw("302")]
@@ -415,7 +415,7 @@ def test_h10_adapter_recovery_on_timeout():
         return resp
 
     def fake_normalize(raw):
-        from tweet_sources.base import Tweet
+        from fintwit.tweet_sources.base import Tweet
         return Tweet(
             id=raw["id"], created_at_utc=f"{year}-03-01T10:00:00Z",
             text=raw.get("text"), type="original", is_reply=False, is_quote=False,
@@ -427,8 +427,8 @@ def test_h10_adapter_recovery_on_timeout():
 
     src = GetXApiSource(api_key="test-key")
     with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
-         patch("tweet_sources.getxapi._normalize", side_effect=fake_normalize), \
-         patch("tweet_sources._http.time.sleep", side_effect=slept.append):
+         patch("fintwit.tweet_sources.getxapi._normalize", side_effect=fake_normalize), \
+         patch("fintwit.tweet_sources._http.time.sleep", side_effect=slept.append):
         result = src.fetch_tweets(
             "testuser",
             datetime.date(year, 1, 1),
@@ -448,7 +448,7 @@ def test_h10_adapter_recovery_on_timeout():
 def test_h11_adapter_abort_on_persistent_timeout():
     """PR A: persistent timeout on page 3 exhausts retries → NetworkErrorExhausted
     propagates to the caller (no swallow to reached_floor=False)."""
-    from tweet_sources.getxapi import GetXApiSource
+    from fintwit.tweet_sources.getxapi import GetXApiSource
 
     year = datetime.datetime.now(UTC).year
     page1_tweets = [_tweet_raw("401"), _tweet_raw("402")]
@@ -470,7 +470,7 @@ def test_h11_adapter_abort_on_persistent_timeout():
         return resp
 
     def fake_normalize(raw):
-        from tweet_sources.base import Tweet
+        from fintwit.tweet_sources.base import Tweet
         return Tweet(
             id=raw["id"], created_at_utc=f"{year}-03-15T10:00:00Z",
             text=raw.get("text"), type="original", is_reply=False, is_quote=False,
@@ -481,8 +481,8 @@ def test_h11_adapter_abort_on_persistent_timeout():
         )
 
     with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
-         patch("tweet_sources.getxapi._normalize", side_effect=fake_normalize), \
-         patch("tweet_sources._http.time.sleep", side_effect=slept.append):
+         patch("fintwit.tweet_sources.getxapi._normalize", side_effect=fake_normalize), \
+         patch("fintwit.tweet_sources._http.time.sleep", side_effect=slept.append):
         with pytest.raises(NetworkErrorExhausted):
             GetXApiSource(api_key="test-key").fetch_tweets(
                 "timeout_user",
@@ -500,8 +500,8 @@ def test_h11_adapter_abort_on_persistent_timeout():
 
 def test_n1_normalize_stub_quoted_tweet_no_id():
     """A quoted_tweet object present but missing 'id' must not crash _normalize."""
-    from tweet_sources.getxapi import _normalize as gx_normalize
-    from tweet_sources.twitterapi import _normalize as tw_normalize
+    from fintwit.tweet_sources.getxapi import _normalize as gx_normalize
+    from fintwit.tweet_sources.twitterapi import _normalize as tw_normalize
 
     raw = {
         "id": "1234567890000000000",
@@ -518,8 +518,8 @@ def test_n1_normalize_stub_quoted_tweet_no_id():
 
 def test_n1b_normalize_stub_quoted_tweet_has_id_no_author():
     """A quoted_tweet with 'id' but no 'author' must not crash and must surface the id."""
-    from tweet_sources.getxapi import _normalize as gx_normalize
-    from tweet_sources.twitterapi import _normalize as tw_normalize
+    from fintwit.tweet_sources.getxapi import _normalize as gx_normalize
+    from fintwit.tweet_sources.twitterapi import _normalize as tw_normalize
 
     raw = {
         "id": "1234567890000000000",
@@ -540,7 +540,7 @@ def test_n1b_normalize_stub_quoted_tweet_has_id_no_author():
 
 def test_n2_fetch_loop_skips_malformed_continues():
     """A tweet that raises in _normalize is skipped; the rest of the batch is kept."""
-    from tweet_sources.getxapi import GetXApiSource
+    from fintwit.tweet_sources.getxapi import GetXApiSource
 
     year = datetime.datetime.now(UTC).year
     good1 = _tweet_raw("501")
@@ -564,7 +564,7 @@ def test_n2_fetch_loop_skips_malformed_continues():
 
     src = GetXApiSource(api_key="test-key")
     with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
-         patch("tweet_sources.getxapi._normalize", side_effect=fake_normalize_raise_on_502):
+         patch("fintwit.tweet_sources.getxapi._normalize", side_effect=fake_normalize_raise_on_502):
         result = src.fetch_tweets(
             "testuser",
             datetime.date(year, 1, 1),
@@ -583,7 +583,7 @@ def test_n2_fetch_loop_skips_malformed_continues():
 
 def test_n3_skipped_zero_when_no_errors():
     """Normal run with no malformed tweets reports skipped=0."""
-    from tweet_sources.getxapi import GetXApiSource
+    from fintwit.tweet_sources.getxapi import GetXApiSource
 
     year = datetime.datetime.now(UTC).year
 
@@ -602,7 +602,7 @@ def test_n3_skipped_zero_when_no_errors():
 
     src = GetXApiSource(api_key="test-key")
     with patch("urllib.request.urlopen", side_effect=fake_urlopen), \
-         patch("tweet_sources.getxapi._normalize", side_effect=fake_normalize):
+         patch("fintwit.tweet_sources.getxapi._normalize", side_effect=fake_normalize):
         result = src.fetch_tweets(
             "testuser",
             datetime.date(year, 1, 1),

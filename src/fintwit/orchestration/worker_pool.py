@@ -21,18 +21,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from storage.db import get_connection, init_db
-from storage.day_log import (
+from fintwit.storage.db import get_connection, init_db
+from fintwit.storage.day_log import (
     Job,
     claim_day,
     get_eligible_jobs,
     mark_day_outcome,
     populate_pending_days,
 )
-from storage.tweets import upsert_tweets
-from tweet_sources._http import use_rate_limiter
-from tweet_sources import factory
-from tweet_sources.base import (
+from fintwit.storage.tweets import upsert_tweets
+from fintwit.tweet_sources._http import use_rate_limiter
+from fintwit.tweet_sources import factory
+from fintwit.tweet_sources.base import (
     RateLimitExhausted,
     NetworkErrorExhausted,
     ServerError,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 
-from orchestration.worker_pool import run_pool, PoolConfig
+from fintwit.orchestration.worker_pool import run_pool, PoolConfig
 
 from tests.worker_pool_helpers import (
     fresh_db, MockAdapter, ConcurrencyTracker, source_factory,

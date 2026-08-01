@@ -13,14 +13,14 @@ from unittest.mock import patch
 
 import pytest
 
-from tweet_sources.base import (
+from fintwit.tweet_sources.base import (
     ProviderError, TransientProviderError, PermanentProviderError,
     RateLimitExhausted, NetworkErrorExhausted, ServerError,
     AuthError, NotFoundError,
 )
-from tweet_sources._http import get_json
-from storage.day_log import Job
-from orchestration.worker_pool import process_job, PoolConfig
+from fintwit.tweet_sources._http import get_json
+from fintwit.storage.day_log import Job
+from fintwit.orchestration.worker_pool import process_job, PoolConfig
 
 from tests.worker_pool_helpers import (
     fresh_db, seed_pending, row, now_iso, shift_iso,
@@ -164,13 +164,13 @@ def _patch_pages(provider_mod, pages, raise_after: int, exc):
             raise exc
         return pages[i]
 
-    return patch(f"tweet_sources.{provider_mod}.get_json", side_effect=fake_get_json)
+    return patch(f"fintwit.tweet_sources.{provider_mod}.get_json", side_effect=fake_get_json)
 
 
 @pytest.mark.parametrize("provider_mod", ["getxapi", "twitterapi"])
 def test_adapter_propagates_rate_limit(provider_mod):
-    from tweet_sources.getxapi import GetXApiSource
-    from tweet_sources.twitterapi import TwitterApiIoSource
+    from fintwit.tweet_sources.getxapi import GetXApiSource
+    from fintwit.tweet_sources.twitterapi import TwitterApiIoSource
     src = (GetXApiSource if provider_mod == "getxapi" else TwitterApiIoSource)("k")
     year = datetime.datetime.now(datetime.timezone.utc).year
     with _patch_pages(provider_mod, [{"tweets": [{"id": "1"}]}], raise_after=0,
@@ -181,8 +181,8 @@ def test_adapter_propagates_rate_limit(provider_mod):
 
 @pytest.mark.parametrize("provider_mod", ["getxapi", "twitterapi"])
 def test_adapter_propagates_server_error(provider_mod):
-    from tweet_sources.getxapi import GetXApiSource
-    from tweet_sources.twitterapi import TwitterApiIoSource
+    from fintwit.tweet_sources.getxapi import GetXApiSource
+    from fintwit.tweet_sources.twitterapi import TwitterApiIoSource
     src = (GetXApiSource if provider_mod == "getxapi" else TwitterApiIoSource)("k")
     year = datetime.datetime.now(datetime.timezone.utc).year
     with _patch_pages(provider_mod, [{"tweets": [{"id": "1"}]}], raise_after=0,
@@ -195,9 +195,9 @@ def test_adapter_propagates_server_error(provider_mod):
 def test_adapter_does_not_swallow_to_reached_floor_false(provider_mod):
     """Error on page 2 of a multi-page fetch raises rather than returning a
     partial FetchResult(reached_floor=False)."""
-    from tweet_sources.getxapi import GetXApiSource
-    from tweet_sources.twitterapi import TwitterApiIoSource
-    from tweet_sources.base import Tweet
+    from fintwit.tweet_sources.getxapi import GetXApiSource
+    from fintwit.tweet_sources.twitterapi import TwitterApiIoSource
+    from fintwit.tweet_sources.base import Tweet
     src = (GetXApiSource if provider_mod == "getxapi" else TwitterApiIoSource)("k")
     year = datetime.datetime.now(datetime.timezone.utc).year
 
@@ -214,7 +214,7 @@ def test_adapter_does_not_swallow_to_reached_floor_false(provider_mod):
         )
 
     with _patch_pages(provider_mod, [page1], raise_after=1, exc=rate_limit_exc()), \
-         patch(f"tweet_sources.{provider_mod}._normalize", side_effect=fake_normalize):
+         patch(f"fintwit.tweet_sources.{provider_mod}._normalize", side_effect=fake_normalize):
         with pytest.raises(RateLimitExhausted):
             src.fetch_tweets("u", datetime.date(year, 1, 1), datetime.date(year, 6, 1))
 

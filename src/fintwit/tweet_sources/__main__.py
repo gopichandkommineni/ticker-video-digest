@@ -1,9 +1,9 @@
 """CLI for tweet_sources adapters.
 
 Usage:
-  python -m tweet_sources user-info  --provider PROVIDER --handle HANDLE
-  python -m tweet_sources tweets     --provider PROVIDER --handle HANDLE --start YYYY-MM-DD --end YYYY-MM-DD
-  python -m tweet_sources compare    --handle HANDLE --start YYYY-MM-DD --end YYYY-MM-DD
+  python -m fintwit.tweet_sources user-info  --provider PROVIDER --handle HANDLE
+  python -m fintwit.tweet_sources tweets     --provider PROVIDER --handle HANDLE --start YYYY-MM-DD --end YYYY-MM-DD
+  python -m fintwit.tweet_sources compare    --handle HANDLE --start YYYY-MM-DD --end YYYY-MM-DD
 """
 
 from __future__ import annotations

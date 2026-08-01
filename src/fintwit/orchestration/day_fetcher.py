@@ -25,15 +25,15 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from tweet_sources.factory import get_source
-from storage.db import get_connection
-from storage.day_log import (
+from fintwit.tweet_sources.factory import get_source
+from fintwit.storage.db import get_connection
+from fintwit.storage.day_log import (
     mark_day,
     populate_pending_days,
     get_pending_days,
     get_retryable_days,
 )
-from storage.tweets import upsert_tweets
+from fintwit.storage.tweets import upsert_tweets
 
 logger = logging.getLogger(__name__)
 

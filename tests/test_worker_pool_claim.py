@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import threading
 
-from storage.db import get_connection
-from storage.day_log import claim_day, get_eligible_jobs
+from fintwit.storage.db import get_connection
+from fintwit.storage.day_log import claim_day, get_eligible_jobs
 
 from tests.worker_pool_helpers import (
     fresh_db, seed_pending, row, now_iso, shift_iso,

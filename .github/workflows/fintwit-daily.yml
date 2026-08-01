@@ -47,7 +47,7 @@ jobs:
       - name: Ingest tweets & write run report
         id: ingest
         env:
-          PYTHONPATH: .
+          PYTHONPATH: src
           # Daily delta runs on getxapi only (dollar account). Single-provider
           # runs reconcile a lone terminal day straight to 'ok'; backfill uses
           # twitterapi. See reconciler.reconcile_completed_days.

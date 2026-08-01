@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from orchestration.rate_limiter import RateLimiter, from_interval_ms
+from fintwit.orchestration.rate_limiter import RateLimiter, from_interval_ms
 
 
 class FakeClock:
