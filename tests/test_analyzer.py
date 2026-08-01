@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 from ticker_digest.analyzer import extract_insights, synthesize_digest
-from ticker_digest.models import (
+from core.models import (
     Citation,
     DigestReport,
     Transcript,

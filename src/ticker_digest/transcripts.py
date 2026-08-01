@@ -13,8 +13,8 @@ from youtube_transcript_api._errors import (
     VideoUnavailable,
 )
 
-from ticker_digest import cache
-from ticker_digest.models import Transcript, TranscriptSegment
+from core import cache
+from core.models import Transcript, TranscriptSegment
 
 log = logging.getLogger(__name__)
 

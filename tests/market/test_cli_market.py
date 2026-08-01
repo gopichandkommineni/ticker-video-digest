@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 from ticker_digest import cli
-from ticker_digest.models import MarketIndicator, MarketSnapshot, RealityScore
+from core.models import MarketIndicator, MarketSnapshot, RealityScore
 
 
 def _snapshot() -> MarketSnapshot:

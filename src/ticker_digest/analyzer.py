@@ -9,7 +9,7 @@ from typing import Any
 import anthropic
 from pydantic import BaseModel, ValidationError
 
-from ticker_digest.models import (
+from core.models import (
     DigestReport,
     Sentiment,
     Transcript,

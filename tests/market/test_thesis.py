@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ticker_digest.market import thesis as thesis_module
-from ticker_digest.models import (
+from core.market import thesis as thesis_module
+from core.models import (
     MarketIndicator,
     MarketSnapshot,
     MarketThesis,
@@ -77,7 +77,7 @@ def test_generate_thesis_happy_path(tmp_cache_dir, mocker):
     }
     mock_client = MagicMock()
     mock_client.messages.create.return_value = _make_tool_response(payload)
-    mocker.patch("ticker_digest.market.thesis.anthropic.Anthropic", return_value=mock_client)
+    mocker.patch("core.market.thesis.anthropic.Anthropic", return_value=mock_client)
 
     result = thesis_module.generate_thesis(_snapshot(), _score())
     assert isinstance(result, MarketThesis)
@@ -102,7 +102,7 @@ def test_generate_thesis_uses_cache(tmp_cache_dir, mocker):
     }
     mock_client = MagicMock()
     mock_client.messages.create.return_value = _make_tool_response(payload)
-    mocker.patch("ticker_digest.market.thesis.anthropic.Anthropic", return_value=mock_client)
+    mocker.patch("core.market.thesis.anthropic.Anthropic", return_value=mock_client)
 
     snap, scr = _snapshot(), _score()
     first = thesis_module.generate_thesis(snap, scr)

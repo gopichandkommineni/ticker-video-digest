@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from ticker_digest.market.reality_score import compute_reality_score
-from ticker_digest.models import MarketIndicator, MarketSnapshot
+from core.market.reality_score import compute_reality_score
+from core.models import MarketIndicator, MarketSnapshot
 
 
 def _ind(series_id: str, bucket: str, z: float | None) -> MarketIndicator:
