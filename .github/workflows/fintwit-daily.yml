@@ -3,15 +3,17 @@ name: FinTwit — Daily Tweet Ingest
 # Pulls the latest day of tweets for every tracked handle into data/fintwit.db
 # and commits the updated DB. Each run posts a per-handle summary report under
 # the Actions run ("Summary" tab).
+#
+# Pause/resume: this job is gated on the .github/fintwit-daily.state file.
+# When it contains "paused", scheduled and manual runs skip the ingest. Flip
+# it from the Actions tab via the "FinTwit — Pause/Resume Daily Ingest"
+# workflow (no code edit needed).
 
 on:
-  # PAUSED: daily tweet-delta ingest is currently disabled. The pipeline is
-  # unchanged and still runnable on demand from the Actions tab. To resume the
-  # daily schedule, uncomment the `schedule` block below.
-  # schedule:
-  #   - cron: "0 6 * * *"   # 2am ET — overnight ingest (shares the db-writer queue
-  #                         #          with Daily Refresh, which also starts at 0 6)
-  workflow_dispatch:        # runnable on demand from the Actions tab
+  schedule:
+    - cron: "0 6 * * *"   # 2am ET — overnight ingest (shares the db-writer queue
+                          #          with Daily Refresh, which also starts at 0 6)
+  workflow_dispatch:        # also runnable on demand from the Actions tab
 
 # Only one DB-writing job runs at a time (see Daily Refresh for the full note):
 # all workflows that commit to the shared DBs queue here instead of racing.
@@ -32,23 +34,39 @@ jobs:
         with:
           ref: main
 
+      # Pause switch: skip the rest of the job when paused. The state file is
+      # flipped by the Pause/Resume control workflow.
+      - name: Check pause state
+        id: gate
+        run: |
+          STATE=$(cat .github/fintwit-daily.state 2>/dev/null | tr -d '[:space:]')
+          STATE=${STATE:-active}
+          echo "state=$STATE" >> "$GITHUB_OUTPUT"
+          if [ "$STATE" = "paused" ]; then
+            echo "::notice title=FinTwit daily ingest paused::Skipping run — resume via the Pause/Resume workflow."
+          fi
+
       - name: Set up Python 3.11
+        if: steps.gate.outputs.state != 'paused'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install project
+        if: steps.gate.outputs.state != 'paused'
         run: pip install -e ".[dev]"
 
       # Write API keys to a .env file in the working dir; the scripts load it
       # with load_dotenv(".env"). Keys never appear in logs.
       - name: Write .env from secrets
+        if: steps.gate.outputs.state != 'paused'
         run: |
           printf 'GETXAPI_KEY=%s\n'        "${{ secrets.GETXAPI_KEY }}"        > .env
           printf 'TWITTERAPI_IO_KEY=%s\n'  "${{ secrets.TWITTERAPI_IO_KEY }}"  >> .env
 
       - name: Ingest tweets & write run report
         id: ingest
+        if: steps.gate.outputs.state != 'paused'
         env:
           PYTHONPATH: src
           # Daily delta runs on getxapi only (dollar account). Single-provider
@@ -57,16 +75,23 @@ jobs:
           WORKER_POOL_SIZES: '{"getxapi": 3}'
         run: python scripts/run_daily.py
 
+      # Stamp the last successful ingest date. This is the "last known daily"
+      # that the Pause/Resume control workflow's resume-and-backfill action
+      # uses as the default gap-fill start.
+      - name: Record last successful ingest date
+        if: steps.gate.outputs.state != 'paused' && steps.ingest.outcome == 'success'
+        run: date -u +%F > .github/fintwit-daily.last
+
       # Commit even if the ingest step failed (if: always) so partial progress
-      # is never lost — stage only the DB file, never `git add -A`.
+      # is never lost — stage only the DB file (+ the date marker), never `git add -A`.
       - name: Commit updated fintwit.db to main
-        if: always()
+        if: always() && steps.gate.outputs.state != 'paused'
         run: |
           test -f data/fintwit.db || { echo "data/fintwit.db not present — nothing to commit"; exit 0; }
           git config user.name  "fintwit-bot"
           git config user.email "bot@users.noreply.github.com"
-          # Stage only the DB file — never git add -A.
-          git add data/fintwit.db
+          # Stage only the DB file and the date marker — never git add -A.
+          git add -- data/fintwit.db .github/fintwit-daily.last
           git diff --cached --quiet && echo "No changes to commit" && exit 0
           git commit -m "FinTwit delta: $(date -u +%Y-%m-%dT%H:%M)Z"
           # Absorb any commit that landed while we ran (concurrency group makes this rare).
