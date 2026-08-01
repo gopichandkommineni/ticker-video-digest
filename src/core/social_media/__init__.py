@@ -9,9 +9,9 @@ To add a new platform:
 import logging
 from typing import TYPE_CHECKING
 
-from ticker_digest.social_media.base import SocialPost, SocialSignals, SocialScraper
-from ticker_digest.social_media.reddit.client import RedditScraper
-from ticker_digest.social_media.x.client import XScraper
+from core.social_media.base import SocialPost, SocialSignals, SocialScraper
+from core.social_media.reddit.client import RedditScraper
+from core.social_media.x.client import XScraper
 
 if TYPE_CHECKING:
     pass

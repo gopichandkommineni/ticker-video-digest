@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import datetime
 
-from storage.db import get_connection
-from orchestration.runner import run_days
-from orchestration.worker_pool import PoolConfig
+from fintwit.storage.db import get_connection
+from fintwit.orchestration.runner import run_days
+from fintwit.orchestration.worker_pool import PoolConfig
 
 from tests.worker_pool_helpers import MockAdapter, source_factory
 
@@ -65,7 +65,7 @@ def test_sequential_and_pool_produce_identical_results(tmp_path, monkeypatch):
     #     factory, so patch the factory reference day_fetcher imported. ---
     seq_sources = _build_sources()
     monkeypatch.setattr(
-        "orchestration.day_fetcher.get_source",
+        "fintwit.orchestration.day_fetcher.get_source",
         source_factory(seq_sources),
     )
     db_seq = tmp_path / "seq.db"

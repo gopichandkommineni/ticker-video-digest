@@ -5,7 +5,7 @@ from urllib.error import HTTPError
 
 import pytest
 
-from ticker_digest.social_media.reddit.apewisdom_client import (
+from core.social_media.reddit.apewisdom_client import (
     fetch_apewisdom_universe,
     filter_to_universe,
 )
@@ -43,8 +43,8 @@ def test_single_page_returns_correct_mentions():
         call_idx += 1
         return resp
 
-    with patch("ticker_digest.social_media.reddit.apewisdom_client.urlopen", fake_urlopen):
-        with patch("ticker_digest.social_media.reddit.apewisdom_client.time.sleep"):
+    with patch("core.social_media.reddit.apewisdom_client.urlopen", fake_urlopen):
+        with patch("core.social_media.reddit.apewisdom_client.time.sleep"):
             result = fetch_apewisdom_universe("all-stocks")
 
     assert len(result) == 2
@@ -73,8 +73,8 @@ def test_multi_page_pagination_walks_all_pages():
         call_idx += 1
         return resp
 
-    with patch("ticker_digest.social_media.reddit.apewisdom_client.urlopen", fake_urlopen):
-        with patch("ticker_digest.social_media.reddit.apewisdom_client.time.sleep"):
+    with patch("core.social_media.reddit.apewisdom_client.urlopen", fake_urlopen):
+        with patch("core.social_media.reddit.apewisdom_client.time.sleep"):
             result = fetch_apewisdom_universe("all-stocks")
 
     assert len(result) == 3
@@ -89,7 +89,7 @@ def test_empty_first_page_returns_empty_list():
         resp.__exit__ = MagicMock(return_value=False)
         return resp
 
-    with patch("ticker_digest.social_media.reddit.apewisdom_client.urlopen", fake_urlopen):
+    with patch("core.social_media.reddit.apewisdom_client.urlopen", fake_urlopen):
         result = fetch_apewisdom_universe("all-stocks")
 
     assert result == []
@@ -98,8 +98,8 @@ def test_empty_first_page_returns_empty_list():
 def test_429_retries_once_then_raises():
     exc = HTTPError(url="http://x", code=429, msg="Too Many Requests", hdrs={}, fp=None)
 
-    with patch("ticker_digest.social_media.reddit.apewisdom_client.urlopen", side_effect=exc):
-        with patch("ticker_digest.social_media.reddit.apewisdom_client.time.sleep"):
+    with patch("core.social_media.reddit.apewisdom_client.urlopen", side_effect=exc):
+        with patch("core.social_media.reddit.apewisdom_client.time.sleep"):
             with pytest.raises(HTTPError):
                 fetch_apewisdom_universe("all-stocks")
 
@@ -120,8 +120,8 @@ def test_malformed_json_skips_page_and_continues():
         call_idx += 1
         return resp
 
-    with patch("ticker_digest.social_media.reddit.apewisdom_client.urlopen", fake_urlopen):
-        with patch("ticker_digest.social_media.reddit.apewisdom_client.time.sleep"):
+    with patch("core.social_media.reddit.apewisdom_client.urlopen", fake_urlopen):
+        with patch("core.social_media.reddit.apewisdom_client.time.sleep"):
             result = fetch_apewisdom_universe("all-stocks")
 
     # Bad page skipped → empty result (next page also empty → stops)
@@ -159,7 +159,7 @@ def test_user_agent_header_set_correctly():
         resp.__exit__ = MagicMock(return_value=False)
         return resp
 
-    with patch("ticker_digest.social_media.reddit.apewisdom_client.urlopen", fake_urlopen):
+    with patch("core.social_media.reddit.apewisdom_client.urlopen", fake_urlopen):
         fetch_apewisdom_universe("all-stocks")
 
     assert len(captured) == 1

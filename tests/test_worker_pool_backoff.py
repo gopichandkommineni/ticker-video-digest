@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from storage.db import get_connection
-from storage.day_log import get_eligible_jobs, Job
-from orchestration.worker_pool import process_job, PoolConfig
+from fintwit.storage.db import get_connection
+from fintwit.storage.day_log import get_eligible_jobs, Job
+from fintwit.orchestration.worker_pool import process_job, PoolConfig
 
 from tests.worker_pool_helpers import (
     fresh_db, seed_pending, row, now_iso, shift_iso,

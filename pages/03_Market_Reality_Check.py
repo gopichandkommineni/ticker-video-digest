@@ -4,9 +4,9 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from ticker_digest import config
-from ticker_digest.market import compute_reality_score, generate_thesis, get_snapshot
-from ticker_digest.models import MarketSnapshot, RealityScore
+from core import config
+from core.market import compute_reality_score, generate_thesis, get_snapshot
+from core.models import MarketSnapshot, RealityScore
 
 st.set_page_config(page_title="Market Reality Check — Stock Dashboard", layout="wide")
 

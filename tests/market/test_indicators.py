@@ -9,9 +9,9 @@ from datetime import datetime, timezone
 import pandas as pd
 import pytest
 
-from ticker_digest import cache
-from ticker_digest.market import indicators
-from ticker_digest.models import MarketIndicator
+from core import cache
+from core.market import indicators
+from core.models import MarketIndicator
 
 
 @pytest.fixture

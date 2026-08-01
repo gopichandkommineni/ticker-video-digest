@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ticker_digest.social_media.reddit.client import RedditScraper, _deduplicate
-from ticker_digest.social_media.base import SocialPost, SocialSignals
+from core.social_media.reddit.client import RedditScraper, _deduplicate
+from core.social_media.base import SocialPost, SocialSignals
 
 
 # ---------------------------------------------------------------------------
@@ -41,13 +41,13 @@ def _reddit_json_response(posts: list[dict]) -> dict:
 class TestRedditScraperPublicAPI:
     def setup_method(self):
         # Force public API by making PRAW unavailable
-        with patch("ticker_digest.social_media.reddit.client.REDDIT_CLIENT_ID", ""):
-            with patch("ticker_digest.social_media.reddit.client.REDDIT_CLIENT_SECRET", ""):
+        with patch("core.social_media.reddit.client.REDDIT_CLIENT_ID", ""):
+            with patch("core.social_media.reddit.client.REDDIT_CLIENT_SECRET", ""):
                 self.scraper = RedditScraper(subreddits=["stocks"])
         assert self.scraper._praw_reddit is None
 
-    @patch("ticker_digest.social_media.reddit.client.requests.get")
-    @patch("ticker_digest.social_media.reddit.client.time.sleep")
+    @patch("core.social_media.reddit.client.requests.get")
+    @patch("core.social_media.reddit.client.time.sleep")
     def test_returns_social_signals(self, mock_sleep, mock_get):
         mock_resp = MagicMock()
         mock_resp.json.return_value = _reddit_json_response([_make_post()])
@@ -61,8 +61,8 @@ class TestRedditScraperPublicAPI:
         assert result.platform == "reddit"
         assert len(result.posts) == 1
 
-    @patch("ticker_digest.social_media.reddit.client.requests.get")
-    @patch("ticker_digest.social_media.reddit.client.time.sleep")
+    @patch("core.social_media.reddit.client.requests.get")
+    @patch("core.social_media.reddit.client.time.sleep")
     def test_post_fields_populated(self, mock_sleep, mock_get):
         mock_resp = MagicMock()
         mock_resp.json.return_value = _reddit_json_response([_make_post(score=999)])
@@ -78,8 +78,8 @@ class TestRedditScraperPublicAPI:
         assert post.subreddit == "stocks"
         assert "reddit.com" in post.url
 
-    @patch("ticker_digest.social_media.reddit.client.requests.get")
-    @patch("ticker_digest.social_media.reddit.client.time.sleep")
+    @patch("core.social_media.reddit.client.requests.get")
+    @patch("core.social_media.reddit.client.time.sleep")
     def test_filters_old_posts(self, mock_sleep, mock_get):
         old_post = _make_post(
             id="old1",
@@ -93,8 +93,8 @@ class TestRedditScraperPublicAPI:
         result = self.scraper.search_ticker("RKLB", days_back=7)
         assert len(result.posts) == 0
 
-    @patch("ticker_digest.social_media.reddit.client.requests.get")
-    @patch("ticker_digest.social_media.reddit.client.time.sleep")
+    @patch("core.social_media.reddit.client.requests.get")
+    @patch("core.social_media.reddit.client.time.sleep")
     def test_http_error_returns_empty(self, mock_sleep, mock_get):
         import requests as req_lib
         mock_get.side_effect = req_lib.HTTPError("403")
@@ -102,8 +102,8 @@ class TestRedditScraperPublicAPI:
         result = self.scraper.search_ticker("RKLB")
         assert result.posts == []
 
-    @patch("ticker_digest.social_media.reddit.client.requests.get")
-    @patch("ticker_digest.social_media.reddit.client.time.sleep")
+    @patch("core.social_media.reddit.client.requests.get")
+    @patch("core.social_media.reddit.client.time.sleep")
     def test_deduplicates_across_subreddits(self, mock_sleep, mock_get):
         scraper = RedditScraper(subreddits=["stocks", "investing"])
         scraper._praw_reddit = None

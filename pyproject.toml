@@ -36,7 +36,7 @@ ticker-digest = "ticker_digest.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["ticker_digest*", "casino_dashboard*"]
+include = ["ticker_digest*", "casino_dashboard*", "core*", "fintwit*"]
 
 [tool.ruff]
 line-length = 100

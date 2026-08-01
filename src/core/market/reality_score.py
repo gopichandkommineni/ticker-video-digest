@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from statistics import mean
 
-from ticker_digest import config
-from ticker_digest.models import MarketSnapshot, RealityBand, RealityScore
+from core import config
+from core.models import MarketSnapshot, RealityBand, RealityScore
 
 
 def _band_for(score: float) -> RealityBand:

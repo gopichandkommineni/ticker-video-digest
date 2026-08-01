@@ -5,7 +5,7 @@ Usage (GitHub Actions only — needs GETXAPI_KEY and TWITTERAPI_IO_KEY in env):
 
 Defaults: since=<current year>-01-01, runs=3.
 
-Outputs land in:  probes/variance/YYYY-MM-DD_<handle>/
+Outputs land in:  research/probes/variance/YYYY-MM-DD_<handle>/
   report.md              human-readable verdict + sample tweets
   getxapi_run<N>.json    full normalized Tweet objects for each GetXAPI run
   twitterapi_run<N>.json full normalized Tweet objects for each twitterapi run
@@ -29,13 +29,13 @@ from dotenv import load_dotenv
 
 load_dotenv(".env")
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 sys.path.insert(0, str(Path(__file__).parent))
 
-from storage.handles import normalize_handle
-from storage.db import init_db, close_connection
-from tweet_sources.base import Tweet
-from tweet_sources.factory import get_source
+from fintwit.storage.handles import normalize_handle
+from fintwit.storage.db import init_db, close_connection
+from fintwit.tweet_sources.base import Tweet
+from fintwit.tweet_sources.factory import get_source
 from import_probe_data import import_folder
 
 logging.basicConfig(
@@ -67,8 +67,8 @@ class RunRecord:
 # ---------------------------------------------------------------------------
 
 def _dated_folder(handle: str, base_date: str) -> Path:
-    """Return probes/variance/YYYY-MM-DD_<handle>/, adding _2/_3/… if it exists."""
-    base = Path("probes") / "variance" / f"{base_date}_{handle}"
+    """Return research/probes/variance/YYYY-MM-DD_<handle>/, adding _2/_3/… if it exists."""
+    base = Path("research") / "probes" / "variance" / f"{base_date}_{handle}"
     if not base.exists():
         return base
     n = 2
@@ -104,7 +104,7 @@ def _run_provider(
     logger.info("[%s] run %d — fetching %s → %s ...", provider, run_index, start, end)
 
     # Monkey-patch the HTTP layer to count 429s without changing prod code.
-    import tweet_sources._http as _http_mod
+    import fintwit.tweet_sources._http as _http_mod
     _429_seen = [0]
     _aborted = [False]
     _orig_get_json = _http_mod.get_json

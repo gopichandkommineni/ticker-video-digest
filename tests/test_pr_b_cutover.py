@@ -12,11 +12,11 @@ import datetime
 from pathlib import Path
 from unittest.mock import patch
 
-from storage.db import init_db, get_connection
-from storage.handles import get_handle
-from orchestration.runner import ingest_handle, ingest_all
-from orchestration.day_fetcher import DayFetchSummary
-from tweet_sources.base import Tweet, FetchResult, UserInfo
+from fintwit.storage.db import init_db, get_connection
+from fintwit.storage.handles import get_handle
+from fintwit.orchestration.runner import ingest_handle, ingest_all
+from fintwit.orchestration.day_fetcher import DayFetchSummary
+from fintwit.tweet_sources.base import Tweet, FetchResult, UserInfo
 
 UTC = datetime.timezone.utc
 
@@ -61,9 +61,9 @@ def _patch_both(gx: FakeSource, tw: FakeSource):
     """Patch the adapter into both the sequential and pool resolution seams."""
     gs = _get_source_factory(gx, tw)
     return (
-        patch("orchestration.day_fetcher.get_source", side_effect=gs),
-        patch("tweet_sources.factory.get_source", side_effect=gs),
-        patch("orchestration.day_fetcher.INTER_DAY_DELAY", 0.0),
+        patch("fintwit.orchestration.day_fetcher.get_source", side_effect=gs),
+        patch("fintwit.tweet_sources.factory.get_source", side_effect=gs),
+        patch("fintwit.orchestration.day_fetcher.INTER_DAY_DELAY", 0.0),
     )
 
 
@@ -207,7 +207,7 @@ def test_mismatch_reopened_when_under_max_attempts(tmp_path):
     # Adapter now returns agreeing counts for the old day → it should heal to ok.
     gx = FakeSource({old: [_tweet("x1", f"{old}T10:00:00Z")]}, "getxapi")
     tw = FakeSource({old: [_tweet("x1", f"{old}T10:00:00Z")]}, "twitterapi")
-    with patch("tweet_sources.factory.get_source", side_effect=_get_source_factory(gx, tw)):
+    with patch("fintwit.tweet_sources.factory.get_source", side_effect=_get_source_factory(gx, tw)):
         ingest_handle("h", db_path=db, sequential=False)
 
     r = _day_row(db, "h", old, "getxapi")
@@ -227,7 +227,7 @@ def test_terminal_mismatch_not_reopened(tmp_path):
 
     gx = FakeSource({}, "getxapi")
     tw = FakeSource({}, "twitterapi")
-    with patch("tweet_sources.factory.get_source", side_effect=_get_source_factory(gx, tw)):
+    with patch("fintwit.tweet_sources.factory.get_source", side_effect=_get_source_factory(gx, tw)):
         ingest_handle("h", db_path=db, sequential=False)
 
     r = _day_row(db, "h", old, "getxapi")
@@ -254,7 +254,7 @@ def test_pool_filter_scopes_to_one_handle(tmp_path):
 
     gx = FakeSource({old: []}, "getxapi")
     tw = FakeSource({old: []}, "twitterapi")
-    with patch("tweet_sources.factory.get_source", side_effect=_get_source_factory(gx, tw)):
+    with patch("fintwit.tweet_sources.factory.get_source", side_effect=_get_source_factory(gx, tw)):
         ingest_handle("h1", db_path=db, sequential=False)
 
     # h1's failed day was claimed/processed; h2's is untouched (scoped dispatch).
@@ -277,8 +277,8 @@ def test_ingest_all_default_routes_to_pool(tmp_path, monkeypatch):
         calls.append((list(handles), kw.get("handles_filter")))
         return {"by_status": {}}
 
-    monkeypatch.setattr("orchestration.runner.run_pool", fake_run_pool)
-    monkeypatch.setattr("orchestration.runner.reconcile_completed_days",
+    monkeypatch.setattr("fintwit.orchestration.runner.run_pool", fake_run_pool)
+    monkeypatch.setattr("fintwit.orchestration.runner.reconcile_completed_days",
                         lambda conn: {"ok": 0, "mismatch": 0, "skipped": 0})
     ingest_all(db_path=db)
 
@@ -292,9 +292,9 @@ def test_ingest_all_sequential_routes_to_legacy(tmp_path, monkeypatch):
     _seed_handle_with_history(db, "h", [(today - datetime.timedelta(days=n)).isoformat()
                                         for n in (5, 4, 3)])
     pool_calls, seq_calls = [], []
-    monkeypatch.setattr("orchestration.runner.run_pool",
+    monkeypatch.setattr("fintwit.orchestration.runner.run_pool",
                         lambda *a, **k: pool_calls.append(1) or {"by_status": {}})
-    monkeypatch.setattr("orchestration.runner.delta_handle",
+    monkeypatch.setattr("fintwit.orchestration.runner.delta_handle",
                         lambda *a, **k: seq_calls.append(1) or DayFetchSummary(handle="h"))
     ingest_all(db_path=db, sequential=True)
 
@@ -323,7 +323,7 @@ def test_ingest_all_one_handle_failure_does_not_stop_batch(tmp_path):
 
     gx = BadSource(good, "getxapi")
     tw = BadSource(good, "twitterapi")
-    with patch("tweet_sources.factory.get_source", side_effect=_get_source_factory(gx, tw)):
+    with patch("fintwit.tweet_sources.factory.get_source", side_effect=_get_source_factory(gx, tw)):
         results = ingest_all(db_path=db)
 
     by = {r.handle: r.outcome for r in results}

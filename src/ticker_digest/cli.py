@@ -11,8 +11,8 @@ import argparse
 import logging
 import sys
 
-from ticker_digest.market import compute_reality_score, generate_thesis, get_snapshot
-from ticker_digest.models import MarketSnapshot, RealityScore
+from core.market import compute_reality_score, generate_thesis, get_snapshot
+from core.models import MarketSnapshot, RealityScore
 
 log = logging.getLogger(__name__)
 

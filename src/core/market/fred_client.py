@@ -15,7 +15,7 @@ from urllib.request import Request, urlopen
 
 import pandas as pd
 
-from ticker_digest import config
+from core import config
 
 log = logging.getLogger(__name__)
 

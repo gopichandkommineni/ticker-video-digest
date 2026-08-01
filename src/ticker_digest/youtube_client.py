@@ -5,8 +5,8 @@ from datetime import datetime, timedelta, timezone
 
 from googleapiclient.discovery import build
 
-from ticker_digest.config import MIN_SUBSCRIBER_COUNT, MIN_VIDEO_DURATION_SECONDS, YOUTUBE_API_KEY
-from ticker_digest.models import VideoMetadata
+from core.config import MIN_SUBSCRIBER_COUNT, MIN_VIDEO_DURATION_SECONDS, YOUTUBE_API_KEY
+from core.models import VideoMetadata
 
 log = logging.getLogger(__name__)
 

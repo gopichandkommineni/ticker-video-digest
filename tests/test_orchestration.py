@@ -28,9 +28,9 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from storage import init_db, get_handle, upsert_handle
-from storage.day_log import day_summary, mark_day, populate_pending_days
-from tweet_sources.base import Tweet, FetchResult, UserInfo
+from fintwit.storage import init_db, get_handle, upsert_handle
+from fintwit.storage.day_log import day_summary, mark_day, populate_pending_days
+from fintwit.tweet_sources.base import Tweet, FetchResult, UserInfo
 
 UTC = datetime.timezone.utc
 
@@ -102,12 +102,12 @@ def tmp_db(tmp_path: Path) -> Path:
 
 
 def _patch_sources(gx: FakeSource, tw: FakeSource):
-    return patch("orchestration.day_fetcher.get_source", side_effect=_make_get_source(gx, tw))
+    return patch("fintwit.orchestration.day_fetcher.get_source", side_effect=_make_get_source(gx, tw))
 
 
 def _patch_delay():
     """Zero out INTER_DAY_DELAY so tests don't sleep."""
-    return patch("orchestration.day_fetcher.INTER_DAY_DELAY", 0.0)
+    return patch("fintwit.orchestration.day_fetcher.INTER_DAY_DELAY", 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +126,7 @@ def test_t1_new_handle_backfill(tmp_db: Path) -> None:
     gx = FakeSource(by_day, provider_name="getxapi")
     tw = FakeSource(by_day, provider_name="twitterapi")
 
-    from orchestration.runner import ingest_handle
+    from fintwit.orchestration.runner import ingest_handle
     with _patch_sources(gx, tw), _patch_delay():
         # _backfill_since limits range to 2 days so the test is fast.
         result = ingest_handle("testuser", db_path=tmp_db, _backfill_since=yesterday, sequential=True)
@@ -147,7 +147,7 @@ def test_t1_new_handle_backfill(tmp_db: Path) -> None:
 
 def test_t2_delta_run_uses_last_3_days(tmp_db: Path) -> None:
     """Handle with prior ok days in day_fetch_log → delta uses last 3 days."""
-    from orchestration.runner import ingest_handle
+    from fintwit.orchestration.runner import ingest_handle
 
     today = datetime.date.today()
     # Pre-populate some ok days so runner thinks backfill is done.
@@ -187,7 +187,7 @@ def test_t2_delta_run_uses_last_3_days(tmp_db: Path) -> None:
 def test_t3_single_provider_failure_retried(tmp_db: Path) -> None:
     """One provider throws → day marked failed → outcome=incomplete.
     Second run with both providers ok → outcome=ok."""
-    from orchestration.runner import ingest_handle
+    from fintwit.orchestration.runner import ingest_handle
 
     today = datetime.date.today()
     date_str = today.isoformat()
@@ -223,7 +223,7 @@ def test_t3_single_provider_failure_retried(tmp_db: Path) -> None:
 def test_t4_count_mismatch_marked_and_retried(tmp_db: Path) -> None:
     """Providers return very different counts → mismatch → incomplete.
     Second run with matching counts → ok."""
-    from orchestration.runner import ingest_handle
+    from fintwit.orchestration.runner import ingest_handle
 
     today = datetime.date.today()
     date_str = today.isoformat()
@@ -259,8 +259,8 @@ def test_t4_count_mismatch_marked_and_retried(tmp_db: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_t5_stale_handle_is_retried(tmp_db: Path) -> None:
-    from orchestration.runner import is_stale, ingest_handle
-    from orchestration import config as cfg
+    from fintwit.orchestration.runner import is_stale, ingest_handle
+    from fintwit.orchestration import config as cfg
 
     now = datetime.datetime.now(UTC)
     old_ts   = _iso(now - datetime.timedelta(minutes=cfg.STALE_THRESHOLD_MINUTES + 10))
@@ -304,7 +304,7 @@ def test_t5_stale_handle_is_retried(tmp_db: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_t6_double_run_skipped(tmp_db: Path) -> None:
-    from orchestration.runner import ingest_handle
+    from fintwit.orchestration.runner import ingest_handle
 
     now = datetime.datetime.now(UTC)
     fresh_ts = _iso(now - datetime.timedelta(seconds=30))
@@ -325,7 +325,7 @@ def test_t6_double_run_skipped(tmp_db: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def test_t7_ingest_all_isolation(tmp_db: Path) -> None:
-    from orchestration.runner import ingest_all
+    from fintwit.orchestration.runner import ingest_all
 
     for h in ("alice", "bob", "carol"):
         upsert_handle(h, {"status": "pending"}, db_path=tmp_db)
@@ -344,7 +344,7 @@ def test_t7_ingest_all_isolation(tmp_db: Path) -> None:
                 return FetchResult(tweets=tweets_ok, reached_floor=True)
         return FailForBob()
 
-    with patch("orchestration.day_fetcher.get_source", side_effect=fake_get_source), \
+    with patch("fintwit.orchestration.day_fetcher.get_source", side_effect=fake_get_source), \
          _patch_delay():
         results = ingest_all(db_path=tmp_db, _backfill_since=today, sequential=True)
 
@@ -363,7 +363,7 @@ def test_t7_ingest_all_isolation(tmp_db: Path) -> None:
 
 def test_t8_all_days_failed_is_incomplete(tmp_db: Path) -> None:
     """Both providers fail every day → outcome=incomplete, coverage_floor=None."""
-    from orchestration.runner import ingest_handle
+    from fintwit.orchestration.runner import ingest_handle
 
     gx_fail = FakeSource(fail_provider="getxapi",    provider_name="getxapi")
     tw_fail = FakeSource(fail_provider="twitterapi", provider_name="twitterapi")

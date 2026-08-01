@@ -1,10 +1,10 @@
 """CLI for standalone storage testing.
 
 Usage:
-  python -m storage init
-  python -m storage show-handle --handle H
-  python -m storage list-handles
-  python -m storage tweets --handle H [--limit N] [--since ISO_UTC]
+  python -m fintwit.storage init
+  python -m fintwit.storage show-handle --handle H
+  python -m fintwit.storage list-handles
+  python -m fintwit.storage tweets --handle H [--limit N] [--since ISO_UTC]
 """
 
 import argparse

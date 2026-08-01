@@ -14,9 +14,9 @@ from datetime import datetime, timezone
 
 import pandas as pd
 
-from ticker_digest import cache, config
-from ticker_digest.market import fred_client
-from ticker_digest.models import IndicatorBucket, IndicatorSource, MarketIndicator, MarketSnapshot
+from core import cache, config
+from core.market import fred_client
+from core.models import IndicatorBucket, IndicatorSource, MarketIndicator, MarketSnapshot
 
 log = logging.getLogger(__name__)
 

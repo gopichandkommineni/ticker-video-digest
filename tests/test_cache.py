@@ -4,8 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from ticker_digest import cache
-from ticker_digest.models import Transcript, TranscriptSegment, VideoMetadata
+from core import cache
+from core.models import Transcript, TranscriptSegment, VideoMetadata
 
 
 @pytest.fixture

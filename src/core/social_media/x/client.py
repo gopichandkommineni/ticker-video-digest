@@ -9,8 +9,8 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
-from ticker_digest.config import X_BEARER_TOKEN
-from ticker_digest.social_media.base import SocialPost, SocialSignals, SocialScraper
+from core.config import X_BEARER_TOKEN
+from core.social_media.base import SocialPost, SocialSignals, SocialScraper
 
 logger = logging.getLogger(__name__)
 

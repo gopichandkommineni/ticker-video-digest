@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from storage.db import init_db
-from storage.tweets import upsert_tweets
-from storage.handles import get_handle, list_handles
-from storage.reads import get_tweets_by_handle, count_tweets
+from fintwit.storage.db import init_db
+from fintwit.storage.tweets import upsert_tweets
+from fintwit.storage.handles import get_handle, list_handles
+from fintwit.storage.reads import get_tweets_by_handle, count_tweets
 
 
 def _db(tmp_path: Path) -> Path:
@@ -166,24 +166,24 @@ class TestHandleNormalization:
     """normalize_handle is applied at every entry point; all variants map to one row."""
 
     def test_normalize_strips_at_sign(self):
-        from storage.handles import normalize_handle
+        from fintwit.storage.handles import normalize_handle
         assert normalize_handle("@Venu_7_") == "venu_7_"
 
     def test_normalize_trims_whitespace(self):
-        from storage.handles import normalize_handle
+        from fintwit.storage.handles import normalize_handle
         assert normalize_handle("  Venu_7_  ") == "venu_7_"
 
     def test_normalize_strips_at_and_whitespace_combined(self):
-        from storage.handles import normalize_handle
+        from fintwit.storage.handles import normalize_handle
         assert normalize_handle(" @Venu_7_ ") == "venu_7_"
 
     def test_normalize_lowercases(self):
-        from storage.handles import normalize_handle
+        from fintwit.storage.handles import normalize_handle
         assert normalize_handle("Venu_7_") == "venu_7_"
 
     def test_all_variants_create_one_row(self, tmp_path):
         """@Venu_7_, Venu_7_, ' @Venu_7_ ', and venu_7_ must all resolve to one handle row."""
-        from storage.handles import normalize_handle, upsert_handle, get_handle, list_handles
+        from fintwit.storage.handles import normalize_handle, upsert_handle, get_handle, list_handles
         db = _db(tmp_path)
 
         variants = ["@Venu_7_", "Venu_7_", " @Venu_7_ ", "venu_7_"]

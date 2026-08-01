@@ -4,7 +4,7 @@ Seeds the DB from data we already paid the API for, so a fresh handle does not
 need to be re-fetched. Idempotent: re-running unions tweets (INSERT OR IGNORE)
 and re-marks day rows.
 
-For each probes/variance/<date>_<handle>/ folder:
+For each research/probes/variance/<date>_<handle>/ folder:
   1. Parse meta.md for `since` and the run date (window end).
   2. Union all run JSONs per provider -> tweets.
   3. Upsert tweets into raw_tweets.
@@ -26,15 +26,15 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from storage.db import init_db, close_connection  # noqa: E402
-from storage.handles import normalize_handle, upsert_handle  # noqa: E402
-from storage.tweets import upsert_tweets  # noqa: E402
-from storage.day_log import populate_pending_days  # noqa: E402
-from orchestration.day_fetcher import PROVIDERS, _verify_and_mark, _iso_now  # noqa: E402
+from fintwit.storage.db import init_db, close_connection  # noqa: E402
+from fintwit.storage.handles import normalize_handle, upsert_handle  # noqa: E402
+from fintwit.storage.tweets import upsert_tweets  # noqa: E402
+from fintwit.storage.day_log import populate_pending_days  # noqa: E402
+from fintwit.orchestration.day_fetcher import PROVIDERS, _verify_and_mark, _iso_now  # noqa: E402
 
-_PROBE_ROOT = Path(__file__).parent.parent / "probes" / "variance"
+_PROBE_ROOT = Path(__file__).parent.parent / "research" / "probes" / "variance"
 
 # Filename prefixes -> canonical provider name used everywhere else.
 _PROVIDER_FILES = {"getxapi": "getxapi", "twitterapi": "twitterapi"}

@@ -16,8 +16,8 @@ from typing import Any
 import anthropic
 from pydantic import BaseModel
 
-from ticker_digest import cache
-from ticker_digest.models import (
+from core import cache
+from core.models import (
     MarketRegime,
     MarketSnapshot,
     MarketThesis,

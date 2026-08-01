@@ -6,8 +6,8 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
-from ticker_digest.config import REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET
-from ticker_digest.social_media.base import SocialPost, SocialSignals, SocialScraper
+from core.config import REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET
+from core.social_media.base import SocialPost, SocialSignals, SocialScraper
 
 logger = logging.getLogger(__name__)
 

@@ -13,7 +13,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ticker_digest.models import MarketIndicator, MarketThesis, Transcript, VideoMetadata
+from core.models import MarketIndicator, MarketThesis, Transcript, VideoMetadata
 
 log = logging.getLogger(__name__)
 

@@ -3,7 +3,7 @@ import os
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from ticker_digest.social_media.reddit.apewisdom_client import fetch_apewisdom_universe, filter_to_universe
+from core.social_media.reddit.apewisdom_client import fetch_apewisdom_universe, filter_to_universe
 from casino_dashboard.data.congress_legislators_fetcher import fetch_committee_membership
 from casino_dashboard.data.congress_trades_fetcher import fetch_recent_congress_trades
 from casino_dashboard.data.deal_log_loader import load_deal_log_from_yaml

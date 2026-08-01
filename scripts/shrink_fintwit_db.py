@@ -17,7 +17,7 @@ import argparse
 import os
 import sys
 
-from storage.db import _DEFAULT_DB, get_connection
+from fintwit.storage.db import _DEFAULT_DB, get_connection
 
 
 def shrink(db_path: str | None = None) -> int:

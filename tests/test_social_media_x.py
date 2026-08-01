@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ticker_digest.social_media.x.client import XScraper
-from ticker_digest.social_media.base import SocialSignals
+from core.social_media.x.client import XScraper
+from core.social_media.base import SocialSignals
 
 
 # ---------------------------------------------------------------------------
@@ -41,15 +41,15 @@ def _tweet(tid: str = "t1", author_id: str = "u1", text: str = "$RKLB to moon") 
 
 class TestXScraperNoCredentials:
     def setup_method(self):
-        with patch("ticker_digest.social_media.x.client.X_BEARER_TOKEN", ""):
+        with patch("core.social_media.x.client.X_BEARER_TOKEN", ""):
             self.scraper = XScraper()
 
     def test_is_available_false(self):
-        with patch("ticker_digest.social_media.x.client.X_BEARER_TOKEN", ""):
+        with patch("core.social_media.x.client.X_BEARER_TOKEN", ""):
             scraper = XScraper()
             assert not scraper.is_available
 
-    @patch("ticker_digest.social_media.x.client.X_BEARER_TOKEN", "")
+    @patch("core.social_media.x.client.X_BEARER_TOKEN", "")
     def test_returns_empty_signals_when_no_token(self):
         scraper = XScraper()
         result = scraper.search_ticker("RKLB")
@@ -64,11 +64,11 @@ class TestXScraperNoCredentials:
 
 class TestXScraperWithCredentials:
     def setup_method(self):
-        with patch("ticker_digest.social_media.x.client.X_BEARER_TOKEN", "fake-token"):
+        with patch("core.social_media.x.client.X_BEARER_TOKEN", "fake-token"):
             self.scraper = XScraper()
 
-    @patch("ticker_digest.social_media.x.client.X_BEARER_TOKEN", "fake-token")
-    @patch("ticker_digest.social_media.x.client.requests.get")
+    @patch("core.social_media.x.client.X_BEARER_TOKEN", "fake-token")
+    @patch("core.social_media.x.client.requests.get")
     def test_returns_social_signals(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.json.return_value = _api_response([_tweet()])
@@ -80,8 +80,8 @@ class TestXScraperWithCredentials:
         assert result.platform == "x"
         assert len(result.posts) == 1
 
-    @patch("ticker_digest.social_media.x.client.X_BEARER_TOKEN", "fake-token")
-    @patch("ticker_digest.social_media.x.client.requests.get")
+    @patch("core.social_media.x.client.X_BEARER_TOKEN", "fake-token")
+    @patch("core.social_media.x.client.requests.get")
     def test_post_fields_populated(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.json.return_value = _api_response([_tweet(tid="t99")])
@@ -99,8 +99,8 @@ class TestXScraperWithCredentials:
         assert post.ticker == "RKLB"
         assert post.title is None  # X has no titles
 
-    @patch("ticker_digest.social_media.x.client.X_BEARER_TOKEN", "fake-token")
-    @patch("ticker_digest.social_media.x.client.requests.get")
+    @patch("core.social_media.x.client.X_BEARER_TOKEN", "fake-token")
+    @patch("core.social_media.x.client.requests.get")
     def test_pagination_stops_on_no_next_token(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.json.return_value = _api_response([_tweet()])
@@ -110,8 +110,8 @@ class TestXScraperWithCredentials:
         result = self.scraper.search_ticker("RKLB", max_posts=50)
         assert mock_get.call_count == 1  # only one page needed
 
-    @patch("ticker_digest.social_media.x.client.X_BEARER_TOKEN", "fake-token")
-    @patch("ticker_digest.social_media.x.client.requests.get")
+    @patch("core.social_media.x.client.X_BEARER_TOKEN", "fake-token")
+    @patch("core.social_media.x.client.requests.get")
     def test_http_error_returns_partial_results(self, mock_get):
         import requests as req_lib
 
@@ -127,8 +127,8 @@ class TestXScraperWithCredentials:
         result = self.scraper.search_ticker("RKLB", max_posts=200)
         assert len(result.posts) == 1  # first page succeeded
 
-    @patch("ticker_digest.social_media.x.client.X_BEARER_TOKEN", "fake-token")
-    @patch("ticker_digest.social_media.x.client.requests.get")
+    @patch("core.social_media.x.client.X_BEARER_TOKEN", "fake-token")
+    @patch("core.social_media.x.client.requests.get")
     def test_unknown_author_falls_back_to_id(self, mock_get):
         tweet = _tweet(tid="t2", author_id="unknown_id")
         mock_resp = MagicMock()

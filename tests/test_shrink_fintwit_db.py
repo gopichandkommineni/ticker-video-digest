@@ -3,8 +3,8 @@ data/fintwit.db under GitHub's 100MB file-size limit."""
 
 from __future__ import annotations
 
-from storage.db import get_connection
-from storage.tweets import upsert_tweets
+from fintwit.storage.db import get_connection
+from fintwit.storage.tweets import upsert_tweets
 from scripts.shrink_fintwit_db import shrink
 
 from tests.worker_pool_helpers import fresh_db, make_tweet_dicts

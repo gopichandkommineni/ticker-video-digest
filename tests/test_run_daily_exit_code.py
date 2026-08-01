@@ -15,7 +15,7 @@ import runpy
 
 import pytest
 
-from orchestration.runner import RunResult
+from fintwit.orchestration.runner import RunResult
 
 SCRIPT = "scripts/run_daily.py"
 
@@ -28,9 +28,9 @@ def _result(handle: str, outcome: str) -> RunResult:
 
 
 def _run(results: list[RunResult], monkeypatch, capsys) -> tuple[int, str]:
-    monkeypatch.setattr("orchestration.runner.ingest_all", lambda *a, **k: results)
+    monkeypatch.setattr("fintwit.orchestration.runner.ingest_all", lambda *a, **k: results)
     # Never checkpoint/touch the live data/fintwit.db from a test.
-    monkeypatch.setattr("storage.close_connection", lambda *a, **k: None)
+    monkeypatch.setattr("fintwit.storage.close_connection", lambda *a, **k: None)
     monkeypatch.setenv("GITHUB_STEP_SUMMARY", "/dev/null")
     code: int = 0
     try:

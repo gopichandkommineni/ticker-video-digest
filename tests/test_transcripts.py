@@ -10,7 +10,7 @@ from youtube_transcript_api._errors import (
 )
 
 from ticker_digest import transcripts
-from ticker_digest.models import Transcript, TranscriptSegment
+from core.models import Transcript, TranscriptSegment
 
 
 def _make_fetched(language_code: str = "en", segments=None):

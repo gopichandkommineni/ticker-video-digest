@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from storage.db import VALID_DAY_FETCH_STATUSES, init_db
+from fintwit.storage.db import VALID_DAY_FETCH_STATUSES, init_db
 
 
 def _cols(conn, table: str) -> set[str]:
@@ -18,7 +18,7 @@ def _pk(conn, table: str) -> list[str]:
 
 
 def _conn(tmp_path: Path):
-    from storage.db import get_connection
+    from fintwit.storage.db import get_connection
     db = tmp_path / "fintwit.db"
     init_db(db)
     return get_connection(db)
