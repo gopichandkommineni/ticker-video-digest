@@ -5,10 +5,13 @@ name: FinTwit — Daily Tweet Ingest
 # the Actions run ("Summary" tab).
 
 on:
-  schedule:
-    - cron: "0 6 * * *"   # 2am ET — overnight ingest (shares the db-writer queue
-                          #          with Daily Refresh, which also starts at 0 6)
-  workflow_dispatch:        # also runnable on demand from the Actions tab
+  # PAUSED: daily tweet-delta ingest is currently disabled. The pipeline is
+  # unchanged and still runnable on demand from the Actions tab. To resume the
+  # daily schedule, uncomment the `schedule` block below.
+  # schedule:
+  #   - cron: "0 6 * * *"   # 2am ET — overnight ingest (shares the db-writer queue
+  #                         #          with Daily Refresh, which also starts at 0 6)
+  workflow_dispatch:        # runnable on demand from the Actions tab
 
 # Only one DB-writing job runs at a time (see Daily Refresh for the full note):
 # all workflows that commit to the shared DBs queue here instead of racing.
