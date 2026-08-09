@@ -3,7 +3,9 @@
 import sqlite3
 from pathlib import Path
 
-_DEFAULT_DB = Path(__file__).parent.parent / "data" / "fintwit.db"
+# Repo-root data dir: this file is src/fintwit/storage/db.py, so parents[3] is
+# the repo root. (Keep in sync if this module moves — see test_storage_db_v1.)
+_DEFAULT_DB = Path(__file__).parents[3] / "data" / "fintwit.db"
 
 # The seven valid values for day_fetch_log.status (spec §3.2). SQLite TEXT
 # columns are unconstrained, so this is documentation + an optional pre-write

@@ -7,6 +7,24 @@ from pathlib import Path
 from fintwit.storage.db import VALID_DAY_FETCH_STATUSES, init_db
 
 
+def test_default_db_points_at_repo_root_data_dir():
+    """Regression guard: _DEFAULT_DB must resolve to <repo-root>/data/fintwit.db.
+
+    This is __file__-relative (parents[N]), so moving fintwit/storage/db.py in
+    the tree silently breaks every default-path DB access (run_daily, backfill).
+    Anchor it to the repo root, identified by pyproject.toml.
+    """
+    from fintwit.storage.db import _DEFAULT_DB
+
+    assert _DEFAULT_DB.name == "fintwit.db"
+    assert _DEFAULT_DB.parent.name == "data"
+    repo_root = _DEFAULT_DB.parent.parent
+    assert (repo_root / "pyproject.toml").is_file(), (
+        f"_DEFAULT_DB {_DEFAULT_DB} does not sit under the repo root "
+        f"(no pyproject.toml at {repo_root})"
+    )
+
+
 def _cols(conn, table: str) -> set[str]:
     return {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
 

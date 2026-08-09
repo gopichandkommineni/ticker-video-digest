@@ -16,10 +16,11 @@ import os
 import sys
 from pathlib import Path
 
-# Load .env from repo root so keys are available
+# Load .env from repo root so keys are available. This file is
+# src/fintwit/tweet_sources/__main__.py, so parents[3] is the repo root.
 try:
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).parents[1] / ".env")
+    load_dotenv(Path(__file__).parents[3] / ".env")
 except ImportError:
     pass
 

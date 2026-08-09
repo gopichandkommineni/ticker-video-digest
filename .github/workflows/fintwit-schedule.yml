@@ -1,0 +1,142 @@
+name: FinTwit — Pause/Resume Daily Ingest
+
+# The pause/resume control "buttons" for the daily tweet-delta ingest.
+# Run from the Actions tab (Run workflow -> pick an action). No code edit needed.
+#
+#   pause               Stop the daily delta indefinitely. Scheduled and manual
+#                       daily runs skip until you resume. (Flips the state file
+#                       .github/fintwit-daily.state to "paused".)
+#   resume              Resume the daily delta going forward only. The next run
+#                       covers just the last ~3 days, as usual — it does NOT fill
+#                       the days missed while paused.
+#   resume-and-backfill Resume AND fill the gap. Range-backfills every tracked
+#                       handle from `since` (or, if blank, the last successful
+#                       daily run recorded in .github/fintwit-daily.last) through
+#                       today, then leaves the daily delta running.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to do with the daily tweet-delta ingest"
+        required: true
+        type: choice
+        default: pause
+        options:
+          - pause
+          - resume
+          - resume-and-backfill
+      since:
+        description: "resume-and-backfill only: gap-fill start YYYY-MM-DD (blank = last successful daily run)"
+        required: false
+        type: string
+
+# Share the db-writer queue: resume-and-backfill writes data/fintwit.db, so it
+# must not race the daily ingest or other DB writers. pause/resume only touch
+# the tiny state file and simply wait their (brief) turn.
+concurrency:
+  group: db-writer
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  control:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      # pause / resume / resume-and-backfill all set the run state to active
+      # except pause. Written first so a subsequent backfill runs un-paused.
+      - name: Set pause state
+        run: |
+          if [ "${{ inputs.action }}" = "pause" ]; then
+            echo "paused" > .github/fintwit-daily.state
+          else
+            echo "active" > .github/fintwit-daily.state
+          fi
+          echo "State is now: $(cat .github/fintwit-daily.state)"
+
+      - name: Set up Python 3.11
+        if: inputs.action == 'resume-and-backfill'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install project
+        if: inputs.action == 'resume-and-backfill'
+        run: pip install -e ".[dev]"
+
+      - name: Write .env from secrets
+        if: inputs.action == 'resume-and-backfill'
+        run: |
+          printf 'GETXAPI_KEY=%s\n'        "${{ secrets.GETXAPI_KEY }}"        > .env
+          printf 'TWITTERAPI_IO_KEY=%s\n'  "${{ secrets.TWITTERAPI_IO_KEY }}"  >> .env
+
+      - name: Backfill the gap across all tracked handles
+        id: backfill
+        if: inputs.action == 'resume-and-backfill'
+        env:
+          PYTHONPATH: src
+          # Gap-fill uses twitterapi (credits account), like the manual backfill
+          # workflow. run_days/reconcile handle single-provider completeness.
+          WORKER_POOL_SIZES: '{"twitterapi": 5}'
+        run: |
+          set -euo pipefail
+
+          # Start date: explicit input wins; otherwise the last successful daily run.
+          SINCE="${{ inputs.since }}"
+          if [ -z "$SINCE" ]; then
+            SINCE=$(cat .github/fintwit-daily.last 2>/dev/null | tr -d '[:space:]')
+          fi
+          if [ -z "$SINCE" ]; then
+            echo "::error title=No gap-fill start::No 'since' provided and .github/fintwit-daily.last is empty."
+            exit 1
+          fi
+          UNTIL=$(date -u +%F)
+          echo "Gap-fill window: $SINCE -> $UNTIL"
+
+          # Every tracked handle, comma-separated (run_backfill.py accepts a list).
+          HANDLES=$(python -c "from fintwit.storage.handles import list_handles; print(','.join(r['handle'] for r in list_handles()))")
+          if [ -z "$HANDLES" ]; then
+            echo "No tracked handles — nothing to backfill."
+            echo "backfilled=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Handles: $HANDLES"
+
+          python scripts/run_backfill.py "$HANDLES" --since "$SINCE" --until "$UNTIL"
+          echo "backfilled=1" >> "$GITHUB_OUTPUT"
+          echo "window=$SINCE -> $UNTIL" >> "$GITHUB_OUTPUT"
+
+      # Commit the state change and any DB changes from the backfill. Stages only
+      # the known paths — never `git add -A`. Runs on always() so a mid-backfill
+      # failure still persists partial progress and the state flip.
+      - name: Commit state + DB to main
+        if: always()
+        run: |
+          git config user.name  "fintwit-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -- .github/fintwit-daily.state
+          test -f data/fintwit.db && git add -- data/fintwit.db || true
+          git diff --cached --quiet && echo "Nothing to commit" && exit 0
+          git commit -m "FinTwit daily ingest: ${{ inputs.action }}"
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### FinTwit daily ingest → **${{ inputs.action }}**"
+            echo ""
+            echo "- state: \`$(cat .github/fintwit-daily.state)\`"
+            echo "- last known daily: \`$(cat .github/fintwit-daily.last 2>/dev/null || echo 'n/a')\`"
+            if [ "${{ inputs.action }}" = "resume-and-backfill" ]; then
+              echo "- backfill window: \`${{ steps.backfill.outputs.window || 'n/a' }}\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
