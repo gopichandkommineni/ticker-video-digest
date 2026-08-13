@@ -108,7 +108,7 @@ def _about_payload(name, subs, desc):
 def test_discover_ranks_and_flags(monkeypatch):
     now = time.time()
 
-    def router(url, params=None, headers=None, timeout=None):
+    def router(url, params=None, headers=None, timeout=None, proxies=None):
         if "/subreddits/search.json" in url:
             return _resp(payload={"data": {"children": [
                 {"data": {"display_name": "RocketLab"}},
@@ -139,7 +139,7 @@ def test_discover_ranks_and_flags(monkeypatch):
 
 
 def test_discover_flags_when_nothing_found(monkeypatch):
-    def router(url, params=None, headers=None, timeout=None):
+    def router(url, params=None, headers=None, timeout=None, proxies=None):
         if "/subreddits/search.json" in url:
             return _resp(payload={"data": {"children": []}})
         return _resp(status=404)  # no sub exists

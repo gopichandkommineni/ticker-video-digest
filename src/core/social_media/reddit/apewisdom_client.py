@@ -6,26 +6,37 @@ the Reddit scraper.
 """
 import logging
 import time
-from urllib.request import Request, urlopen
+from urllib.request import Request, urlopen, build_opener, ProxyHandler
 from urllib.error import HTTPError, URLError
 import json
 
 from casino_dashboard.data.models import ApeWisdomMention
+from core.social_media.reddit._http import reddit_proxy_url, reddit_user_agent
 
 logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://apewisdom.io/api/v1.0/filter/{filter}/page/{page}"
-_USER_AGENT = "casino-dashboard/0.1 (https://github.com/gopichandkommineni/ticker-video-digest)"
 _PAGE_DELAY = 1.0
 _RATE_LIMIT_BACKOFF = 30.0
+
+
+def _open(req: Request):
+    """Open *req*, routing through REDDIT_PROXY when configured. Falls back to a
+    direct ``urlopen`` (which the unit tests patch) when no proxy is set.
+    """
+    proxy = reddit_proxy_url()
+    if proxy:
+        opener = build_opener(ProxyHandler({"http": proxy, "https": proxy}))
+        return opener.open(req, timeout=15)
+    return urlopen(req, timeout=15)
 
 
 def _fetch_page(filter: str, page: int) -> list[dict]:
     """Fetch one page from ApeWisdom. Returns list of result dicts, or [] on empty/error."""
     url = _BASE_URL.format(filter=filter, page=page)
-    req = Request(url, headers={"User-Agent": _USER_AGENT})
+    req = Request(url, headers={"User-Agent": reddit_user_agent()})
     try:
-        with urlopen(req, timeout=15) as resp:
+        with _open(req) as resp:
             raw = resp.read()
     except HTTPError as exc:
         if exc.code == 429:
@@ -33,7 +44,7 @@ def _fetch_page(filter: str, page: int) -> list[dict]:
             time.sleep(_RATE_LIMIT_BACKOFF)
             # Retry once
             try:
-                with urlopen(req, timeout=15) as resp:
+                with _open(req) as resp:
                     raw = resp.read()
             except HTTPError as exc2:
                 logger.error("ApeWisdom 429 on retry for page %d: %s", page, exc2)

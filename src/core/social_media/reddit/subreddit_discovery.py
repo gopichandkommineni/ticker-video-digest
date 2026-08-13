@@ -23,12 +23,13 @@ from datetime import datetime, timedelta, timezone
 import requests
 from pydantic import BaseModel, Field
 
+from core.social_media.reddit._http import reddit_proxies, reddit_user_agent
+
 logger = logging.getLogger(__name__)
 
 _ABOUT_URL = "https://www.reddit.com/r/{sub}/about.json"
 _NEW_URL = "https://www.reddit.com/r/{sub}/new.json"
 _SUB_SEARCH_URL = "https://www.reddit.com/subreddits/search.json"
-_USER_AGENT = "casino-dashboard/0.1 (subreddit discovery; +https://github.com/gopichandkommineni/ticker-video-digest)"
 
 _REQUEST_DELAY = 0.5   # polite pause between public-API calls
 _MAX_CANDIDATES = 40   # hard cap on subs probed per ticker (bounds request volume)
@@ -149,7 +150,7 @@ def generate_candidates(
 # ---------------------------------------------------------------------------
 
 def _headers() -> dict[str, str]:
-    return {"User-Agent": _USER_AGENT}
+    return {"User-Agent": reddit_user_agent()}
 
 
 def fetch_about(name: str) -> SubredditInfo | None:
@@ -158,7 +159,8 @@ def fetch_about(name: str) -> SubredditInfo | None:
     """
     try:
         resp = requests.get(
-            _ABOUT_URL.format(sub=name), headers=_headers(), timeout=10
+            _ABOUT_URL.format(sub=name), headers=_headers(), timeout=10,
+            proxies=reddit_proxies(),
         )
     except requests.RequestException as exc:
         logger.debug("about fetch error for r/%s: %s", name, exc)
@@ -197,6 +199,7 @@ def count_recent_posts(name: str, days: int = 7) -> int:
             params={"limit": 100},
             headers=_headers(),
             timeout=10,
+            proxies=reddit_proxies(),
         )
     except requests.RequestException as exc:
         logger.debug("new fetch error for r/%s: %s", name, exc)
@@ -223,6 +226,7 @@ def search_subreddits(query: str, limit: int = 10) -> list[str]:
             params={"q": query, "limit": limit},
             headers=_headers(),
             timeout=10,
+            proxies=reddit_proxies(),
         )
     except requests.RequestException as exc:
         logger.debug("subreddit search error for %r: %s", query, exc)
