@@ -4,7 +4,8 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from core.social_media.reddit.apewisdom_client import fetch_apewisdom_universe, filter_to_universe
-from core.social_media.reddit.client import RedditScraper
+from casino_dashboard.data.subreddit_map_loader import load_subreddit_map
+from casino_dashboard.jobs.reddit_pull import pull_reddit_for_tickers
 from casino_dashboard.data.congress_legislators_fetcher import fetch_committee_membership
 from casino_dashboard.data.congress_trades_fetcher import fetch_recent_congress_trades
 from casino_dashboard.data.deal_log_loader import load_deal_log_from_yaml
@@ -24,7 +25,6 @@ from casino_dashboard.db.repository import (
     save_etf_flow,
     save_manual_note,
     save_sector_etf_mapping,
-    save_reddit_posts,
     save_signal,
     save_snapshot,
     save_social_mention,
@@ -419,41 +419,10 @@ def _refresh_reddit_posts(
     per_ticker = int(os.environ.get("REDDIT_POSTS_PER_TICKER", "25"))
 
     targets = _select_reddit_tickers(all_tickers, priority, max_tickers)
-    scraper = RedditScraper()
-
-    total_posts = 0
-    tickers_covered = 0
-    for ticker in targets:
-        try:
-            signals = scraper.search_ticker(ticker, days_back=7, max_posts=per_ticker)
-        except Exception as exc:
-            logger.warning("Reddit fetch failed for %s (continuing): %s", ticker, exc)
-            continue
-
-        if not signals.posts:
-            continue
-
-        save_reddit_posts(signals.posts, db_path)
-        total_posts += len(signals.posts)
-        tickers_covered += 1
-
-        # Per-subreddit aggregate → social_mentions (non-empty subreddit).
-        by_sub: dict[str, list[int]] = {}
-        for p in signals.posts:
-            by_sub.setdefault(p.subreddit or "unknown", []).append(p.score)
-        for sub_name, scores in by_sub.items():
-            save_social_mention(
-                ticker=ticker,
-                mention_date=today,
-                source="reddit",
-                mention_count=len(scores),
-                mentions_24h_ago=None,
-                upvote_sum=sum(scores),
-                subreddit=sub_name,
-                db_path=db_path,
-            )
-
-    return total_posts, tickers_covered
+    subreddit_map = load_subreddit_map()
+    return pull_reddit_for_tickers(
+        targets, today, db_path, subreddit_map=subreddit_map, per_ticker=per_ticker
+    )
 
 
 def _refresh_congress(db_path: Path) -> None:

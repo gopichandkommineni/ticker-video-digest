@@ -60,3 +60,20 @@ def test_run_flags_nothing_found():
          patch.object(runner, "discover", return_value=result):
         lines = runner.run(["ZZZZ"], sleep=False)
     assert any("No matching subreddit found" in ln for ln in lines)
+
+
+def test_run_save_persists_selected_subreddits():
+    result = DiscoveryResult(
+        ticker="RKLB", company_name="Rocket Lab",
+        subreddits=[_scored("RocketLab", 42000, True), _scored("RKLBfan", 3, False)],
+    )
+    with patch.object(runner, "resolve_ticker", return_value="RKLB"), \
+         patch.object(runner, "company_name_for", return_value="Rocket Lab"), \
+         patch.object(runner, "_universe_tickers", return_value=None), \
+         patch.object(runner, "discover", return_value=result), \
+         patch.object(runner, "save_subreddit_map") as mock_save:
+        runner.run(["RKLB"], sleep=False, save=True)
+
+    # Only the SELECTED subreddit is persisted (noise dropped).
+    args, kwargs = mock_save.call_args
+    assert args[0] == {"RKLB": ["RocketLab"]}

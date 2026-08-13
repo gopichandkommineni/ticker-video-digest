@@ -20,6 +20,7 @@ import sys
 
 from core.social_media.reddit.subreddit_discovery import DiscoveryResult, discover
 from core.social_media.reddit.ticker_resolver import company_name_for, resolve_ticker
+from casino_dashboard.data.subreddit_map_loader import save_subreddit_map
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -76,9 +77,10 @@ def _result_lines(query: str, result: DiscoveryResult | None, ticker: str | None
     return lines
 
 
-def run(queries: list[str], sleep: bool = True) -> list[str]:
+def run(queries: list[str], sleep: bool = True, save: bool = False) -> list[str]:
     universe = _universe_tickers()
     lines: list[str] = ["## Subreddit discovery", ""]
+    discovered: dict[str, list[str]] = {}
 
     for query in queries:
         ticker = resolve_ticker(query, universe)
@@ -96,13 +98,29 @@ def run(queries: list[str], sleep: bool = True) -> list[str]:
         logger.info("Discovering subreddits for %s (%s) …", ticker, company or "no name")
         result = discover(ticker, company_name=company, sleep=sleep)
         lines += _result_lines(query, result, ticker)
+        # Record the selected subreddits (may be empty — a deliberate "found
+        # nothing" record so the map shows the ticker was checked).
+        discovered[ticker] = [s.info.name for s in result.selected]
+
+    if save and discovered:
+        from datetime import date  # noqa: PLC0415
+
+        save_subreddit_map(discovered, updated=date.today().isoformat())
+        saved_note = (
+            f"_Saved {len(discovered)} ticker(s) to config/ticker_subreddits.yaml — "
+            "review and commit._"
+        )
+        logger.info("Wrote %d tickers to config/ticker_subreddits.yaml", len(discovered))
+        lines += ["", saved_note, ""]
 
     return lines
 
 
 def main() -> None:
-    queries = _resolve_queries(sys.argv[1:])
-    lines = run(queries)
+    argv = sys.argv[1:]
+    save = "--save" in argv or os.environ.get("SUBREDDIT_DISCOVERY_SAVE", "").strip() not in ("", "0", "false", "False")
+    queries = _resolve_queries([a for a in argv if a != "--save"])
+    lines = run(queries, save=save)
     report = "\n".join(lines) + "\n"
     print("\n" + report)
 

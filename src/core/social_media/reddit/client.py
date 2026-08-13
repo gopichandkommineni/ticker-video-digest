@@ -53,11 +53,17 @@ class RedditScraper(SocialScraper):
         ticker: str,
         days_back: int = 7,
         max_posts: int = 50,
+        subreddits: list[str] | None = None,
     ) -> SocialSignals:
+        """Fetch posts mentioning *ticker*. Pass *subreddits* to override the
+        default finance subs for this call (e.g. a ticker's own discovered
+        communities); None uses the scraper's configured defaults.
+        """
+        subs = subreddits or self._subreddits
         if self._praw_reddit is not None:
-            posts = self._fetch_via_praw(ticker, days_back, max_posts)
+            posts = self._fetch_via_praw(ticker, days_back, max_posts, subs)
         else:
-            posts = self._fetch_via_public_api(ticker, days_back, max_posts)
+            posts = self._fetch_via_public_api(ticker, days_back, max_posts, subs)
 
         logger.info("Reddit: fetched %d posts for %s", len(posts), ticker)
         return SocialSignals(
@@ -96,15 +102,17 @@ class RedditScraper(SocialScraper):
             return None
 
     def _fetch_via_praw(
-        self, ticker: str, days_back: int, max_posts: int
+        self, ticker: str, days_back: int, max_posts: int,
+        subreddits: list[str] | None = None,
     ) -> list[SocialPost]:
         assert self._praw_reddit is not None
+        subs = subreddits or self._subreddits
         cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days_back)
         query = f"${ticker} OR {ticker}"
         posts: list[SocialPost] = []
 
-        per_sub = max(max_posts // len(self._subreddits), 10)
-        for sub_name in self._subreddits:
+        per_sub = max(max_posts // max(len(subs), 1), 10)
+        for sub_name in subs:
             try:
                 subreddit = self._praw_reddit.subreddit(sub_name)
                 for submission in subreddit.search(query, sort="top", time_filter="week", limit=per_sub):
@@ -136,12 +144,14 @@ class RedditScraper(SocialScraper):
     # ------------------------------------------------------------------
 
     def _fetch_via_public_api(
-        self, ticker: str, days_back: int, max_posts: int
+        self, ticker: str, days_back: int, max_posts: int,
+        subreddits: list[str] | None = None,
     ) -> list[SocialPost]:
+        subs = subreddits or self._subreddits
         cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days_back)
         posts: list[SocialPost] = []
 
-        for sub_name in self._subreddits:
+        for sub_name in subs:
             try:
                 params = {
                     "q": f"${ticker}",
