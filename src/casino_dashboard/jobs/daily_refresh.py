@@ -4,6 +4,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from core.social_media.reddit.apewisdom_client import fetch_apewisdom_universe, filter_to_universe
+from core.social_media.reddit.client import RedditScraper
 from casino_dashboard.data.congress_legislators_fetcher import fetch_committee_membership
 from casino_dashboard.data.congress_trades_fetcher import fetch_recent_congress_trades
 from casino_dashboard.data.deal_log_loader import load_deal_log_from_yaml
@@ -23,6 +24,7 @@ from casino_dashboard.db.repository import (
     save_etf_flow,
     save_manual_note,
     save_sector_etf_mapping,
+    save_reddit_posts,
     save_signal,
     save_snapshot,
     save_social_mention,
@@ -87,6 +89,9 @@ def main(db_path: Path = _DEFAULT_DB) -> None:
 
         logger.info("Fetching ApeWisdom social mentions …")
         today = date.today()
+        # Tickers ApeWisdom reports as being discussed, most-mentioned first.
+        # Used to focus the bounded per-post Reddit fetch on names that matter.
+        reddit_priority: list[str] = []
         try:
             all_mentions = fetch_apewisdom_universe("all-stocks")
             universe_mentions = filter_to_universe(all_mentions, set(all_tickers))
@@ -101,12 +106,28 @@ def main(db_path: Path = _DEFAULT_DB) -> None:
                     upvote_sum=m.upvotes,
                     db_path=db_path,
                 )
+            reddit_priority = [
+                m.ticker for m in sorted(universe_mentions, key=lambda x: x.mentions, reverse=True)
+            ]
             logger.info("Saved %d social mentions from ApeWisdom", len(universe_mentions))
             logger.info("Skipped %d tickers not in ApeWisdom data", skipped)
             stages.append(("Social mentions", f"✓ {len(universe_mentions)} saved"))
         except Exception as exc:
             logger.error("ApeWisdom fetch failed (continuing): %s", exc)
             stages.append(("Social mentions", f"✗ failed — {exc}"))
+
+        logger.info("Fetching Reddit posts …")
+        try:
+            posts_saved, tickers_covered = _refresh_reddit_posts(
+                all_tickers, reddit_priority, today, db_path
+            )
+            logger.info("Saved %d Reddit posts across %d tickers", posts_saved, tickers_covered)
+            stages.append(
+                ("Reddit posts", f"✓ {posts_saved} posts · {tickers_covered} tickers")
+            )
+        except Exception as exc:
+            logger.error("Reddit posts fetch failed (continuing): %s", exc)
+            stages.append(("Reddit posts", f"✗ failed — {exc}"))
 
         logger.info("Fetching ticker metadata …")
         try:
@@ -343,6 +364,96 @@ def refresh_single_ticker(ticker: str, db_path: Path) -> tuple[bool, str | None]
         logger.warning("refresh_single_ticker: signal compute failed for %s: %s", ticker, exc)
 
     return True, None
+
+
+def _select_reddit_tickers(
+    all_tickers: list[str],
+    priority: list[str],
+    max_tickers: int,
+) -> list[str]:
+    """Pick which tickers to pull full Reddit posts for, capped at *max_tickers*.
+
+    Priority tickers (those ApeWisdom flagged as discussed, most-mentioned first)
+    come first; the rest of the universe fills any remaining slots in stable
+    order. Bounding keeps the polite public-JSON fetch (5 subreddits/ticker) from
+    ballooning into hundreds of requests and tripping Reddit's rate limits.
+    """
+    ordered: list[str] = []
+    seen: set[str] = set()
+    universe = set(all_tickers)
+    for t in priority:
+        if t in universe and t not in seen:
+            ordered.append(t)
+            seen.add(t)
+    for t in all_tickers:
+        if t not in seen:
+            ordered.append(t)
+            seen.add(t)
+    return ordered[:max_tickers]
+
+
+def _refresh_reddit_posts(
+    all_tickers: list[str],
+    priority: list[str],
+    today: date,
+    db_path: Path,
+) -> tuple[int, int]:
+    """Pull individual Reddit posts for a bounded set of tickers and persist them.
+
+    Uses RedditScraper (PRAW when REDDIT_CLIENT_ID/SECRET are set, else the
+    public JSON API — no credentials required). For each ticker it stores every
+    post in the reddit_posts table and writes a per-subreddit aggregate row into
+    social_mentions (source='reddit', subreddit=<name>) for future breakdowns.
+    Those aggregate rows carry a non-empty subreddit, so they are invisible to
+    the existing ApeWisdom queries that filter on subreddit=''.
+
+    Returns (total_posts_saved, tickers_covered).
+
+    Bound the fetch with REDDIT_POSTS_MAX_TICKERS (default 25). Set it to 0 to
+    skip the stage entirely.
+    """
+    max_tickers = int(os.environ.get("REDDIT_POSTS_MAX_TICKERS", "25"))
+    if max_tickers <= 0:
+        logger.info("REDDIT_POSTS_MAX_TICKERS=%d — skipping Reddit posts stage", max_tickers)
+        return 0, 0
+    per_ticker = int(os.environ.get("REDDIT_POSTS_PER_TICKER", "25"))
+
+    targets = _select_reddit_tickers(all_tickers, priority, max_tickers)
+    scraper = RedditScraper()
+
+    total_posts = 0
+    tickers_covered = 0
+    for ticker in targets:
+        try:
+            signals = scraper.search_ticker(ticker, days_back=7, max_posts=per_ticker)
+        except Exception as exc:
+            logger.warning("Reddit fetch failed for %s (continuing): %s", ticker, exc)
+            continue
+
+        if not signals.posts:
+            continue
+
+        save_reddit_posts(signals.posts, db_path)
+        total_posts += len(signals.posts)
+        tickers_covered += 1
+
+        # Per-subreddit aggregate → social_mentions (non-empty subreddit).
+        by_sub: dict[str, list[int]] = {}
+        for p in signals.posts:
+            by_sub.setdefault(p.subreddit or "unknown", []).append(p.score)
+        for sub_name, scores in by_sub.items():
+            save_social_mention(
+                ticker=ticker,
+                mention_date=today,
+                source="reddit",
+                mention_count=len(scores),
+                mentions_24h_ago=None,
+                upvote_sum=sum(scores),
+                subreddit=sub_name,
+                db_path=db_path,
+            )
+
+    return total_posts, tickers_covered
 
 
 def _refresh_congress(db_path: Path) -> None:

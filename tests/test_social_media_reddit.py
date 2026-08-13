@@ -1,5 +1,5 @@
 """Unit tests for RedditScraper — no real network calls."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -21,7 +21,9 @@ def _make_post(**overrides) -> dict:
         "permalink": "/r/stocks/comments/abc123/rklb/",
         "score": 420,
         "num_comments": 37,
-        "created_utc": datetime(2026, 5, 10, 12, 0, tzinfo=timezone.utc).timestamp(),
+        # Relative to now so the days_back=7 filter always treats it as recent
+        # (a hardcoded date turns these into time-bombs as the clock advances).
+        "created_utc": (datetime.now(tz=timezone.utc) - timedelta(days=2)).timestamp(),
     }
     return {**defaults, **overrides}
 
