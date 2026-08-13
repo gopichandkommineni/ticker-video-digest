@@ -1,0 +1,11 @@
+# Per-ticker subreddit map — which subreddits the Reddit scraper pulls for each
+# stock. Written by `python -m casino_dashboard.jobs.subreddit_discovery_run --save`,
+# and freely hand-editable: add/remove subreddits and they are respected on the
+# next run (re-running discovery for a ticker overwrites only that ticker).
+#
+# Format:
+#   tickers:
+#     RKLB:
+#       subreddits: [RocketLab, RKLB]
+#       updated: "2026-08-13"
+tickers: {}
