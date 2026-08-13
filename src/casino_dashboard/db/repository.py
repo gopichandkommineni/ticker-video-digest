@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -241,6 +241,67 @@ def get_latest_social_mentions(db_path: Path = _DEFAULT_DB_PATH) -> pd.DataFrame
         return pd.DataFrame(columns=["latest_mention_count", "mentions_24h_ago"])
     df = pd.DataFrame(rows, columns=["ticker", "latest_mention_count", "mentions_24h_ago"])
     return df.set_index("ticker")
+
+
+def save_reddit_posts(posts: "list[SocialPost]", db_path: Path = _DEFAULT_DB_PATH) -> int:
+    """Persist individual Reddit posts. INSERT OR REPLACE keyed on (post_id, ticker)
+    so re-runs are idempotent and an updated score/comment count overwrites the
+    prior row. Returns the number of posts written.
+    """
+    from core.social_media.base import SocialPost  # noqa: PLC0415, F811
+
+    if not posts:
+        return 0
+    init_db(db_path)
+    fetched_at = datetime.now(tz=timezone.utc).isoformat()
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO reddit_posts
+                (post_id, ticker, subreddit, author, title, content, url,
+                 score, comment_count, published_at, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    p.post_id, p.ticker, p.subreddit or "", p.author,
+                    p.title or "", p.content, p.url,
+                    p.score, p.comment_count, p.published_at.isoformat(), fetched_at,
+                )
+                for p in posts
+            ],
+        )
+    return len(posts)
+
+
+def get_recent_reddit_posts(
+    ticker: str,
+    days: int = 7,
+    db_path: Path = _DEFAULT_DB_PATH,
+) -> pd.DataFrame:
+    """Return recent Reddit posts for *ticker*, newest-first, published within
+    the last *days* days.
+    """
+    init_db(db_path)
+    cutoff = (datetime.now(tz=timezone.utc) - timedelta(days=days)).isoformat()
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT post_id, subreddit, author, title, content, url,
+                   score, comment_count, published_at
+            FROM reddit_posts
+            WHERE ticker = ? AND published_at >= ?
+            ORDER BY published_at DESC
+            """,
+            (ticker, cutoff),
+        ).fetchall()
+    cols = [
+        "post_id", "subreddit", "author", "title", "content", "url",
+        "score", "comment_count", "published_at",
+    ]
+    if not rows:
+        return pd.DataFrame(columns=cols)
+    return pd.DataFrame(rows, columns=cols)
 
 
 def save_ticker_metadata(metadata: TickerMetadata, db_path: Path = _DEFAULT_DB_PATH) -> None:

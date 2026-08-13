@@ -178,6 +178,33 @@ def init_db(db_path: Path = _DEFAULT_DB_PATH) -> None:
             CREATE INDEX IF NOT EXISTS idx_congress_trades_ticker
                 ON congress_trades(ticker, disclosure_date DESC);
         """)
+        conn.executescript("""
+            -- Individual Reddit posts pulled by RedditScraper (public JSON API
+            -- or PRAW). Unlike social_mentions (aggregate counts), this stores
+            -- the post itself: title, body, score, comments — the raw material
+            -- for future LLM extraction and richer momentum signals.
+            -- Keyed on (post_id, ticker) because one post can surface under
+            -- more than one ticker's search and we keep each association.
+            CREATE TABLE IF NOT EXISTS reddit_posts (
+                post_id       TEXT    NOT NULL,
+                ticker        TEXT    NOT NULL,
+                subreddit     TEXT    NOT NULL DEFAULT '',
+                author        TEXT    NOT NULL DEFAULT '',
+                title         TEXT    NOT NULL DEFAULT '',
+                content       TEXT    NOT NULL DEFAULT '',
+                url           TEXT    NOT NULL DEFAULT '',
+                score         INTEGER NOT NULL DEFAULT 0,
+                comment_count INTEGER NOT NULL DEFAULT 0,
+                published_at  TEXT    NOT NULL,
+                fetched_at    TEXT    NOT NULL,
+                PRIMARY KEY (post_id, ticker)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_reddit_posts_ticker
+                ON reddit_posts(ticker, published_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_reddit_posts_subreddit
+                ON reddit_posts(subreddit, published_at DESC);
+        """)
         # Migrate existing DBs that predate notes/tags columns
         for col in ("notes", "tags"):
             try:
