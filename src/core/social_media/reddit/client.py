@@ -8,6 +8,11 @@ import requests
 
 from core.config import REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET
 from core.social_media.base import SocialPost, SocialSignals, SocialScraper
+from core.social_media.reddit._http import (
+    reddit_proxies,
+    reddit_proxy_url,
+    reddit_user_agent,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +27,6 @@ _DEFAULT_SUBREDDITS = [
 
 _PUBLIC_SEARCH_URL = "https://www.reddit.com/search.json"
 _SUBREDDIT_SEARCH_URL = "https://www.reddit.com/r/{sub}/search.json"
-_USER_AGENT = "ticker-digest/1.0 (social signal aggregator)"
 
 
 class RedditScraper(SocialScraper):
@@ -74,10 +78,18 @@ class RedditScraper(SocialScraper):
         try:
             import praw  # noqa: PLC0415
 
+            requestor_kwargs = None
+            proxy = reddit_proxy_url()
+            if proxy:
+                session = requests.Session()
+                session.proxies.update({"http": proxy, "https": proxy})
+                requestor_kwargs = {"session": session}
+
             return praw.Reddit(
                 client_id=REDDIT_CLIENT_ID,
                 client_secret=REDDIT_CLIENT_SECRET,
-                user_agent=_USER_AGENT,
+                user_agent=reddit_user_agent(),
+                requestor_kwargs=requestor_kwargs,
             )
         except ImportError:
             logger.warning("praw not installed; falling back to public Reddit API")
@@ -141,8 +153,9 @@ class RedditScraper(SocialScraper):
                 resp = requests.get(
                     _SUBREDDIT_SEARCH_URL.format(sub=sub_name),
                     params=params,
-                    headers={"User-Agent": _USER_AGENT},
+                    headers={"User-Agent": reddit_user_agent()},
                     timeout=10,
+                    proxies=reddit_proxies(),
                 )
                 resp.raise_for_status()
                 data = resp.json()
