@@ -1,0 +1,44 @@
+name: Subreddit Discovery (live, read-only)
+
+# Manually runnable subreddit discovery. Each query is a ticker (RKLB) or a
+# company name (Rocket Lab); a name is resolved to a ticker first. Generates
+# candidate subreddit names, searches Reddit, ranks matches by community
+# metrics, and flags queries where nothing solid was found.
+#
+# READ-ONLY: writes nothing to the database and commits nothing — safe to run
+# any time. Uses Reddit's public JSON API (no credentials) plus yfinance for
+# name->ticker resolution.
+
+on:
+  workflow_dispatch:
+    inputs:
+      queries:
+        description: "Comma-separated tickers and/or company names to probe"
+        required: false
+        default: "RKLB,ASTS,IONQ,OKLO,COIN"
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+      SUBREDDIT_DISCOVERY_QUERIES: ${{ github.event.inputs.queries }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install project
+        run: pip install -e ".[dev]"
+
+      - name: Run subreddit discovery
+        run: python -m casino_dashboard.jobs.subreddit_discovery_run
