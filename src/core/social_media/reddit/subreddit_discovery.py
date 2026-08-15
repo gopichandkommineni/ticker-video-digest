@@ -37,10 +37,15 @@ _COMPANY_SUFFIXES = {
 }
 
 # Selection thresholds — tune here.
-_MIN_SUBS_SELECT = 100        # below this, treat as too small to matter …
-_BIG_SUB = 2000               # … unless it is clearly a large community
-_MIN_POSTS_SELECT = 1         # at least one post in the last 7 days
-_NOISE_SUBS = 25              # under this AND no recent posts => noise
+#
+# A real ticker community shows up as EITHER a "sized" sub (enough members to
+# matter, even if quiet this week — r/IonQStock has 1.8k members and 0 recent
+# posts) OR a small-but-busy one (a freshly spun-off ticker whose sub is days
+# old — r/SNDK_Stock had 22 members but 100 posts). Requiring both members AND
+# recent posts (the old rule) wrongly dropped both kinds, so we accept either.
+_MIN_SUBS_SELECT = 50         # a "sized" community clears the bar on its own …
+_MIN_POSTS_ACTIVE = 5         # … OR this many recent posts marks a real, active sub
+_MIN_SUBS_ACTIVE = 5          #     (with at least a handful of members — not one person)
 _MIN_RELEVANCE_SELECT = 0.6   # a weak/partial name match alone cannot select
 
 # Finance-flavored suffixes a real ticker/company subreddit name may append
@@ -50,6 +55,28 @@ _NAME_SUFFIXES = {
     "stock", "stocks", "investing", "investor", "investors", "trading",
     "trader", "traders", "dd", "options", "stockmarket", "market",
     "community", "official", "hq",
+}
+
+# Finance-context words. A bare ticker/company MENTION in a description only
+# counts as a match when the sub is clearly finance-flavored — otherwise the
+# symbol is just a coincidental word: r/HPOmen mentions "HP" (laptops),
+# r/ETNmining mentions "ETN" (crypto), r/coincollecting mentions "coin".
+_FINANCE_CONTEXT = {
+    "stock", "stocks", "invest", "investing", "investor", "investors",
+    "trading", "trader", "traders", "shares", "share", "shareholder",
+    "shareholders", "ticker", "nasdaq", "nyse", "earnings", "dividend",
+    "dividends", "bullish", "bearish", "options", "equity", "equities",
+    "dd", "calls", "puts", "portfolio", "valuation",
+}
+
+# Tickers that are also everyday English words. For these, even an EXACT
+# subreddit-name match must show finance context, or r/cake (baking), r/eat,
+# r/coin (coin collecting), r/open, r/run get mistaken for the stock. Tunable —
+# grows as the universe adds dictionary-word symbols.
+_COMMON_WORD_TICKERS = {
+    "cake", "eat", "coin", "poet", "open", "run", "car", "all", "key",
+    "net", "app", "gold", "cash", "play", "love", "fire", "real", "air",
+    "well", "fun", "live", "nice", "best", "free", "step", "form", "site",
 }
 
 
@@ -243,28 +270,46 @@ def _name_is_about(name_norm: str, base: str, allow_prefix: bool) -> bool:
 def _relevance(info: SubredditInfo, ticker: str, company_name: str | None) -> float:
     """0..1 confidence that the subreddit is actually about this stock.
 
-    Whole-word (token) and name-form matching only — never bare substrings — so
-    unrelated giants (r/playstation for PL, r/intuitiveeating for INTU) score 0.
+    Two match strengths:
+      * NAME-form — the sub's name IS the ticker/company (+ a finance suffix).
+        Distinctive, so it counts on its own (r/RKLB, r/RocketLab, r/IonQStock).
+      * MENTION — the symbol/company merely appears in the description. Weak, so
+        it only counts alongside finance context; otherwise r/HPOmen ("HP"),
+        r/ETNmining ("ETN") and r/coincollecting ("coin") would match.
+
+    Dictionary-word tickers (r/cake, r/eat, r/coin) need finance context even for
+    an exact name match. Matching is whole-word / name-form only, never bare
+    substrings, so unrelated giants (r/playstation for PL) still score 0.
     """
     tkr = ticker.lower()
     name_norm = _norm(info.name)
-    hay_tokens = _word_tokens(f"{info.name} {info.title} {info.public_description}")
+    raw = f"{info.name} {info.title} {info.public_description}".lower()
+    hay_tokens = _word_tokens(raw)
+    finance_ctx = bool(hay_tokens & _FINANCE_CONTEXT) or f"${tkr}" in raw
 
     score = 0.0
-    # Ticker signal: symbol appears as a whole word, or the sub name is the
-    # ticker (+ a finance suffix). Prefix matching only for tickers >= 3 chars —
-    # 2-letter prefixes (e.g. "PL") are meaningless.
-    if tkr in hay_tokens or _name_is_about(name_norm, tkr, allow_prefix=len(tkr) >= 3):
+    # Ticker signal. Prefix matching only for tickers >= 3 chars — 2-letter
+    # prefixes (e.g. "PL") are meaningless.
+    name_form = _name_is_about(name_norm, tkr, allow_prefix=len(tkr) >= 3)
+    mention = tkr in hay_tokens
+    if tkr in _COMMON_WORD_TICKERS:
+        ticker_hit = (name_form or mention) and finance_ctx
+    else:
+        ticker_hit = name_form or (mention and finance_ctx)
+    if ticker_hit:
         score += 0.6
 
-    # Company signal: the sub name is the company form (+ suffix), or every
-    # meaningful company word appears as a whole word in the text.
+    # Company signal: the sub name is the company form (+ suffix) — distinctive,
+    # counts alone — or every meaningful company word appears as a whole word in
+    # a finance-flavored description.
     if company_name:
         toks = [t.lower() for t in _company_tokens(company_name) if len(t) >= 3]
         joined = "".join(toks)
-        if joined and _name_is_about(name_norm, joined, allow_prefix=True):
+        name_form_co = bool(joined) and _name_is_about(name_norm, joined, allow_prefix=True)
+        mention_co = bool(toks) and all(t in hay_tokens for t in toks)
+        if name_form_co:
             score += 0.6
-        elif toks and all(t in hay_tokens for t in toks):
+        elif mention_co and finance_ctx:
             score += 0.6
     return min(score, 1.0)
 
@@ -273,7 +318,6 @@ def score_subreddit(
     info: SubredditInfo, ticker: str, company_name: str | None
 ) -> ScoredSubreddit:
     relevance = _relevance(info, ticker, company_name)
-    reasons: list[str] = []
 
     # Relevance MULTIPLIES size+activity, so an irrelevant sub can never outrank
     # a real match on size alone. posts_7d is capped (it saturates at the 100-post
@@ -281,23 +325,27 @@ def score_subreddit(
     base = math.log10(info.subscribers + 1) * 10 + min(info.posts_7d, 50)
     score = round(relevance * base, 2)
 
-    is_noise = info.subscribers < _NOISE_SUBS and info.posts_7d == 0
-    selected = (
-        relevance >= _MIN_RELEVANCE_SELECT
-        and not info.quarantined
-        and not is_noise
-        and info.subscribers >= _MIN_SUBS_SELECT
-        and (info.posts_7d >= _MIN_POSTS_SELECT or info.subscribers >= _BIG_SUB)
-    )
+    # "Substantial" = a sized community OR a small-but-genuinely-active one. Either
+    # rescues a real sub the old (members AND recent-posts) rule dropped.
+    sized = info.subscribers >= _MIN_SUBS_SELECT
+    active = info.posts_7d >= _MIN_POSTS_ACTIVE and info.subscribers >= _MIN_SUBS_ACTIVE
 
-    if relevance < _MIN_RELEVANCE_SELECT:
-        reasons.append("name/description does not clearly reference the stock")
-    if info.subscribers < _MIN_SUBS_SELECT and info.subscribers < _BIG_SUB:
-        reasons.append(f"only {info.subscribers} subscribers")
-    if info.posts_7d == 0:
-        reasons.append("no posts in last 7d")
+    reasons: list[str] = []
     if info.quarantined:
         reasons.append("quarantined")
+    if relevance < _MIN_RELEVANCE_SELECT:
+        reasons.append(
+            f"name/description does not clearly reference the stock (relevance {relevance:.2f})"
+        )
+    if not (sized or active):
+        if info.posts_7d == 0:
+            reasons.append(f"only {info.subscribers} subscribers, no posts in last 7d")
+        else:
+            reasons.append(
+                f"only {info.subscribers} subscribers and {info.posts_7d} posts/7d"
+            )
+
+    selected = not reasons
     if selected:
         reasons = ["selected"]
 

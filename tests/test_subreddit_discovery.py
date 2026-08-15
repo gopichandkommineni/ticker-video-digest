@@ -116,8 +116,64 @@ def test_weak_partial_match_not_selected():
 
 
 def test_quarantined_not_selected():
-    info = _info("RKLBraw", 5000, posts=10, desc="RKLB", quarantined=True)
+    # Relevant + sized + active, so quarantine is the only thing rejecting it.
+    info = _info("RKLBraw", 5000, posts=10, desc="RKLB stock discussion", quarantined=True)
     scored = score_subreddit(info, "RKLB", "Rocket Lab")
+    assert scored.relevance >= _MIN_RELEVANCE_SELECT
+    assert not scored.selected
+    assert "quarantined" in scored.reasons
+
+
+# ---------------------------------------------------------------------------
+# Round-2 tuning: mention vs name matches, and the relaxed activity gate
+# ---------------------------------------------------------------------------
+
+def test_bare_mention_without_finance_context_rejected():
+    # r/HPOmen (laptops) mentions "HP"; r/ETNmining (crypto) mentions "ETN";
+    # r/coincollecting mentions "coin". A symbol as a coincidental word is not a
+    # match unless the sub is finance-flavored.
+    omen = _info("HPOmen", 120_000, posts=50, desc="HP Omen gaming laptops and desktops")
+    assert score_subreddit(omen, "HP", "HP Inc").relevance == 0
+
+    etn = _info("ETNmining", 8000, posts=30, desc="Electroneum ETN mining community")
+    assert score_subreddit(etn, "ETN", "Eaton").relevance == 0
+
+
+def test_common_word_ticker_needs_finance_context():
+    # r/cake is baking. Even though the name equals the ticker, no finance
+    # context => not the stock. A real $CAKE sub would talk stock.
+    baking = _info("cake", 900_000, posts=100, desc="a subreddit for cakes and baking")
+    assert score_subreddit(baking, "CAKE", "Cheesecake Factory").relevance == 0
+
+    stock = _info("cake", 1500, posts=10, desc="Cheesecake Factory CAKE stock discussion")
+    assert score_subreddit(stock, "CAKE", "Cheesecake Factory").selected
+
+
+def test_bare_mention_with_finance_context_matches():
+    info = _info("smallcapstocks", 4000, posts=20,
+                 desc="deep dives on RKLB and other small-cap stocks")
+    scored = score_subreddit(info, "RKLB", "Rocket Lab")
+    assert scored.relevance >= _MIN_RELEVANCE_SELECT
+
+
+def test_dormant_but_sized_investor_sub_selected():
+    # r/IonQStock: 1837 members, 0 posts in the last 7d — real, just quiet.
+    info = _info("IonQStock", 1837, posts=0, desc="IONQ investors")
+    scored = score_subreddit(info, "IONQ", "IonQ")
+    assert scored.selected
+
+
+def test_small_but_active_new_sub_selected():
+    # r/SNDK_Stock: 22 members, 100 posts (a days-old spin-off community).
+    info = _info("SNDK_Stock", 22, posts=100, desc="SNDK SanDisk stock")
+    scored = score_subreddit(info, "SNDK", "SanDisk")
+    assert scored.selected
+
+
+def test_one_person_sub_still_noise():
+    # 3 members: below the active floor even with posts — one person talking.
+    info = _info("MRVL_Stock", 3, posts=9, desc="MRVL stock")
+    scored = score_subreddit(info, "MRVL", "Marvell")
     assert not scored.selected
 
 
