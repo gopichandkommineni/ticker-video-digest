@@ -125,7 +125,7 @@ def test_discover_ranks_and_flags(monkeypatch):
             ]}})
         return _resp(status=404)
 
-    with patch("core.social_media.reddit.subreddit_discovery.requests.get", side_effect=router):
+    with patch("core.social_media.reddit.subreddit_discovery.reddit_get", side_effect=router):
         result = discover("RKLB", company_name="Rocket Lab", sleep=False)
 
     names = [s.info.name for s in result.subreddits]
@@ -144,7 +144,7 @@ def test_discover_flags_when_nothing_found(monkeypatch):
             return _resp(payload={"data": {"children": []}})
         return _resp(status=404)  # no sub exists
 
-    with patch("core.social_media.reddit.subreddit_discovery.requests.get", side_effect=router):
+    with patch("core.social_media.reddit.subreddit_discovery.reddit_get", side_effect=router):
         result = discover("ZZZZ", company_name=None, sleep=False)
 
     assert result.subreddits == []

@@ -30,38 +30,58 @@ def test_proxies_from_env(monkeypatch):
     }
 
 
-# --- wiring: proxy + UA actually reach the HTTP calls ---------------------
+# --- impersonation selection ---------------------------------------------
 
-def test_scraper_public_path_passes_proxy_and_ua(monkeypatch):
-    from core.social_media.reddit.client import RedditScraper
+def test_impersonate_default_chrome(monkeypatch):
+    monkeypatch.delenv("REDDIT_IMPERSONATE", raising=False)
+    assert _http.reddit_impersonate() == "chrome"
 
+
+def test_impersonate_can_be_disabled(monkeypatch):
+    for off in ("none", "off", "", "0", "False"):
+        monkeypatch.setenv("REDDIT_IMPERSONATE", off)
+        assert _http.reddit_impersonate() is None
+
+
+# --- reddit_get: browser-impersonating fetch ------------------------------
+
+def test_reddit_get_uses_curl_cffi_with_impersonate_proxy_ua(monkeypatch):
+    monkeypatch.delenv("REDDIT_IMPERSONATE", raising=False)   # default chrome
     monkeypatch.setenv("REDDIT_PROXY", "http://proxy:9000")
     monkeypatch.setenv("REDDIT_USER_AGENT", "test-agent/1.0")
 
-    scraper = RedditScraper(subreddits=["stocks"])
-    scraper._praw_reddit = None  # force public path
-
-    resp = MagicMock()
-    resp.json.return_value = {"data": {"children": []}}
-    resp.raise_for_status.return_value = None
-
-    with patch("core.social_media.reddit.client.requests.get", return_value=resp) as mock_get, \
-         patch("core.social_media.reddit.client.time.sleep"):
-        scraper.search_ticker("RKLB")
+    import curl_cffi.requests as cffi
+    with patch.object(cffi, "get", return_value=MagicMock()) as mock_get:
+        _http.reddit_get("https://www.reddit.com/r/stocks/about.json", params={"q": "x"})
 
     _, kwargs = mock_get.call_args
+    assert kwargs["impersonate"] == "chrome"
     assert kwargs["proxies"] == {"http": "http://proxy:9000", "https": "http://proxy:9000"}
-    assert kwargs["headers"]["User-Agent"] == "test-agent/1.0"
+    assert kwargs["headers"] == {"User-Agent": "test-agent/1.0"}
+    assert kwargs["params"] == {"q": "x"}
 
 
-def test_discovery_about_passes_proxy(monkeypatch):
-    from core.social_media.reddit import subreddit_discovery as sd
+def test_reddit_get_impersonate_supplies_browser_ua_when_unset(monkeypatch):
+    monkeypatch.delenv("REDDIT_IMPERSONATE", raising=False)
+    monkeypatch.delenv("REDDIT_USER_AGENT", raising=False)
 
-    monkeypatch.setenv("REDDIT_PROXY", "http://proxy:9000")
-    resp = MagicMock()
-    resp.status_code = 404
-    with patch("core.social_media.reddit.subreddit_discovery.requests.get", return_value=resp) as mock_get:
-        sd.fetch_about("RKLB")
+    import curl_cffi.requests as cffi
+    with patch.object(cffi, "get", return_value=MagicMock()) as mock_get:
+        _http.reddit_get("https://www.reddit.com/r/stocks/about.json")
 
     _, kwargs = mock_get.call_args
-    assert kwargs["proxies"] == {"http": "http://proxy:9000", "https": "http://proxy:9000"}
+    # No explicit UA -> None, letting curl_cffi's impersonation set a matching one.
+    assert kwargs["headers"] is None
+
+
+def test_reddit_get_falls_back_to_requests_when_disabled(monkeypatch):
+    monkeypatch.setenv("REDDIT_IMPERSONATE", "none")
+    monkeypatch.delenv("REDDIT_USER_AGENT", raising=False)
+
+    import requests
+    with patch.object(requests, "get", return_value=MagicMock()) as mock_get:
+        _http.reddit_get("https://www.reddit.com/r/stocks/about.json")
+
+    _, kwargs = mock_get.call_args
+    assert "impersonate" not in kwargs
+    assert kwargs["headers"]["User-Agent"]  # a UA is always sent on the plain path

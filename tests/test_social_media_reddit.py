@@ -48,7 +48,7 @@ class TestRedditScraperPublicAPI:
                 self.scraper = RedditScraper(subreddits=["stocks"])
         assert self.scraper._praw_reddit is None
 
-    @patch("core.social_media.reddit.client.requests.get")
+    @patch("core.social_media.reddit.client.reddit_get")
     @patch("core.social_media.reddit.client.time.sleep")
     def test_returns_social_signals(self, mock_sleep, mock_get):
         mock_resp = MagicMock()
@@ -63,7 +63,7 @@ class TestRedditScraperPublicAPI:
         assert result.platform == "reddit"
         assert len(result.posts) == 1
 
-    @patch("core.social_media.reddit.client.requests.get")
+    @patch("core.social_media.reddit.client.reddit_get")
     @patch("core.social_media.reddit.client.time.sleep")
     def test_post_fields_populated(self, mock_sleep, mock_get):
         mock_resp = MagicMock()
@@ -80,7 +80,7 @@ class TestRedditScraperPublicAPI:
         assert post.subreddit == "stocks"
         assert "reddit.com" in post.url
 
-    @patch("core.social_media.reddit.client.requests.get")
+    @patch("core.social_media.reddit.client.reddit_get")
     @patch("core.social_media.reddit.client.time.sleep")
     def test_filters_old_posts(self, mock_sleep, mock_get):
         old_post = _make_post(
@@ -95,7 +95,7 @@ class TestRedditScraperPublicAPI:
         result = self.scraper.search_ticker("RKLB", days_back=7)
         assert len(result.posts) == 0
 
-    @patch("core.social_media.reddit.client.requests.get")
+    @patch("core.social_media.reddit.client.reddit_get")
     @patch("core.social_media.reddit.client.time.sleep")
     def test_http_error_returns_empty(self, mock_sleep, mock_get):
         import requests as req_lib
@@ -104,7 +104,7 @@ class TestRedditScraperPublicAPI:
         result = self.scraper.search_ticker("RKLB")
         assert result.posts == []
 
-    @patch("core.social_media.reddit.client.requests.get")
+    @patch("core.social_media.reddit.client.reddit_get")
     @patch("core.social_media.reddit.client.time.sleep")
     def test_deduplicates_across_subreddits(self, mock_sleep, mock_get):
         scraper = RedditScraper(subreddits=["stocks", "investing"])
