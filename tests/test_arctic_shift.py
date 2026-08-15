@@ -81,6 +81,21 @@ def test_verify_auth():
     assert ok is False
 
 
+def test_search_subreddits_uses_prefix_not_query():
+    # Regression: /api/subreddits/search has no 'query' param (400). The fuzzy
+    # lookup must send 'subreddit_prefix'.
+    captured = {}
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        captured.update(params or {})
+        return _resp(payload={"data": []})
+
+    with patch("core.social_media.reddit.arctic_shift_client.requests.get", side_effect=fake_get):
+        arctic.search_subreddits(query="rocket")
+    assert captured.get("subreddit_prefix") == "rocket"
+    assert "query" not in captured
+
+
 def test_count_posts_in_window():
     payload = {"data": [_post(f"p{i}", "stocks", 1, 0) for i in range(7)]}
     with patch("core.social_media.reddit.arctic_shift_client.requests.get",

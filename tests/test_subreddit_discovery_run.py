@@ -45,6 +45,23 @@ def test_run_renders_selected_and_flag():
     assert "✖" in text  # the noise sub
 
 
+def test_run_dedupes_ticker_and_company_name():
+    # "RKLB" and "Rocket Lab" both resolve to RKLB -> one section, discover once.
+    result = DiscoveryResult(ticker="RKLB", company_name="Rocket Lab",
+                             subreddits=[_scored("RKLB", 30000, True)])
+    with patch.object(runner, "resolve_ticker", return_value="RKLB"), \
+         patch.object(runner, "company_name_for", return_value=None), \
+         patch.object(runner, "_universe_tickers", return_value=None), \
+         patch.object(runner, "discover", return_value=result) as mock_discover:
+        lines = runner.run(["RKLB", "Rocket Lab"], sleep=False)
+
+    assert mock_discover.call_count == 1                     # not called twice
+    assert "\n".join(lines).count("### RKLB") == 1           # one section
+    # the company name from the second query was captured
+    _, kwargs = mock_discover.call_args
+    assert kwargs["company_name"] == "Rocket Lab"
+
+
 def test_run_flags_unresolved_query():
     with patch.object(runner, "resolve_ticker", return_value=None), \
          patch.object(runner, "_universe_tickers", return_value=None):

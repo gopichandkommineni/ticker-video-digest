@@ -19,17 +19,18 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Registry — add new scrapers here when a new platform is introduced
+# Registry — add new scrapers here when a new platform is introduced.
+# Built lazily (not at import time) so importing this package has no side
+# effects — constructing scrapers can emit credential warnings / hit config.
 # ---------------------------------------------------------------------------
-_ALL_SCRAPERS: list[SocialScraper] = [
-    RedditScraper(),
-    XScraper(),
-]
+
+def _build_all_scrapers() -> list[SocialScraper]:
+    return [RedditScraper(), XScraper()]
 
 
 def get_available_scrapers() -> list[SocialScraper]:
     """Return only the scrapers whose credentials are configured."""
-    return [s for s in _ALL_SCRAPERS if s.is_available]
+    return [s for s in _build_all_scrapers() if s.is_available]
 
 
 def fetch_all_signals(

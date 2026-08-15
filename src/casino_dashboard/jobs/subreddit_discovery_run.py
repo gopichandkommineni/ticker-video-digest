@@ -82,22 +82,31 @@ def run(queries: list[str], sleep: bool = True, save: bool = False) -> list[str]
     lines: list[str] = ["## Subreddit discovery", ""]
     discovered: dict[str, list[str]] = {}
 
+    # Resolve + de-duplicate by ticker first, so passing both "RKLB" and
+    # "Rocket Lab" produces one RKLB section (keeping a company name if any
+    # query supplied one).
+    order: list[str] = []
+    company_by_ticker: dict[str, str | None] = {}
     for query in queries:
         ticker = resolve_ticker(query, universe)
         if ticker is None:
             logger.warning("Could not resolve %r to a ticker", query)
             lines += _result_lines(query, None, None)
             continue
-
-        # If the query was a company name, reuse it; else try to look one up so
-        # candidate generation can catch name-based subs (r/RocketLab).
         company = None if ticker == query.strip().upper() else query
-        if company is None:
-            company = company_name_for(ticker)
+        if ticker not in company_by_ticker:
+            order.append(ticker)
+            company_by_ticker[ticker] = company
+        elif company and not company_by_ticker[ticker]:
+            company_by_ticker[ticker] = company  # upgrade with a name
 
+    for ticker in order:
+        # Use the supplied company name, else look one up so candidate generation
+        # can catch name-based subs (r/RocketLab).
+        company = company_by_ticker[ticker] or company_name_for(ticker)
         logger.info("Discovering subreddits for %s (%s) …", ticker, company or "no name")
         result = discover(ticker, company_name=company, sleep=sleep)
-        lines += _result_lines(query, result, ticker)
+        lines += _result_lines(ticker, result, ticker)
         # Record the selected subreddits (may be empty — a deliberate "found
         # nothing" record so the map shows the ticker was checked).
         discovered[ticker] = [s.info.name for s in result.selected]
