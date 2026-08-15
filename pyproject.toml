@@ -22,6 +22,10 @@ dependencies = [
     # Social media scrapers
     "praw>=7.0",
     "tweepy>=4.0",
+    # Browser-fingerprint impersonation for Reddit's public JSON path. Currently
+    # arrives transitively via yfinance; declared explicitly so the Reddit
+    # client's impersonation can't silently vanish if that transitive dep changes.
+    "curl-cffi>=0.7",
 ]
 
 [project.optional-dependencies]
