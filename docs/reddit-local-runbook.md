@@ -122,24 +122,29 @@ Re-running discovery for a ticker overwrites only that ticker; other entries
 Discovery above is **bottom-up**: it guesses names for one ticker at a time
 (r/RKLB, r/RKLBstock, r/RocketLab, …) and probes each guess, so it can only find
 communities somebody thought to name. The catalog sweep goes the other way —
-enumerate the subreddits that exist, sorted by subscriber count, then filter:
+enumerate the subreddits that exist, sorted by subscriber count, then filter.
+
+Run it in **two phases** — fetch, then filter. Fetching is the slow half
+(rate-limited, minutes long, easy to lose); filtering is the half worth redoing
+whenever a threshold looks wrong.
 
 ```bash
-# Stage 1 all subs -> stage 2 stock subs -> stage 3 per-stock subs
-python -m casino_dashboard.jobs.subreddit_catalog_run
+# PHASE 1 — dump every subreddit + subscriber count. No filtering, no yfinance.
+python -m casino_dashboard.jobs.subreddit_catalog_run --fetch-only \
+    --min-subscribers 100 --out research/probes/subreddit_catalog
 
-# Go deeper (smaller communities), dump the full catalog for offline work
-python -m casino_dashboard.jobs.subreddit_catalog_run \
-    --min-subscribers 250 --max-requests 1500 \
-    --out research/probes/subreddit_catalog
-
-# Re-filter that saved sweep offline — no network, no waiting — and save the map
-python -m casino_dashboard.jobs.subreddit_catalog_run \
-    --from-catalog research/probes/subreddit_catalog/<date>/catalog.csv --save
+# PHASE 2 — filter that file into stock subs -> per-stock subs. No network.
+CSV=research/probes/subreddit_catalog/$(date +%F)/catalog.csv
+python -m casino_dashboard.jobs.subreddit_catalog_run --from-catalog $CSV
+python -m casino_dashboard.jobs.subreddit_catalog_run --from-catalog $CSV --save
 ```
 
-Sweep once, filter many times: `--from-catalog` replays a saved `catalog.csv`
-through stages 2–3, so tuning thresholds or writing the map costs nothing.
+Phase 1 streams rows to the CSV as they arrive, so a walk that times out or gets
+cancelled still leaves everything it had already seen. Phase 2 costs nothing and
+can be re-run as often as the thresholds need.
+
+One command still does both (`subreddit_catalog_run` with no `--fetch-only`);
+the split just stops a threshold tweak from re-paying for the fetch.
 
 - **Stage 1** asks Arctic Shift for subreddits **ranked by subscriber count**
   (`sort_type=subscribers`, 1000 per page) and walks down to
@@ -155,9 +160,13 @@ through stages 2–3, so tuning thresholds or writing the map costs nothing.
   bottom-up discovery, gated on `--ticker-min-subscribers`. A sub that matches
   two stocks equally is left unattributed rather than guessed.
 
-Cost scales with how far the floor drops — about one request per 1,000
-subreddits above it on the ranked walk, ten times that on the creation-time
-fallback. Start at the default 1,000. Also runnable from Actions — **Subreddit
+**Set the floor low for per-stock subs.** Real single-stock investor communities
+are small — r/MPMaterials (392), r/Lunr (674), r/Ciena (316), r/MU_Stock (404),
+r/CAPR_Stock (123) — so the default 1,000 floor drops nearly all of them. Use
+`--min-subscribers 100` when the goal is the per-stock map, and the default only
+when you want the big market subs. Cost scales with how far the floor drops:
+about one request per 1,000 subreddits above it on the ranked walk, ten times
+that on the creation-time fallback. Also runnable from Actions — **Subreddit
 Catalog (live, read-only)** — which uploads `catalog.csv` + `per_stock.json` as
 artifacts.
 
@@ -174,7 +183,10 @@ python -m casino_dashboard.jobs.subreddit_catalog_run --with-per-ticker --save
 **`--newest-first` only matters on the creation-time fallback.** That shape walks
 by date, so a truncated oldest-first run covers 2005 onward and stops — the wrong
 end of history, since ticker subs are recent. The ranked walk is ordered by size,
-so the flag does nothing there.
+so the flag does nothing there; if a ranked run reports "Incomplete sweep", the
+remedy is a bigger `--max-requests` (or a higher floor), not a direction change.
+`--max-requests` counts pages in every strategy, but a ranked page is 1,000
+subreddits against the creation-time walk's 100.
 
 ## 5. Pull Reddit posts into the DB
 
@@ -237,5 +249,6 @@ authenticated PRAW; otherwise it uses the public JSON API.
 |---------|--------------|--------|
 | `python -m casino_dashboard.jobs.reddit_smoke_test [TICKERS…]` | Live probe; prints post counts | nothing |
 | `python -m casino_dashboard.jobs.subreddit_discovery_run [QUERIES…] [--save]` | Discover + rank subreddits; `--save` writes the map | `config/ticker_subreddits.yaml` (with `--save`) |
-| `python -m casino_dashboard.jobs.subreddit_catalog_run [--save] [--out DIR] [--from-catalog CSV]` | Sweep all subreddits by subscribers → stock subs → per-stock subs (`--from-catalog` re-filters a saved sweep offline) | `config/ticker_subreddits.yaml` (with `--save`), `DIR/` (with `--out`) |
+| `python -m casino_dashboard.jobs.subreddit_catalog_run --fetch-only --out DIR` | Phase 1: dump every subreddit + subscriber count | `DIR/` |
+| `python -m casino_dashboard.jobs.subreddit_catalog_run --from-catalog CSV [--save]` | Phase 2: filter that dump → stock subs → per-stock subs (no network) | `config/ticker_subreddits.yaml` (with `--save`), `DIR/` (with `--out`) |
 | `python -m casino_dashboard.jobs.reddit_refresh [TICKERS…]` | Pull posts into the DB (Reddit only) | `data/snapshots.db` |

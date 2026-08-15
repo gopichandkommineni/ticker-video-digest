@@ -35,6 +35,11 @@ on:
         required: false
         type: boolean
         default: true
+      fetch_only:
+        description: "Phase 1 only: dump names + subscriber counts, skip filtering"
+        required: false
+        type: boolean
+        default: false
       with_per_ticker:
         description: "Also probe per-ticker for stocks the sweep missed (slower)"
         required: false
@@ -72,7 +77,8 @@ jobs:
         run: |
           python -m casino_dashboard.jobs.subreddit_catalog_run \
             ${{ github.event.inputs.company_names == 'false' && '--no-company-names' || '' }} \
-            ${{ github.event.inputs.with_per_ticker == 'true' && '--with-per-ticker' || '' }}
+            ${{ github.event.inputs.with_per_ticker == 'true' && '--with-per-ticker' || '' }} \
+            ${{ github.event.inputs.fetch_only == 'true' && '--fetch-only' || '' }}
 
       - name: Upload catalog artifacts
         if: always()
