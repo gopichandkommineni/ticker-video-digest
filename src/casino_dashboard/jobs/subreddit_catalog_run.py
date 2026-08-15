@@ -304,6 +304,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Re-filter a saved catalog.csv offline instead of sweeping again.",
     )
     parser.add_argument(
+        "--newest-first", action="store_true",
+        default=_env_flag("SUBREDDIT_CATALOG_NEWEST_FIRST"),
+        help="Sweep from today backwards. Use when the budget cannot cover the "
+             "whole archive: ticker subs are recent, so a partial oldest-first "
+             "sweep misses them entirely.",
+    )
+    parser.add_argument(
         "--save", action="store_true", default=_env_flag("SUBREDDIT_CATALOG_SAVE"),
         help="Write the per-stock map to config/ticker_subreddits.yaml.",
     )
@@ -328,6 +335,7 @@ def main(argv: list[str] | None = None) -> None:
         max_requests=args.max_requests,
         sleep=not args.no_sleep,
         infos=cached,
+        newest_first=args.newest_first,
     )
     if cached is not None:
         report.strategy = f"re-filtered {Path(args.from_catalog).name}"

@@ -162,6 +162,13 @@ above it), so start at the default 1,000 and lower it only for the tickers it
 misses. Also runnable from Actions — **Subreddit Catalog (live, read-only)** —
 which uploads `catalog.csv` + `per_stock.json` as artifacts.
 
+**If the budget cannot cover the whole archive, add `--newest-first`.** The sweep
+walks creation time, so a truncated oldest-first run covers 2005 onward and stops
+— the wrong end of history, since ticker subs are recent (r/RKLB is a 2021
+community). Sweeping backwards from today spends a partial budget where they
+live. Use the default oldest-first only when the run finishes without the
+"Incomplete sweep" flag, which means it saw everything either way.
+
 ## 5. Pull Reddit posts into the DB
 
 ```bash

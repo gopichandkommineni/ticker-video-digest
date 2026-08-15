@@ -305,6 +305,7 @@ def fetch_catalog(
     max_requests: int = 600,
     sleep: bool = True,
     prefixes: list[str] | None = None,
+    newest_first: bool = False,
 ) -> tuple[list[SubredditInfo], str, int, bool]:
     """Enumerate subreddits with at least *min_subscribers* members.
 
@@ -323,6 +324,12 @@ def fetch_catalog(
        back full. Thinner coverage than creation-time paging; a floor to land on,
        not an equivalent.
 
+    *newest_first* flips the creation-time shapes to walk from today backwards.
+    This matters whenever the request budget runs out before the archive does:
+    an oldest-first sweep then covers 2005 onward and stops, which is the wrong
+    end of history for ticker communities (r/RKLB and friends are recent), while
+    newest-first spends a partial budget exactly where they live.
+
     The shape that ran is returned so the report can state what the numbers
     actually cover.
     """
@@ -332,6 +339,8 @@ def fetch_catalog(
         ("created-desc+min_subscribers", {"server_side_floor": True, "forward": False}),
         ("created-desc", {"server_side_floor": False, "forward": False}),
     ]
+    if newest_first:
+        shapes = shapes[2:] + shapes[:2]
 
     found: dict[str, SubredditInfo] = {}
     strategy, reqs, truncated = "", 0, False
@@ -494,6 +503,7 @@ def build_report(
     max_requests: int = 600,
     sleep: bool = True,
     infos: list[SubredditInfo] | None = None,
+    newest_first: bool = False,
 ) -> CatalogReport:
     """Run all three stages and return the ranked report.
 
@@ -502,7 +512,8 @@ def build_report(
     """
     if infos is None:
         infos, strategy, requests_made, truncated = fetch_catalog(
-            min_subscribers=min_subscribers, max_requests=max_requests, sleep=sleep
+            min_subscribers=min_subscribers, max_requests=max_requests, sleep=sleep,
+            newest_first=newest_first,
         )
     else:
         infos = sorted(infos, key=lambda i: i.subscribers, reverse=True)

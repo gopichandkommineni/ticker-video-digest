@@ -151,6 +151,20 @@ def test_fetch_catalog_stops_at_the_first_shape_that_returns_rows():
     assert page.call_count == 2      # no later shape was attempted
 
 
+def test_newest_first_sweeps_backwards_from_today():
+    """A partial budget should land on recent subs, where ticker communities are."""
+    with patch.object(sc, "_page", side_effect=[
+        (200, [_item("recent", 3_000, created=_T0 + 500)]),
+        (200, []),
+    ]) as page:
+        _, strategy, _, _ = fetch_catalog(
+            min_subscribers=1000, max_requests=10, sleep=False, newest_first=True
+        )
+    assert strategy == "created-desc+min_subscribers"
+    assert "before" in page.call_args_list[0].kwargs
+    assert "after" not in page.call_args_list[0].kwargs
+
+
 def test_fetch_catalog_falls_back_to_prefix_sweep():
     """When creation-time paging is unavailable entirely, sweep by prefix."""
     def responder(**kwargs):
