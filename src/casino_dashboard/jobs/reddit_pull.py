@@ -11,11 +11,25 @@ import logging
 from datetime import date
 from pathlib import Path
 
-from core.social_media.base import SocialSignals
+from core.social_media.base import SocialSignals, SocialScraper
 from core.social_media.reddit.client import RedditScraper
 from casino_dashboard.db.repository import save_reddit_posts, save_social_mention
 
 logger = logging.getLogger(__name__)
+
+
+def make_reddit_scraper() -> SocialScraper:
+    """Return the active Reddit scraper: Apify's managed scraper when APIFY_TOKEN
+    is set (handles Cloudflare), else the direct client (PRAW if credentialed,
+    otherwise the public path).
+    """
+    from core.config import APIFY_TOKEN  # noqa: PLC0415 — read current value
+
+    if APIFY_TOKEN:
+        from core.social_media.reddit.apify_client import ApifyRedditScraper  # noqa: PLC0415
+
+        return ApifyRedditScraper()
+    return RedditScraper()
 
 
 def save_ticker_signals(
@@ -59,7 +73,7 @@ def pull_reddit_for_tickers(
     Per-ticker failures are logged and skipped. Returns (total_posts, covered).
     """
     subreddit_map = subreddit_map or {}
-    scraper = scraper or RedditScraper()
+    scraper = scraper or make_reddit_scraper()
 
     total_posts = 0
     covered = 0

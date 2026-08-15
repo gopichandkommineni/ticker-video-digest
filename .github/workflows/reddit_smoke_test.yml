@@ -31,6 +31,8 @@ jobs:
       REDDIT_PASSWORD: ${{ secrets.REDDIT_PASSWORD }}
       REDDIT_USER_AGENT: ${{ vars.REDDIT_USER_AGENT }}
       REDDIT_PROXY: ${{ secrets.REDDIT_PROXY }}
+      APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+      APIFY_REDDIT_ACTOR: ${{ vars.APIFY_REDDIT_ACTOR }}
       REDDIT_SMOKE_TICKERS: ${{ github.event.inputs.tickers }}
 
     steps:

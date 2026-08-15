@@ -1,14 +1,28 @@
 # Reddit data — local runbook
 
-How to pull Reddit data locally: discover which subreddits belong to each stock,
-save that map, and pull posts into the database. Run these **from your own
-machine** — Reddit blocks unauthenticated requests from cloud/CI IPs (GitHub
-Actions, etc.), but a residential IP works with no credentials.
+How to pull Reddit data: discover which subreddits belong to each stock, save
+that map, and pull posts + mention signal into the database.
 
-> **Why local?** The public Reddit JSON API returns `403 Blocked` from
-> datacenter IPs. From home it works credential-free. Authenticated PRAW
-> (`REDDIT_CLIENT_ID`/`SECRET`) or a residential `REDDIT_PROXY` are the only ways
-> to make the cloud path work — see [Optional: cloud / authenticated](#optional-cloud--authenticated).
+> **⚠️ Reddit closed the direct paths (2026).** Reddit shut down its public JSON
+> API and put remaining access behind Cloudflare, so direct fetches — even
+> browser-impersonated, even via residential proxy — are unreliable, and new API
+> app creation is gated. The code therefore supports two **managed** data
+> sources that handle this for you:
+>
+> - **Apify** (full post content) — a managed scraper that solves Cloudflare.
+>   Set `APIFY_TOKEN` and the Reddit pull uses it automatically. Small cost.
+> - **ApeWisdom** (aggregated mention signal) — free, no credentials, already
+>   wired into the daily refresh, incl. a per-subreddit breakdown.
+>
+> The direct client (public JSON / PRAW / proxy) still exists as a fallback but
+> is no longer reliable on its own.
+
+## 0. Choose a backend
+
+- **Full posts** → get an [Apify](https://apify.com) account + API token, set
+  `APIFY_TOKEN`. The pull auto-selects Apify when the token is present.
+- **Just mention signal / free** → set nothing; ApeWisdom runs in the daily
+  refresh and gives per-ticker and per-subreddit mention counts + velocity.
 
 ## 1. One-time setup
 
@@ -138,6 +152,10 @@ Set any of these in `.env` (local) or as repo Secrets/Variables (Actions):
 
 | Variable | Purpose | Where to get it |
 |----------|---------|-----------------|
+| `APIFY_TOKEN` | Enables the Apify managed scraper (full post content, solves Cloudflare). When set, the pull uses Apify. | apify.com → Settings → Integrations → API token |
+| `APIFY_REDDIT_ACTOR` | Which Apify actor to run (default `trudax~reddit-scraper`). | Apify Store (`username~actor-name`) |
+| `APIFY_REDDIT_INPUT` | Optional JSON to override the actor input; use `{query}` for the ticker. | your chosen actor's input schema |
+| `APEWISDOM_SUBREDDITS` | Comma-separated subreddit filters for the per-subreddit breakdown (default WSB/stocks/investing/options/stockmarket). | n/a |
 | `REDDIT_IMPERSONATE` | Browser to impersonate at the TLS layer (default `chrome`). Set to `none` to disable and use plain requests. | n/a — built in via `curl_cffi` |
 | `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` | Authenticated PRAW — works from cloud IPs | `reddit.com/prefs/apps` → "script" app |
 | `REDDIT_PROXY` | Route traffic through an allowed IP (`http://user:pass@host:port`) | A proxy provider |

@@ -25,6 +25,12 @@ REDDIT_PASSWORD: str = os.environ.get("REDDIT_PASSWORD", "").strip()
 # X (Twitter): API v2 bearer token for the recent-search endpoint.
 X_BEARER_TOKEN: str = os.environ.get("X_BEARER_TOKEN", "").strip()
 
+# Apify managed Reddit scraper (handles Cloudflare/anti-bot). When APIFY_TOKEN is
+# set, the Reddit pull uses Apify instead of the (now-blocked) direct JSON path.
+APIFY_TOKEN: str = os.environ.get("APIFY_TOKEN", "").strip()
+# Actor id in the API "username~actor-name" form. Override to use a different one.
+APIFY_REDDIT_ACTOR: str = os.environ.get("APIFY_REDDIT_ACTOR", "trudax~reddit-scraper").strip()
+
 if not ANTHROPIC_API_KEY:
     raise EnvironmentError(
         "ANTHROPIC_API_KEY is not set. Add it to .env or the environment."
