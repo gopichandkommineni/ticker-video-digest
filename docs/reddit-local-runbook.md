@@ -141,14 +141,12 @@ python -m casino_dashboard.jobs.subreddit_catalog_run \
 Sweep once, filter many times: `--from-catalog` replays a saved `catalog.csv`
 through stages 2–3, so tuning thresholds or writing the map costs nothing.
 
-- **Stage 1** pages the Arctic Shift archive by subreddit *creation time* with a
-  subscriber floor, then sorts by subscribers. There is no "order by
-  subscribers" endpoint anywhere, so a run is complete only **down to
-  `--min-subscribers` and up to `--max-requests`** — the report says which, and
-  flags itself when the budget ran out. If the archive rejects creation-time
-  paging (it 400s on params it does not know), the sweep degrades to a
-  name-prefix walk that deepens into prefixes coming back full — thinner
-  coverage, and the report says so instead of quietly passing it off as a census.
+- **Stage 1** asks Arctic Shift for subreddits **ranked by subscriber count**
+  (`sort_type=subscribers`, 1000 per page) and walks down to
+  `--min-subscribers`. If that query shape is rejected the sweep degrades —
+  creation-time paging, then a name-prefix walk — and the report names the shape
+  that ran, so a partial sweep is never passed off as a census. Either way it
+  flags itself when `--max-requests` runs out.
 - **Stage 2** keeps the stock / stock-market subs, judged on whole-token matches
   in the name (r/StockMarket, r/pennystocks) or unmistakably financial
   title/description text. Token matching is what keeps r/Stockholm, r/marketing
@@ -157,17 +155,26 @@ through stages 2–3, so tuning thresholds or writing the map costs nothing.
   bottom-up discovery, gated on `--ticker-min-subscribers`. A sub that matches
   two stocks equally is left unattributed rather than guessed.
 
-Cost scales steeply as the floor drops (roughly one request per 100 subreddits
-above it), so start at the default 1,000 and lower it only for the tickers it
-misses. Also runnable from Actions — **Subreddit Catalog (live, read-only)** —
-which uploads `catalog.csv` + `per_stock.json` as artifacts.
+Cost scales with how far the floor drops — about one request per 1,000
+subreddits above it on the ranked walk, ten times that on the creation-time
+fallback. Start at the default 1,000. Also runnable from Actions — **Subreddit
+Catalog (live, read-only)** — which uploads `catalog.csv` + `per_stock.json` as
+artifacts.
 
-**If the budget cannot cover the whole archive, add `--newest-first`.** The sweep
-walks creation time, so a truncated oldest-first run covers 2005 onward and stops
-— the wrong end of history, since ticker subs are recent (r/RKLB is a 2021
-community). Sweeping backwards from today spends a partial budget where they
-live. Use the default oldest-first only when the run finishes without the
-"Incomplete sweep" flag, which means it saw everything either way.
+**Below the floor, use the per-ticker pass.** A ranked sweep cannot see under
+`--min-subscribers`, and real ticker communities live down there (r/SNDK_Stock
+had 22 members, r/CCJ 183). `--with-per-ticker` runs bottom-up `discover()` for
+exactly the stocks the sweep found nothing for, so the two passes cover each
+other's blind spots:
+
+```bash
+python -m casino_dashboard.jobs.subreddit_catalog_run --with-per-ticker --save
+```
+
+**`--newest-first` only matters on the creation-time fallback.** That shape walks
+by date, so a truncated oldest-first run covers 2005 onward and stops — the wrong
+end of history, since ticker subs are recent. The ranked walk is ordered by size,
+so the flag does nothing there.
 
 ## 5. Pull Reddit posts into the DB
 

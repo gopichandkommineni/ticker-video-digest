@@ -34,6 +34,14 @@ _DEFAULT_SUBREDDITS = ["wallstreetbets", "stocks", "investing", "options", "Stoc
 _RATE_LIMIT_BACKOFF = 5.0
 
 
+class SubscriberSortUnsupported(RuntimeError):
+    """The archive rejected a subscriber-ranked subreddit query.
+
+    Raised instead of yielding nothing, so a caller can fall back to another
+    enumeration rather than mistaking a rejected param for an empty Reddit.
+    """
+
+
 def _first(item: dict, *keys, default=None):
     for k in keys:
         if item.get(k) is not None:
@@ -117,17 +125,20 @@ def search_subreddits_raw(
     subreddit: str | None = None,
     limit: int = 20,
     min_subscribers: int | None = None,
+    max_subscribers: int | None = None,
     after: "int | float | datetime | None" = None,
     before: "int | float | datetime | None" = None,
     sort: str | None = None,
+    sort_type: str | None = None,
 ) -> tuple[int, list[dict]]:
     """Subreddit search returning (http_status, items) — see `search_subreddits`.
 
-    The extra params (min_subscribers / after / before / sort) drive the catalog
-    sweep, which walks subreddits by creation time. They are optional on purpose:
-    Arctic Shift is a community service whose accepted params drift, and a
-    rejected param comes back as HTTP 400, which the status lets the caller
-    detect and retry without it.
+    Every optional param is sent only when supplied, on purpose: Arctic Shift is
+    a community service whose accepted params drift, and a rejected one comes
+    back as HTTP 400 rather than a warning (that is how the 'query' vs
+    'subreddit_prefix' bug surfaced). Returning the status is what lets a caller
+    tell "this deployment does not support that param" from "no results", and
+    retry with a shape it does support instead of reporting an empty Reddit.
     """
     params: dict = {"limit": limit}
     if subreddit:
@@ -136,24 +147,112 @@ def search_subreddits_raw(
         params["subreddit_prefix"] = query
     if min_subscribers is not None:
         params["min_subscribers"] = min_subscribers
+    if max_subscribers is not None:
+        params["max_subscribers"] = max_subscribers
     after_ts, before_ts = _epoch(after), _epoch(before)
     if after_ts is not None:
         params["after"] = after_ts
     if before_ts is not None:
         params["before"] = before_ts
-    if sort:
+    if sort is not None:
         params["sort"] = sort
+    if sort_type is not None:
+        params["sort_type"] = sort_type
     return request(_SUBS_URL, params)
 
 
-def search_subreddits(query: str | None = None, subreddit: str | None = None, limit: int = 20) -> list[dict]:
+def search_subreddits(
+    query: str | None = None,
+    subreddit: str | None = None,
+    limit: int = 20,
+    min_subscribers: int | None = None,
+    max_subscribers: int | None = None,
+    sort: str | None = None,
+    sort_type: str | None = None,
+) -> list[dict]:
     """Raw Arctic Shift subreddit search. Returns the list of subreddit dicts.
 
     Note: /api/subreddits/search has NO 'query' param — a name lookup uses
     'subreddit' (exact) and a fuzzy lookup uses 'subreddit_prefix'. Sending
     'query' returns HTTP 400. So the *query* argument maps to subreddit_prefix.
+
+    With neither name nor prefix, the endpoint enumerates subreddits by
+    subscriber count (its default sort). Pass min/max_subscribers to bound the
+    range and sort/sort_type to control ordering (defaults: sort=desc,
+    sort_type=subscribers). limit may be up to 1000.
     """
-    return search_subreddits_raw(query=query, subreddit=subreddit, limit=limit)[1]
+    return search_subreddits_raw(
+        query=query, subreddit=subreddit, limit=limit,
+        min_subscribers=min_subscribers, max_subscribers=max_subscribers,
+        sort=sort, sort_type=sort_type,
+    )[1]
+
+
+def iter_subreddits_by_subscribers(
+    min_subscribers: int = 1000,
+    max_count: int = 50_000,
+    page_size: int = 1000,
+    sleep: float = 0.5,
+):
+    """Yield subreddit dicts sorted by subscriber count DESCENDING — from the
+    largest down to *min_subscribers*, up to *max_count* subreddits.
+
+    Pages via a descending max_subscribers cursor: each page requests
+    subscribers <= the smallest count seen so far. Ties across a page boundary
+    are handled by de-duping on name; if a page yields nothing new we stop
+    (guards against an infinite loop on a large tie block).
+    """
+    page_size = min(max(page_size, 1), 1000)
+    yielded = 0
+    cursor: int | None = None
+    seen: set[str] = set()
+
+    while yielded < max_count:
+        # Always request a full page: the first item of each page after the
+        # first is the boundary-value duplicate, so a page shrunk to the leftover
+        # budget could return only that dupe and stall. max_count is enforced by
+        # the yield guard below instead.
+        status, items = search_subreddits_raw(
+            limit=page_size,
+            min_subscribers=min_subscribers,
+            max_subscribers=cursor,
+            sort="desc",
+            sort_type="subscribers",
+        )
+        # A rejected param on the FIRST page means this deployment cannot rank by
+        # subscribers at all. Yielding nothing would be indistinguishable from
+        # "Reddit has no subreddits" and would hand the caller a silently empty
+        # catalog, so say so and let it fall back to another enumeration.
+        if status != 200 and yielded == 0:
+            raise SubscriberSortUnsupported(
+                f"Arctic Shift HTTP {status} for a subscriber-ranked subreddit query"
+            )
+        if not items:
+            break
+
+        page_min: int | None = None
+        made_progress = False
+        for it in items:
+            name = _first(it, "display_name", "name")
+            if name is None:
+                continue
+            key = str(name).lower()
+            subs = int(_first(it, "subscribers", "subscriber_count", default=0) or 0)
+            page_min = subs if page_min is None else min(page_min, subs)
+            if key in seen:
+                continue
+            seen.add(key)
+            made_progress = True
+            yield it
+            yielded += 1
+            if yielded >= max_count:
+                return
+
+        if not made_progress or page_min is None:
+            break
+        cursor = page_min  # next page: subscribers <= this (inclusive; dedup handles ties)
+        if sleep:
+            time.sleep(sleep)
 
 
 def count_posts_in_window(subreddit: str, days: int = 7) -> int:

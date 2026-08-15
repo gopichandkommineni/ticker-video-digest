@@ -2,6 +2,9 @@
 import json
 from unittest.mock import patch
 
+import pytest
+
+from core.social_media.reddit import arctic_shift_client as arctic
 from core.social_media.reddit import subreddit_catalog as sc
 from core.social_media.reddit.subreddit_catalog import (
     UniverseEntry,
@@ -11,13 +14,33 @@ from core.social_media.reddit.subreddit_catalog import (
     fetch_catalog,
     info_from_item,
 )
-from core.social_media.reddit.subreddit_discovery import SubredditInfo
+from core.social_media.reddit.subreddit_discovery import ScoredSubreddit, SubredditInfo
 
 
 def _info(name, subs=1000, title="", desc=""):
     return SubredditInfo(
         name=name, subscribers=subs, title=title, public_description=desc
     )
+
+
+# Captured before the autouse fixture replaces it, so the test that exercises the
+# ranked sweep itself can still reach the real implementation.
+_REAL_RANKED_SWEEP = sc._sweep_by_subscribers
+
+
+@pytest.fixture(autouse=True)
+def _archive_without_subscriber_ranking():
+    """Default every test to an archive that cannot rank by subscribers.
+
+    Stage 1 tries the ranked walk first, and it talks to the network through a
+    different door than `_page` — so without this the creation-time tests would
+    reach for the real archive. Tests covering the ranked path re-patch this.
+    """
+    with patch.object(
+        sc, "_sweep_by_subscribers",
+        side_effect=arctic.SubscriberSortUnsupported("ranking unavailable"),
+    ):
+        yield
 
 
 # Sweep timestamps must sit after Reddit's epoch or the cursor never advances —
@@ -50,6 +73,48 @@ def test_info_from_item_maps_fields():
 def test_info_from_item_rejects_invalid_names():
     assert info_from_item({"display_name": "no spaces here", "subscribers": 10}) is None
     assert info_from_item({"subscribers": 10}) is None
+
+
+def test_fetch_catalog_prefers_the_archives_own_subscriber_ranking():
+    """The ranked walk is the point — creation-time paging is only a fallback."""
+    ranked = {
+        "huge": _info("huge", 900_000),
+        "mid": _info("mid", 40_000),
+    }
+    with patch.object(sc, "_sweep_by_subscribers", return_value=(ranked, 1)) as ranked_sweep, \
+         patch.object(sc, "_page", side_effect=AssertionError("fell back needlessly")):
+        infos, strategy, requests_made, truncated = fetch_catalog(
+            min_subscribers=1000, max_requests=600, sleep=False
+        )
+    assert strategy == "subscribers"
+    assert [i.name for i in infos] == ["huge", "mid"]
+    assert requests_made == 1
+    assert not truncated
+    assert ranked_sweep.call_args.args[0] == 1000      # floor passed through
+
+
+def test_sweep_by_subscribers_maps_items_and_applies_the_floor():
+    items = [
+        {"display_name": "big", "subscribers": 500_000},
+        {"display_name": "tiny", "subscribers": 12},        # below the floor
+        {"display_name": "no spaces allowed", "subscribers": 90_000},   # invalid name
+    ]
+    with patch.object(arctic, "iter_subreddits_by_subscribers", return_value=iter(items)):
+        found, _ = _REAL_RANKED_SWEEP(1000, max_count=10, sleep=False)
+    assert list(found) == ["big"]
+
+
+def test_fetch_catalog_falls_back_when_ranking_is_rejected():
+    """A rejected ranked query must degrade, not report an empty Reddit."""
+    with patch.object(sc, "_page", side_effect=[
+        (200, [_item("viacreated", 5_000, created=_T0)]),
+        (200, []),
+    ]):
+        infos, strategy, _, _ = fetch_catalog(
+            min_subscribers=1000, max_requests=20, sleep=False
+        )
+    assert strategy == "created+min_subscribers"        # the autouse fixture rejected ranking
+    assert [i.name for i in infos] == ["viacreated"]
 
 
 def test_fetch_catalog_pages_until_exhausted_and_sorts_desc():
@@ -371,6 +436,28 @@ def test_saved_catalog_round_trips_for_offline_refiltering(tmp_path):
         "wallstreetbets", "Stockholm", "RKLB", "RocketLab"
     ]
     assert report.by_ticker() == {"RKLB": ["RKLB", "RocketLab"]}
+
+
+def test_per_ticker_pass_only_runs_for_stocks_the_sweep_missed():
+    """The expensive per-ticker probe is for gaps, not for the whole universe."""
+    from casino_dashboard.jobs.subreddit_catalog_run import fill_gaps_with_discovery
+    from core.social_media.reddit.subreddit_discovery import DiscoveryResult
+
+    def fake_discover(ticker, company_name=None, sleep=True):
+        return DiscoveryResult(
+            ticker=ticker,
+            subreddits=[ScoredSubreddit(
+                info=_info(f"{ticker}_Stock", 22), relevance=0.6, score=1.0, selected=True,
+            )],
+        )
+
+    with patch("core.social_media.reddit.subreddit_discovery.discover",
+               side_effect=fake_discover) as discover:
+        filled = fill_gaps_with_discovery(_sample_report(), _ENTRIES, sleep=False)
+
+    # RKLB was already covered by the sweep; only the other two are probed.
+    assert sorted(c.args[0] for c in discover.call_args_list) == ["ASTS", "PL"]
+    assert filled == {"ASTS": ["ASTS_Stock"], "PL": ["PL_Stock"]}
 
 
 def test_write_artifacts_dumps_csv_and_json(tmp_path):

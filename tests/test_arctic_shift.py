@@ -3,6 +3,8 @@
 Payloads mirror Arctic Shift's documented shape: {"data": [ ...items... ]}.
 """
 import time
+
+import pytest
 from unittest.mock import MagicMock, patch
 
 from core.social_media.base import SocialSignals
@@ -138,3 +140,54 @@ def test_discovery_ranks_via_arctic_shift():
     assert rklb.info.subscribers == 15000 and rklb.info.posts_7d == 12
     rl = next(s for s in result.subreddits if s.info.name == "RocketLab")
     assert rl.info.subscribers == 42000 and rl.info.posts_7d == 40
+
+
+# ---------------------------------------------------------------------------
+# Subscriber-ranked enumeration (moved here when subreddit_rank_scan's job was
+# folded into subreddit_catalog_run — the iterator itself lives on).
+# ---------------------------------------------------------------------------
+
+def _fake_ranked_search(dataset):
+    """Mimic /api/subreddits/search sorted by subscribers desc, with min/max."""
+    def fake(query=None, subreddit=None, limit=20, min_subscribers=None,
+             max_subscribers=None, after=None, before=None, sort=None, sort_type=None):
+        items = [
+            d for d in dataset
+            if (min_subscribers is None or d["subscribers"] >= min_subscribers)
+            and (max_subscribers is None or d["subscribers"] <= max_subscribers)
+        ]
+        items.sort(key=lambda d: d["subscribers"], reverse=True)
+        return (200, items[:limit])
+    return fake
+
+
+def test_iter_pages_descending_and_respects_floor():
+    data = [{"display_name": n, "subscribers": s} for n, s in
+            [("AAA", 500), ("BBB", 400), ("CCC", 300), ("DDD", 200), ("EEE", 150), ("FFF", 50)]]
+    with patch.object(arctic, "search_subreddits_raw", side_effect=_fake_ranked_search(data)):
+        out = list(arctic.iter_subreddits_by_subscribers(
+            min_subscribers=100, max_count=100, page_size=2, sleep=0))
+    names = [d["display_name"] for d in out]
+    assert names == ["AAA", "BBB", "CCC", "DDD", "EEE"]   # FFF below floor; strictly descending
+
+
+def test_iter_dedupes_and_caps_at_max_count():
+    data = [{"display_name": n, "subscribers": s} for n, s in
+            [("AAA", 500), ("BBB", 400), ("CCC", 300), ("DDD", 200)]]
+    with patch.object(arctic, "search_subreddits_raw", side_effect=_fake_ranked_search(data)):
+        out = list(arctic.iter_subreddits_by_subscribers(
+            min_subscribers=1, max_count=3, page_size=2, sleep=0))
+    assert [d["display_name"] for d in out] == ["AAA", "BBB", "CCC"]   # capped, no dupes
+
+
+def test_iter_stops_when_empty():
+    with patch.object(arctic, "search_subreddits_raw", return_value=(200, [])):
+        out = list(arctic.iter_subreddits_by_subscribers(min_subscribers=1, sleep=0))
+    assert out == []
+
+
+def test_iter_raises_when_the_archive_rejects_subscriber_ranking():
+    """A 400 on page 1 must not read as 'Reddit has no subreddits'."""
+    with patch.object(arctic, "search_subreddits_raw", return_value=(400, [])):
+        with pytest.raises(arctic.SubscriberSortUnsupported):
+            list(arctic.iter_subreddits_by_subscribers(min_subscribers=1, sleep=0))

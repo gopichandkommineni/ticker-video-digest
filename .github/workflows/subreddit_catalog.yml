@@ -35,6 +35,11 @@ on:
         required: false
         type: boolean
         default: true
+      with_per_ticker:
+        description: "Also probe per-ticker for stocks the sweep missed (slower)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -66,7 +71,8 @@ jobs:
       - name: Sweep the subreddit catalog
         run: |
           python -m casino_dashboard.jobs.subreddit_catalog_run \
-            ${{ github.event.inputs.company_names == 'false' && '--no-company-names' || '' }}
+            ${{ github.event.inputs.company_names == 'false' && '--no-company-names' || '' }} \
+            ${{ github.event.inputs.with_per_ticker == 'true' && '--with-per-ticker' || '' }}
 
       - name: Upload catalog artifacts
         if: always()

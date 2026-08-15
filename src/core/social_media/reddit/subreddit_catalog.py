@@ -42,7 +42,9 @@ from core.social_media.reddit.subreddit_discovery import (
 logger = logging.getLogger(__name__)
 
 _REQUEST_DELAY = 0.35     # polite pause between sweep pages
-_PAGE_SIZE = 100          # Arctic Shift caps a page at 100 items
+_PAGE_SIZE = 100          # creation-time paging caps a page at 100 items
+_RANKED_PAGE_SIZE = 1000  # subscriber-ranked paging serves up to 1000
+_RANKED_MAX_COUNT = 200_000   # backstop on a ranked walk that will not terminate
 _REDDIT_EPOCH = 1119000000  # ~2005-06-17, before the first subreddit existed
 
 # Fallback sweep, used only when the archive rejects creation-time paging. It
@@ -190,6 +192,35 @@ def _page(**kwargs) -> tuple[int, list[dict]]:
     return arctic.search_subreddits_raw(**kwargs)
 
 
+def _sweep_by_subscribers(
+    min_subscribers: int,
+    max_count: int,
+    sleep: bool,
+) -> tuple[dict[str, SubredditInfo], int]:
+    """Walk subreddits in subscriber order, largest first.
+
+    This is what the whole feature wants — the archive ranks by subscribers
+    itself (`sort_type=subscribers`) and serves 1000 per page, so the ranking is
+    exact and complete down to the floor rather than reconstructed from a
+    creation-time walk. Raises SubscriberSortUnsupported if the deployment does
+    not accept the query, which is the caller's cue to fall back.
+    """
+    from core.social_media.reddit import arctic_shift_client as arctic  # noqa: PLC0415
+
+    found: dict[str, SubredditInfo] = {}
+    for item in arctic.iter_subreddits_by_subscribers(
+        min_subscribers=min_subscribers,
+        max_count=max_count,
+        page_size=_RANKED_PAGE_SIZE,
+        sleep=_REQUEST_DELAY if sleep else 0,
+    ):
+        info = info_from_item(item)
+        if info is not None and info.subscribers >= min_subscribers:
+            found.setdefault(info.name.lower(), info)
+    # One request per page of 1000, plus the final short page.
+    return found, max(1, -(-len(found) // _RANKED_PAGE_SIZE))
+
+
 def _sweep_by_created(
     min_subscribers: int,
     max_requests: int,
@@ -315,8 +346,12 @@ def fetch_catalog(
     is a community service whose accepted params drift and a rejected param
     comes back as HTTP 400 rather than a warning:
 
+    0. ``subscribers`` — the archive's own subscriber ranking
+       (``sort_type=subscribers``, 1000 per page). What this feature actually
+       wants: exact order, complete down to the floor, ~1 request per 1000 subs.
+       Everything below only exists for a deployment that rejects it.
     1. ``created+min_subscribers`` — oldest-first creation-time paging with the
-       subscriber floor applied server-side. Cheapest: every row is a keeper.
+       subscriber floor applied server-side, ranked locally afterwards.
     2. ``created`` — same paging, floor applied locally (more pages, same yield).
     3. ``created-desc+min_subscribers`` / 4. ``created-desc`` — newest-first
        paging, which drops the explicit ``sort`` param for archives that reject it.
@@ -328,11 +363,26 @@ def fetch_catalog(
     This matters whenever the request budget runs out before the archive does:
     an oldest-first sweep then covers 2005 onward and stops, which is the wrong
     end of history for ticker communities (r/RKLB and friends are recent), while
-    newest-first spends a partial budget exactly where they live.
+    newest-first spends a partial budget exactly where they live. It has no
+    effect on the ranked walk, which is ordered by size rather than date.
 
     The shape that ran is returned so the report can state what the numbers
     actually cover.
     """
+    try:
+        ranked, ranked_reqs = _sweep_by_subscribers(
+            min_subscribers, _RANKED_MAX_COUNT, sleep=sleep
+        )
+        if ranked:
+            infos = sorted(ranked.values(), key=lambda i: i.subscribers, reverse=True)
+            logger.info(
+                "Catalog: %d subreddits >= %d subscribers via subscriber ranking",
+                len(infos), min_subscribers,
+            )
+            return infos, "subscribers", ranked_reqs, len(ranked) >= _RANKED_MAX_COUNT
+        logger.info("Catalog: subscriber ranking returned nothing — trying creation-time paging")
+    except Exception as exc:  # archive rejected the ranked query (or died mid-walk)
+        logger.info("Catalog: subscriber ranking unavailable (%s) — falling back", exc)
     shapes = [
         ("created+min_subscribers", {"server_side_floor": True, "forward": True}),
         ("created", {"server_side_floor": False, "forward": True}),

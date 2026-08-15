@@ -248,6 +248,39 @@ def write_artifacts(report: CatalogReport, out_dir: Path, stamp: str) -> list[Pa
     return [csv_path, json_path]
 
 
+def fill_gaps_with_discovery(
+    report: CatalogReport, entries: list[UniverseEntry], sleep: bool = True
+) -> dict[str, list[str]]:
+    """Run bottom-up `discover()` for the stocks the sweep found nothing for.
+
+    The two approaches fail in opposite directions, which is why it is worth
+    running both. A ranked sweep cannot see below its subscriber floor, and real
+    ticker communities live down there — r/SNDK_Stock had 22 members, r/CCJ 183.
+    Guessing names finds those, because a named sub is findable by name however
+    small it is. So the sweep goes first and this cleans up after it, one
+    discover() per still-missing ticker rather than for the whole universe.
+    """
+    from core.social_media.reddit.subreddit_discovery import discover  # noqa: PLC0415
+
+    gaps = [e for e in entries if e.ticker not in report.by_ticker()]
+    if not gaps:
+        return {}
+
+    logger.info("Filling %d gap(s) with per-ticker discovery …", len(gaps))
+    filled: dict[str, list[str]] = {}
+    for entry in gaps:
+        try:
+            result = discover(entry.ticker, company_name=entry.company_name, sleep=sleep)
+        except Exception as exc:  # one bad ticker must not sink the rest
+            logger.warning("Discovery failed for %s: %s", entry.ticker, exc)
+            continue
+        names = [s.info.name for s in result.selected]
+        if names:
+            filled[entry.ticker] = names
+    logger.info("Per-ticker pass found subreddits for %d more ticker(s)", len(filled))
+    return filled
+
+
 def load_catalog_csv(path: Path) -> list[SubredditInfo]:
     """Read a catalog.csv written by `write_artifacts` back into SubredditInfo.
 
@@ -319,6 +352,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default=_env_flag("SUBREDDIT_CATALOG_NO_NAMES"),
         help="Skip yfinance name lookups (ticker-symbol matching only).",
     )
+    parser.add_argument(
+        "--with-per-ticker", action="store_true",
+        default=_env_flag("SUBREDDIT_CATALOG_PER_TICKER"),
+        help="After the sweep, run bottom-up discovery for tickers it found "
+             "nothing for — catches named subs below the subscriber floor.",
+    )
     parser.add_argument("--no-sleep", action="store_true", help="Skip polite delays (tests).")
     return parser.parse_args(argv)
 
@@ -343,11 +382,25 @@ def main(argv: list[str] | None = None) -> None:
     lines = report_lines(report, expected_tickers={e.ticker for e in entries})
     stamp = date.today().isoformat()
 
+    filled: dict[str, list[str]] = {}
+    if args.with_per_ticker:
+        filled = fill_gaps_with_discovery(report, entries, sleep=not args.no_sleep)
+        if filled:
+            lines += [
+                f"### Per-ticker pass — {len(filled)} stock(s) the sweep missed",
+                "",
+                "| Ticker | Subreddits |",
+                "|--------|------------|",
+                *(f"| **{t}** | {', '.join('r/' + n for n in names)} |"
+                  for t, names in sorted(filled.items())),
+                "",
+            ]
+
     if args.out:
         write_artifacts(report, Path(args.out), stamp)
 
     if args.save:
-        mapping = report.by_ticker()
+        mapping = {**report.by_ticker(), **filled}
         if mapping:
             from casino_dashboard.data.subreddit_map_loader import save_subreddit_map  # noqa: PLC0415
 
