@@ -84,11 +84,13 @@ class RedditScraper(SocialScraper):
 
     def _build_praw_client(self):  # type: ignore[return]
         if not (REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET):
-            logger.warning(
-                "Reddit API credentials not set (REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET) — "
-                "falling back to the public JSON API, which Reddit now 403-blocks for most "
-                "IPs (expect 0 results). Create a 'script' app at reddit.com/prefs/apps and "
-                "set the credentials."
+            # Info, not warning: this direct client is only a fallback now — the
+            # active backend (Arctic Shift / Apify) is chosen elsewhere, so a
+            # missing credential here does NOT mean the run will return nothing.
+            logger.info(
+                "Reddit PRAW credentials not set; the direct client would use the public "
+                "JSON API (reachable only from allowed IPs). Not used unless "
+                "REDDIT_BACKEND=direct."
             )
             return None
         try:

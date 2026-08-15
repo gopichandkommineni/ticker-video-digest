@@ -96,12 +96,17 @@ def search_posts(
 
 
 def search_subreddits(query: str | None = None, subreddit: str | None = None, limit: int = 20) -> list[dict]:
-    """Raw Arctic Shift subreddit search. Returns the list of subreddit dicts."""
+    """Raw Arctic Shift subreddit search. Returns the list of subreddit dicts.
+
+    Note: /api/subreddits/search has NO 'query' param — a name lookup uses
+    'subreddit' (exact) and a fuzzy lookup uses 'subreddit_prefix'. Sending
+    'query' returns HTTP 400. So the *query* argument maps to subreddit_prefix.
+    """
     params: dict = {"limit": limit}
     if subreddit:
         params["subreddit"] = subreddit
     if query:
-        params["query"] = query
+        params["subreddit_prefix"] = query
     return _get(_SUBS_URL, params)
 
 
