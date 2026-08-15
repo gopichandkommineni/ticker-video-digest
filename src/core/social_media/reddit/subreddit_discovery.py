@@ -41,6 +41,16 @@ _MIN_SUBS_SELECT = 100        # below this, treat as too small to matter …
 _BIG_SUB = 2000               # … unless it is clearly a large community
 _MIN_POSTS_SELECT = 1         # at least one post in the last 7 days
 _NOISE_SUBS = 25              # under this AND no recent posts => noise
+_MIN_RELEVANCE_SELECT = 0.6   # a weak/partial name match alone cannot select
+
+# Finance-flavored suffixes a real ticker/company subreddit name may append
+# (r/RKLBInvestors, r/MDASpaceInvestors). Used for boundary-anchored name
+# matching so we never fall back to bare substring matching.
+_NAME_SUFFIXES = {
+    "stock", "stocks", "investing", "investor", "investors", "trading",
+    "trader", "traders", "dd", "options", "stockmarket", "market",
+    "community", "official", "hq",
+}
 
 
 class SubredditInfo(BaseModel):
@@ -204,16 +214,57 @@ def search_subreddits(query: str, limit: int = 10) -> list[str]:
 # Scoring
 # ---------------------------------------------------------------------------
 
+def _norm(text: str) -> str:
+    """Lowercase, strip all non-alphanumerics: 'Rocket_Lab' -> 'rocketlab'."""
+    return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+def _word_tokens(text: str) -> set[str]:
+    return {t for t in re.split(r"[^a-z0-9]+", text.lower()) if t}
+
+
+def _name_is_about(name_norm: str, base: str, allow_prefix: bool) -> bool:
+    """True if a subreddit's normalized name IS *base*, or *base* + a known
+    finance suffix (only when allow_prefix).
+
+    Deliberately NO bare-substring matching — that is what let 'pl' match
+    'playstation' and 'intuit' match 'intuitiveeating'. A match requires either
+    an exact name or a clean base+suffix boundary.
+    """
+    if not base:
+        return False
+    if name_norm == base:
+        return True
+    if allow_prefix and name_norm.startswith(base):
+        return name_norm[len(base):] in _NAME_SUFFIXES
+    return False
+
+
 def _relevance(info: SubredditInfo, ticker: str, company_name: str | None) -> float:
-    hay = f"{info.name} {info.title} {info.public_description}".lower()
+    """0..1 confidence that the subreddit is actually about this stock.
+
+    Whole-word (token) and name-form matching only — never bare substrings — so
+    unrelated giants (r/playstation for PL, r/intuitiveeating for INTU) score 0.
+    """
+    tkr = ticker.lower()
+    name_norm = _norm(info.name)
+    hay_tokens = _word_tokens(f"{info.name} {info.title} {info.public_description}")
+
     score = 0.0
-    if ticker.lower() in re.split(r"[^a-z0-9]+", hay):
+    # Ticker signal: symbol appears as a whole word, or the sub name is the
+    # ticker (+ a finance suffix). Prefix matching only for tickers >= 3 chars —
+    # 2-letter prefixes (e.g. "PL") are meaningless.
+    if tkr in hay_tokens or _name_is_about(name_norm, tkr, allow_prefix=len(tkr) >= 3):
         score += 0.6
-    elif ticker.lower() in hay:
-        score += 0.4
+
+    # Company signal: the sub name is the company form (+ suffix), or every
+    # meaningful company word appears as a whole word in the text.
     if company_name:
         toks = [t.lower() for t in _company_tokens(company_name) if len(t) >= 3]
-        if toks and any(t in hay for t in toks):
+        joined = "".join(toks)
+        if joined and _name_is_about(name_norm, joined, allow_prefix=True):
+            score += 0.6
+        elif toks and all(t in hay_tokens for t in toks):
             score += 0.6
     return min(score, 1.0)
 
@@ -224,25 +275,23 @@ def score_subreddit(
     relevance = _relevance(info, ticker, company_name)
     reasons: list[str] = []
 
-    # Transparent, explainable score: size (log) + recent activity + relevance.
-    score = round(
-        math.log10(info.subscribers + 1) * 10
-        + info.posts_7d * 2
-        + relevance * 20,
-        2,
-    )
+    # Relevance MULTIPLIES size+activity, so an irrelevant sub can never outrank
+    # a real match on size alone. posts_7d is capped (it saturates at the 100-post
+    # fetch limit for big subs) so raw volume doesn't swamp the signal.
+    base = math.log10(info.subscribers + 1) * 10 + min(info.posts_7d, 50)
+    score = round(relevance * base, 2)
 
     is_noise = info.subscribers < _NOISE_SUBS and info.posts_7d == 0
     selected = (
-        relevance > 0
+        relevance >= _MIN_RELEVANCE_SELECT
         and not info.quarantined
         and not is_noise
         and info.subscribers >= _MIN_SUBS_SELECT
         and (info.posts_7d >= _MIN_POSTS_SELECT or info.subscribers >= _BIG_SUB)
     )
 
-    if relevance == 0:
-        reasons.append("name/description does not reference the stock")
+    if relevance < _MIN_RELEVANCE_SELECT:
+        reasons.append("name/description does not clearly reference the stock")
     if info.subscribers < _MIN_SUBS_SELECT and info.subscribers < _BIG_SUB:
         reasons.append(f"only {info.subscribers} subscribers")
     if info.posts_7d == 0:

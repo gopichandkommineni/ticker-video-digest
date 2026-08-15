@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 from core.social_media.reddit import subreddit_discovery as sd
 from core.social_media.reddit.subreddit_discovery import (
     SubredditInfo,
+    _MIN_RELEVANCE_SELECT,
     _valid_subreddit_name,
     discover,
     generate_candidates,
@@ -80,6 +81,40 @@ def test_irrelevant_name_not_selected_even_if_big():
     assert not scored.selected
 
 
+def test_substring_giants_rejected():
+    # Regression: unanchored substring matching used to select these.
+    # 'pl' must NOT match 'playstation'; 'intuit' must NOT match 'intuitiveeating'.
+    ps = _info("playstation", 5_000_000, posts=100, desc="the playstation community")
+    ps_scored = score_subreddit(ps, "PL", "Planet Labs")
+    assert ps_scored.relevance == 0 and not ps_scored.selected
+
+    eat = _info("intuitiveeating", 300_000, posts=100, desc="intuitive eating recovery")
+    eat_scored = score_subreddit(eat, "INTU", "Intuit")
+    assert eat_scored.relevance == 0 and not eat_scored.selected
+
+
+def test_cross_contamination_rejected():
+    # r/IntuitiveMachines is LUNR's community, not INTU's (Intuit).
+    im = _info("IntuitiveMachines", 20_000, posts=30, desc="Intuitive Machines LUNR")
+    assert not score_subreddit(im, "INTU", "Intuit").selected          # wrong stock
+    assert score_subreddit(im, "LUNR", "Intuitive Machines").selected  # right stock
+
+
+def test_name_form_and_suffix_match_selected():
+    # Company-form name and ticker+suffix names are real matches.
+    assert score_subreddit(_info("PlanetLabs", 3000, posts=5), "PL", "Planet Labs").selected
+    assert score_subreddit(_info("MDASpaceInvestors", 1500, posts=5, desc="MDA Space"),
+                           "MDA", "MDA Space").selected
+
+
+def test_weak_partial_match_not_selected():
+    # relevance 0.6 is the floor; below it can't select even if big + active.
+    weak = _info("spacestocks", 50_000, posts=100, desc="general space stock chat")
+    scored = score_subreddit(weak, "RKLB", "Rocket Lab")
+    assert scored.relevance < _MIN_RELEVANCE_SELECT
+    assert not scored.selected
+
+
 def test_quarantined_not_selected():
     info = _info("RKLBraw", 5000, posts=10, desc="RKLB", quarantined=True)
     scored = score_subreddit(info, "RKLB", "Rocket Lab")
@@ -113,8 +148,9 @@ def test_discover_ranks_and_flags():
     assert "RocketLab" in names and "RKLB" in names
     assert result.found is True
     assert all(s.selected for s in result.subreddits)  # both real communities
-    # RocketLab (42k subs, 40 posts/7d) outranks RKLB (15k, 12) on the metrics.
-    assert result.subreddits[0].info.name == "RocketLab"
+    # Relevance multiplies the score, so the exact-ticker match (r/RKLB, rel 1.0)
+    # ranks ahead of the larger name-only match (r/RocketLab, rel 0.6).
+    assert result.subreddits[0].info.name == "RKLB"
     assert result.flag is None
 
 
