@@ -1,0 +1,7 @@
+# Ticker -> company name, resolved from yfinance and cached here because
+# that lookup is the slowest part of a catalog run (one network round-trip
+# per ticker, minutes for the universe) and the answer almost never changes.
+# Delete a line to re-resolve it, or run with --refresh-names.
+names:
+  ASTS: ASTS Corp
+  RKLB: RKLB Corp

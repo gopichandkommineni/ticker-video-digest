@@ -31,6 +31,8 @@ import sys
 from datetime import date
 from pathlib import Path
 
+import yaml
+
 from core.social_media.reddit.subreddit_catalog import (
     CatalogReport,
     SubredditInfo,
@@ -60,12 +62,50 @@ def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() not in ("", "0", "false", "no")
 
 
-def universe_entries(with_company_names: bool = True) -> list[UniverseEntry]:
+_NAMES_CACHE = Path("config/ticker_company_names.yaml")
+
+_NAMES_HEADER = (
+    "# Ticker -> company name, resolved from yfinance and cached here because\n"
+    "# that lookup is the slowest part of a catalog run (one network round-trip\n"
+    "# per ticker, minutes for the universe) and the answer almost never changes.\n"
+    "# Delete a line to re-resolve it, or run with --refresh-names.\n"
+)
+
+
+def load_company_names(path: Path = _NAMES_CACHE) -> dict[str, str]:
+    """Read the cached ticker -> company-name map ({} when absent/unreadable)."""
+    if not path.exists():
+        return {}
+    try:
+        with path.open() as fh:
+            raw = yaml.safe_load(fh) or {}
+    except Exception as exc:  # a hand-edit typo must not break the run
+        logger.warning("Could not read %s: %s", path, exc)
+        return {}
+    names = raw.get("names") if isinstance(raw, dict) else None
+    if not isinstance(names, dict):
+        return {}
+    return {str(k).upper(): str(v) for k, v in names.items() if v}
+
+
+def save_company_names(names: dict[str, str], path: Path = _NAMES_CACHE) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w") as fh:
+        fh.write(_NAMES_HEADER)
+        yaml.safe_dump({"names": dict(sorted(names.items()))}, fh, sort_keys=False)
+
+
+def universe_entries(
+    with_company_names: bool = True, refresh_names: bool = False
+) -> list[UniverseEntry]:
     """Our tickers, each with a company name when one can be resolved.
 
     The name is what catches company-named subs (r/RocketLab for RKLB), so it is
-    worth a yfinance lookup per ticker; a failed lookup degrades to ticker-only
-    matching rather than dropping the stock.
+    worth resolving — but yfinance charges a network round-trip per ticker and
+    dominates the wall-clock of an otherwise fast job. Resolved names are cached
+    in config/ticker_company_names.yaml, so only tickers new since the last run
+    cost anything. A failed lookup degrades to ticker-only matching rather than
+    dropping the stock.
     """
     from casino_dashboard.universe import load_universe  # noqa: PLC0415
 
@@ -73,16 +113,27 @@ def universe_entries(with_company_names: bool = True) -> list[UniverseEntry]:
     if not with_company_names:
         return [UniverseEntry(ticker=t) for t in tickers]
 
-    from core.social_media.reddit.ticker_resolver import company_name_for  # noqa: PLC0415
+    cached = {} if refresh_names else load_company_names(_NAMES_CACHE)
+    missing = [t for t in tickers if t not in cached]
+    if missing:
+        from core.social_media.reddit.ticker_resolver import company_name_for  # noqa: PLC0415
 
-    entries: list[UniverseEntry] = []
-    for ticker in tickers:
-        try:
-            name = company_name_for(ticker)
-        except Exception as exc:  # yfinance flakiness must not sink the sweep
-            logger.warning("Company-name lookup failed for %s: %s", ticker, exc)
-            name = None
-        entries.append(UniverseEntry(ticker=ticker, company_name=name))
+        logger.info(
+            "Resolving company names for %d ticker(s) (%d already cached) …",
+            len(missing), len(tickers) - len(missing),
+        )
+        for ticker in missing:
+            try:
+                name = company_name_for(ticker)
+            except Exception as exc:  # yfinance flakiness must not sink the sweep
+                logger.warning("Company-name lookup failed for %s: %s", ticker, exc)
+                name = None
+            if name:
+                cached[ticker] = name
+        save_company_names(cached, _NAMES_CACHE)
+        logger.info("Cached %d company names in %s", len(cached), _NAMES_CACHE)
+
+    entries = [UniverseEntry(ticker=t, company_name=cached.get(t)) for t in tickers]
     resolved = sum(1 for e in entries if e.company_name)
     logger.info("Universe: %d tickers, %d with company names", len(entries), resolved)
     return entries
@@ -248,6 +299,77 @@ def write_artifacts(report: CatalogReport, out_dir: Path, stamp: str) -> list[Pa
     return [csv_path, json_path]
 
 
+def fetch_only(
+    out_dir: Path,
+    stamp: str,
+    min_subscribers: int,
+    max_requests: int,
+    sleep: bool = True,
+) -> tuple[Path, int, int]:
+    """PHASE 1 — dump every subreddit and its subscriber count, nothing else.
+
+    Deliberately does no filtering and resolves no company names: fetching is the
+    slow, rate-limited, failure-prone half, and filtering is the half worth
+    re-running. Keeping them apart means one fetch feeds any number of filter
+    passes (`--from-catalog`), and a change of heart about thresholds costs
+    nothing.
+
+    Rows stream to disk as they arrive rather than being held in memory to the
+    end, so a walk that times out, gets rate-limited, or is cancelled still
+    leaves behind everything it had already seen.
+
+    Returns (csv_path, rows_written, smallest_subscriber_count_reached).
+    """
+    from core.social_media.reddit import arctic_shift_client as arctic  # noqa: PLC0415
+    from core.social_media.reddit.subreddit_catalog import (  # noqa: PLC0415
+        _RANKED_MAX_COUNT,
+        _RANKED_PAGE_SIZE,
+        _REQUEST_DELAY,
+        info_from_item,
+    )
+
+    target = out_dir / stamp
+    target.mkdir(parents=True, exist_ok=True)
+    csv_path = target / "catalog.csv"
+
+    max_count = min(_RANKED_MAX_COUNT, max(max_requests, 1) * _RANKED_PAGE_SIZE)
+    rows = 0
+    floor_reached = 0
+
+    with csv_path.open("w", newline="") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(
+            ["subreddit", "subscribers", "title", "description", "over18", "quarantined"]
+        )
+        for item in arctic.iter_subreddits_by_subscribers(
+            min_subscribers=min_subscribers,
+            max_count=max_count,
+            page_size=_RANKED_PAGE_SIZE,
+            sleep=_REQUEST_DELAY if sleep else 0,
+        ):
+            info = info_from_item(item)
+            if info is None or info.subscribers < min_subscribers:
+                continue
+            writer.writerow([
+                info.name, info.subscribers,
+                " ".join((info.title or "").split()),
+                " ".join((info.public_description or "").split()),
+                int(info.over18), int(info.quarantined),
+            ])
+            rows += 1
+            floor_reached = info.subscribers
+            if rows % 5_000 == 0:
+                fh.flush()
+                logger.info("… %d subreddits written (down to %d subscribers)",
+                            rows, floor_reached)
+
+    logger.info(
+        "Fetched %d subreddits to %s (largest first, down to %d subscribers)",
+        rows, csv_path, floor_reached,
+    )
+    return csv_path, rows, floor_reached
+
+
 def fill_gaps_with_discovery(
     report: CatalogReport, entries: list[UniverseEntry], sleep: bool = True
 ) -> dict[str, list[str]]:
@@ -353,6 +475,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Skip yfinance name lookups (ticker-symbol matching only).",
     )
     parser.add_argument(
+        "--fetch-only", action="store_true", default=_env_flag("SUBREDDIT_CATALOG_FETCH_ONLY"),
+        help="Phase 1 only: dump every subreddit + subscriber count to --out and "
+             "stop. No filtering, no company-name lookups.",
+    )
+    parser.add_argument(
+        "--refresh-names", action="store_true",
+        default=_env_flag("SUBREDDIT_CATALOG_REFRESH_NAMES"),
+        help="Re-resolve company names instead of using the cached ones.",
+    )
+    parser.add_argument(
         "--with-per-ticker", action="store_true",
         default=_env_flag("SUBREDDIT_CATALOG_PER_TICKER"),
         help="After the sweep, run bottom-up discovery for tickers it found "
@@ -364,7 +496,31 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv if argv is not None else sys.argv[1:])
-    entries = universe_entries(with_company_names=not args.no_company_names)
+    stamp = date.today().isoformat()
+
+    if args.fetch_only:
+        out = Path(args.out or "research/probes/subreddit_catalog")
+        csv_path, rows, floor = fetch_only(
+            out, stamp, args.min_subscribers, args.max_requests, sleep=not args.no_sleep
+        )
+        summary = (
+            f"## Subreddit catalog — phase 1 (fetch)\n\n"
+            f"Fetched **{rows:,}** subreddits, largest first, down to "
+            f"**{floor:,}** subscribers → `{csv_path}`\n\n"
+            f"Filter it with:\n\n"
+            f"```bash\npython -m casino_dashboard.jobs.subreddit_catalog_run "
+            f"--from-catalog {csv_path}\n```\n"
+        )
+        print("\n" + summary)
+        summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+        if summary_path:
+            with open(summary_path, "a") as f:
+                f.write(summary)
+        return
+
+    entries = universe_entries(
+        with_company_names=not args.no_company_names, refresh_names=args.refresh_names
+    )
 
     cached = load_catalog_csv(Path(args.from_catalog)) if args.from_catalog else None
     report = build_report(
@@ -380,7 +536,6 @@ def main(argv: list[str] | None = None) -> None:
         report.strategy = f"re-filtered {Path(args.from_catalog).name}"
 
     lines = report_lines(report, expected_tickers={e.ticker for e in entries})
-    stamp = date.today().isoformat()
 
     filled: dict[str, list[str]] = {}
     if args.with_per_ticker:

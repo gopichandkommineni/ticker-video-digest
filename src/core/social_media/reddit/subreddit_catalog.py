@@ -194,9 +194,9 @@ def _page(**kwargs) -> tuple[int, list[dict]]:
 
 def _sweep_by_subscribers(
     min_subscribers: int,
-    max_count: int,
+    max_requests: int,
     sleep: bool,
-) -> tuple[dict[str, SubredditInfo], int]:
+) -> tuple[dict[str, SubredditInfo], int, bool]:
     """Walk subreddits in subscriber order, largest first.
 
     This is what the whole feature wants — the archive ranks by subscribers
@@ -204,21 +204,31 @@ def _sweep_by_subscribers(
     exact and complete down to the floor rather than reconstructed from a
     creation-time walk. Raises SubscriberSortUnsupported if the deployment does
     not accept the query, which is the caller's cue to fall back.
+
+    Returns (subs_by_lowercase_name, requests_made, truncated). *max_requests*
+    bounds this walk in the same currency as every other strategy — pages — so
+    the budget means one thing across all of them: a page here is 1000
+    subreddits against the creation-time walk's 100, but it is still one request.
     """
     from core.social_media.reddit import arctic_shift_client as arctic  # noqa: PLC0415
 
+    max_count = min(_RANKED_MAX_COUNT, max(max_requests, 1) * _RANKED_PAGE_SIZE)
     found: dict[str, SubredditInfo] = {}
+    seen = 0
     for item in arctic.iter_subreddits_by_subscribers(
         min_subscribers=min_subscribers,
         max_count=max_count,
         page_size=_RANKED_PAGE_SIZE,
         sleep=_REQUEST_DELAY if sleep else 0,
     ):
+        seen += 1
         info = info_from_item(item)
         if info is not None and info.subscribers >= min_subscribers:
             found.setdefault(info.name.lower(), info)
-    # One request per page of 1000, plus the final short page.
-    return found, max(1, -(-len(found) // _RANKED_PAGE_SIZE))
+    # One request per page, plus the final short one. Counted from rows SEEN, not
+    # rows kept, so a page of rejects still costs what it cost.
+    requests_made = max(1, -(-seen // _RANKED_PAGE_SIZE))
+    return found, requests_made, seen >= max_count
 
 
 def _sweep_by_created(
@@ -370,8 +380,8 @@ def fetch_catalog(
     actually cover.
     """
     try:
-        ranked, ranked_reqs = _sweep_by_subscribers(
-            min_subscribers, _RANKED_MAX_COUNT, sleep=sleep
+        ranked, ranked_reqs, ranked_truncated = _sweep_by_subscribers(
+            min_subscribers, max_requests, sleep=sleep
         )
         if ranked:
             infos = sorted(ranked.values(), key=lambda i: i.subscribers, reverse=True)
@@ -379,7 +389,7 @@ def fetch_catalog(
                 "Catalog: %d subreddits >= %d subscribers via subscriber ranking",
                 len(infos), min_subscribers,
             )
-            return infos, "subscribers", ranked_reqs, len(ranked) >= _RANKED_MAX_COUNT
+            return infos, "subscribers", ranked_reqs, ranked_truncated
         logger.info("Catalog: subscriber ranking returned nothing — trying creation-time paging")
     except Exception as exc:  # archive rejected the ranked query (or died mid-walk)
         logger.info("Catalog: subscriber ranking unavailable (%s) — falling back", exc)

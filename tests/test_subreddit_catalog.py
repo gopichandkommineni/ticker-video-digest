@@ -81,7 +81,7 @@ def test_fetch_catalog_prefers_the_archives_own_subscriber_ranking():
         "huge": _info("huge", 900_000),
         "mid": _info("mid", 40_000),
     }
-    with patch.object(sc, "_sweep_by_subscribers", return_value=(ranked, 1)) as ranked_sweep, \
+    with patch.object(sc, "_sweep_by_subscribers", return_value=(ranked, 1, False)) as ranked_sweep, \
          patch.object(sc, "_page", side_effect=AssertionError("fell back needlessly")):
         infos, strategy, requests_made, truncated = fetch_catalog(
             min_subscribers=1000, max_requests=600, sleep=False
@@ -100,8 +100,28 @@ def test_sweep_by_subscribers_maps_items_and_applies_the_floor():
         {"display_name": "no spaces allowed", "subscribers": 90_000},   # invalid name
     ]
     with patch.object(arctic, "iter_subreddits_by_subscribers", return_value=iter(items)):
-        found, _ = _REAL_RANKED_SWEEP(1000, max_count=10, sleep=False)
+        found, _, truncated = _REAL_RANKED_SWEEP(1000, max_requests=10, sleep=False)
     assert list(found) == ["big"]
+    assert not truncated
+
+
+def test_ranked_sweep_honours_the_request_budget():
+    """--max-requests must bound the ranked walk too, in pages like every other."""
+    captured = {}
+
+    def fake_iter(min_subscribers, max_count, page_size, sleep):
+        captured["max_count"] = max_count
+        return iter([{"display_name": f"s{i:05d}", "subscribers": 5_000}
+                     for i in range(max_count)])
+
+    with patch.object(arctic, "iter_subreddits_by_subscribers", side_effect=fake_iter):
+        found, requests_made, truncated = _REAL_RANKED_SWEEP(
+            1000, max_requests=3, sleep=False
+        )
+    assert captured["max_count"] == 3 * sc._RANKED_PAGE_SIZE   # 3 pages, not unbounded
+    assert len(found) == 3 * sc._RANKED_PAGE_SIZE
+    assert requests_made == 3
+    assert truncated          # budget stopped it, so the catalog is a lower bound
 
 
 def test_fetch_catalog_falls_back_when_ranking_is_rejected():
@@ -471,3 +491,75 @@ def test_write_artifacts_dumps_csv_and_json(tmp_path):
     payload = json.loads(paths[1].read_text())
     assert payload["tickers"] == {"RKLB": ["RKLB", "RocketLab"]}
     assert payload["strategy"] == "supplied"
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 (fetch) / phase 2 (filter) split
+# ---------------------------------------------------------------------------
+
+def test_fetch_only_streams_names_and_counts_without_filtering(tmp_path):
+    """Phase 1 writes as it goes and touches neither yfinance nor the filters."""
+    from casino_dashboard.jobs.subreddit_catalog_run import fetch_only
+
+    rows = [
+        {"display_name": "wallstreetbets", "subscribers": 18_000_000},
+        {"display_name": "Stockholm", "subscribers": 210_000},   # kept: no filtering here
+        {"display_name": "toosmall", "subscribers": 40},         # below the floor
+    ]
+    with patch.object(arctic, "iter_subreddits_by_subscribers", return_value=iter(rows)):
+        csv_path, written, floor = fetch_only(
+            tmp_path, "2026-08-15", min_subscribers=1000, max_requests=5, sleep=False
+        )
+
+    text = csv_path.read_text()
+    assert text.startswith("subreddit,subscribers,")
+    assert "wallstreetbets,18000000" in text
+    assert "Stockholm,210000" in text        # phase 1 does not judge
+    assert "toosmall" not in text            # but it does respect the floor
+    assert (written, floor) == (2, 210_000)
+
+
+def test_fetch_only_output_feeds_the_filter_phase(tmp_path):
+    """The two phases have to actually compose: fetch once, filter from the file."""
+    from casino_dashboard.jobs.subreddit_catalog_run import fetch_only, load_catalog_csv
+
+    rows = [
+        {"display_name": "RKLB", "subscribers": 41_000, "title": "Rocket Lab",
+         "public_description": "Stock discussion for RKLB investors"},
+        {"display_name": "Stockholm", "subscribers": 210_000, "title": "Stockholm",
+         "public_description": "The capital of Sweden"},
+    ]
+    with patch.object(arctic, "iter_subreddits_by_subscribers", return_value=iter(rows)):
+        csv_path, _, _ = fetch_only(
+            tmp_path, "2026-08-15", min_subscribers=1000, max_requests=5, sleep=False
+        )
+
+    report = build_report(_ENTRIES, infos=load_catalog_csv(csv_path), ticker_min_subscribers=50)
+    assert report.by_ticker() == {"RKLB": ["RKLB"]}
+    assert {r.info.name for r in report.market_rows} == {"RKLB"}   # Stockholm dropped
+
+
+def test_company_names_are_cached_and_only_missing_ones_are_resolved(tmp_path):
+    """The Yahoo lookup is the slowest part of a run — it must not repeat."""
+    from casino_dashboard.jobs import subreddit_catalog_run as job
+
+    cache = tmp_path / "names.yaml"
+    job.save_company_names({"RKLB": "Rocket Lab USA, Inc."}, path=cache)
+    assert job.load_company_names(path=cache) == {"RKLB": "Rocket Lab USA, Inc."}
+
+    resolved = []
+
+    def fake_lookup(ticker):
+        resolved.append(ticker)
+        return f"{ticker} Corp"
+
+    with patch.object(job, "_NAMES_CACHE", cache), \
+         patch("casino_dashboard.universe.load_universe") as universe, \
+         patch("core.social_media.reddit.ticker_resolver.company_name_for", fake_lookup):
+        universe.return_value.all_tickers.return_value = {"RKLB", "ASTS"}
+        entries = job.universe_entries()
+
+    assert resolved == ["ASTS"]        # RKLB came from the cache, untouched
+    by_ticker = {e.ticker: e.company_name for e in entries}
+    assert by_ticker == {"RKLB": "Rocket Lab USA, Inc.", "ASTS": "ASTS Corp"}
+    assert job.load_company_names(path=cache)["ASTS"] == "ASTS Corp"   # persisted
