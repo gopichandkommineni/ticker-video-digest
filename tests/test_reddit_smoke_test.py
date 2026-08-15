@@ -36,7 +36,9 @@ def test_run_builds_markdown_table():
 
     class FakeScraper:
         _praw_reddit = None
-        def search_ticker(self, ticker, days_back=7, max_posts=25):
+        def auth_status(self):
+            return "unauthenticated (public JSON API — Reddit blocks this for most IPs)"
+        def search_ticker(self, ticker, days_back=7, max_posts=25, subreddits=None):
             if ticker == "RKLB":
                 return SocialSignals(ticker=ticker, platform="reddit", posts=posts)
             return SocialSignals(ticker=ticker, platform="reddit", posts=[])
@@ -45,14 +47,35 @@ def test_run_builds_markdown_table():
         lines = smoke.run(["RKLB", "EMPTY"])
 
     text = "\n".join(lines)
-    assert "public JSON API (no credentials)" in text
+    assert "public JSON API" in text
+    assert "No credentials" in text          # the unauthenticated warning
     assert "RKLB Neutron DD" in text
-    assert "no posts in last 7d" in text  # EMPTY row
+    assert "no posts in last 7d" in text      # EMPTY row
+
+
+def test_run_verifies_auth_when_credentialed():
+    class AuthedScraper:
+        _praw_reddit = object()  # pretend credentials exist
+        def auth_status(self):
+            return "authenticated (read-only app-only OAuth)"
+        def verify_auth(self):
+            return True, "authenticated (read-only app-only OAuth)"
+        def search_ticker(self, ticker, days_back=7, max_posts=25, subreddits=None):
+            return SocialSignals(ticker=ticker, platform="reddit", posts=[])
+
+    with patch("casino_dashboard.jobs.reddit_smoke_test.RedditScraper", AuthedScraper):
+        lines = smoke.run(["RKLB"])
+
+    text = "\n".join(lines)
+    assert "Credential check: ✅" in text
+    assert "authenticated" in text
 
 
 def test_run_handles_fetch_error():
     class BoomScraper:
         _praw_reddit = None
+        def auth_status(self):
+            return "unauthenticated (public JSON API — Reddit blocks this for most IPs)"
         def search_ticker(self, *a, **k):
             raise RuntimeError("boom")
 

@@ -35,17 +35,29 @@ def _resolve_tickers(argv: list[str]) -> list[str]:
 def run(tickers: list[str]) -> list[str]:
     """Fetch each ticker and return markdown report lines (also printed to stdout)."""
     scraper = RedditScraper()
-    using_praw = scraper._praw_reddit is not None
-    logger.info(
-        "Reddit smoke test — %d tickers via %s",
-        len(tickers),
-        "PRAW (authenticated)" if using_praw else "public JSON API (no auth)",
-    )
+    status = scraper.auth_status()
+    logger.info("Reddit smoke test — %d tickers · %s", len(tickers), status)
 
     lines: list[str] = [
         "## Reddit smoke test",
         "",
-        f"Auth mode: **{'PRAW (authenticated)' if using_praw else 'public JSON API (no credentials)'}**",
+        f"Auth mode: **{status}**",
+    ]
+
+    # If we have credentials, confirm they actually authenticate before fetching.
+    if scraper._praw_reddit is not None:
+        ok, detail = scraper.verify_auth()
+        lines.append("")
+        lines.append(f"Credential check: {'✅ ' + detail if ok else '❌ ' + detail}")
+        logger.info("Reddit auth check: %s — %s", "OK" if ok else "FAILED", detail)
+    else:
+        lines.append("")
+        lines.append(
+            "⚠️ No credentials — the public path is blocked by Reddit, so expect 0 results. "
+            "Set REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET."
+        )
+
+    lines += [
         "",
         "| Ticker | Posts | Avg score | Top post |",
         "|--------|-------|-----------|----------|",

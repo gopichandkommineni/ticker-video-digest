@@ -29,12 +29,38 @@ pip install -e ".[dev]"
 cat > .env <<'EOF'
 ANTHROPIC_API_KEY=placeholder
 YOUTUBE_API_KEY=placeholder
+
+# Reddit API credentials — REQUIRED (see below). Reddit now blocks the
+# unauthenticated public API, so without these you get 0 results.
+REDDIT_CLIENT_ID=your_client_id
+REDDIT_CLIENT_SECRET=your_client_secret
+# Optional but recommended for a "script" app — full user (password) grant:
+REDDIT_USERNAME=your_reddit_username
+REDDIT_PASSWORD=your_reddit_password
 EOF
 ```
 
-`config.py` refuses to import without these two, but the Reddit code never calls
-Anthropic or YouTube, so **placeholders are fine** for everything in this runbook.
-(Swap in a real `ANTHROPIC_API_KEY` only once an LLM-analysis step exists.)
+`ANTHROPIC_API_KEY` / `YOUTUBE_API_KEY` are required only so `config.py` imports;
+the Reddit code never calls them, so **placeholders are fine** for those two.
+
+### Getting the Reddit credentials (required)
+
+Reddit 403-blocks the unauthenticated JSON API for essentially all IPs now, so
+authenticated access is the only reliable path:
+
+1. Go to <https://www.reddit.com/prefs/apps> and **create another app…**.
+2. Choose type **script**.
+3. Set redirect uri to `http://localhost:8080` (unused, but required).
+4. After creating, copy:
+   - the **client id** (the string just under the app name) → `REDDIT_CLIENT_ID`
+   - the **secret** → `REDDIT_CLIENT_SECRET`
+5. `REDDIT_USERNAME` / `REDDIT_PASSWORD` are the Reddit account that owns the app.
+   With them, the client uses the full user (password) grant; without them it
+   uses read-only app-only OAuth (also fine for searching).
+
+`client_id` + `client_secret` alone is enough to start; add username/password if
+read-only mode is rejected. Authenticated OAuth talks to `oauth.reddit.com`,
+which is **not** IP-blocked — so it works locally *and* from GitHub Actions.
 
 ## 3. Smoke test — confirm live Reddit access
 
