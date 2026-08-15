@@ -166,6 +166,42 @@ def test_fetch_catalog_falls_back_to_prefix_sweep():
     assert sorted(i.name for i in infos) == ["asub", "bsub"]
 
 
+def test_prefix_sweep_deepens_only_into_full_pages():
+    """A full page means more is hiding behind that prefix; a short one is done."""
+    def responder(**kwargs):
+        prefix = kwargs["query"]
+        if prefix == "a":                     # full -> expand into a?, a?, …
+            return (200, [_item(f"a{i:03d}xx", 2000) for i in range(sc._PAGE_SIZE)])
+        if prefix == "b":                     # short -> exhausted, no children
+            return (200, [_item("bsub", 2000)])
+        return (200, [])
+
+    with patch.object(sc, "_page", side_effect=responder) as page:
+        found, _, truncated = sc._sweep_by_prefix(
+            1000, max_requests=200, prefixes=["a", "b"], sleep=False
+        )
+
+    probed = [c.kwargs["query"] for c in page.call_args_list]
+    assert probed[:2] == ["a", "b"]
+    assert "aa" in probed and "a_" in probed        # 'a' was expanded …
+    assert not any(p.startswith("b") and len(p) > 1 for p in probed)   # … 'b' was not
+    assert len(found) == sc._PAGE_SIZE + 1
+    assert not truncated
+
+
+def test_prefix_sweep_is_breadth_first_and_bounded():
+    """Budget exhaustion must leave full coverage of a level, not depth-first holes."""
+    with patch.object(sc, "_page", return_value=(200, [_item("xxx", 2000)] * sc._PAGE_SIZE)) as page:
+        _, requests_made, truncated = sc._sweep_by_prefix(
+            1000, max_requests=5, prefixes=["a", "b", "c"], sleep=False
+        )
+    assert requests_made == 5
+    assert truncated
+    probed = [c.kwargs["query"] for c in page.call_args_list]
+    assert probed[:3] == ["a", "b", "c"]           # every depth-1 prefix first
+    assert all(len(p) == 2 for p in probed[3:])    # only then depth 2
+
+
 # ---------------------------------------------------------------------------
 # Stage 2 — market classification
 # ---------------------------------------------------------------------------

@@ -27,6 +27,7 @@ report states explicitly rather than implying full coverage.
 import logging
 import re
 import time
+from collections import deque
 
 from pydantic import BaseModel, Field
 
@@ -44,10 +45,12 @@ _REQUEST_DELAY = 0.35     # polite pause between sweep pages
 _PAGE_SIZE = 100          # Arctic Shift caps a page at 100 items
 _REDDIT_EPOCH = 1119000000  # ~2005-06-17, before the first subreddit existed
 
-# Prefixes for the fallback sweep, used only when the archive rejects
-# creation-time paging. Coverage is far worse (one capped page per prefix), so
-# it is a floor, not an equivalent.
-_FALLBACK_PREFIXES = [c for c in "abcdefghijklmnopqrstuvwxyz0123456789"]
+# Fallback sweep, used only when the archive rejects creation-time paging. It
+# starts from single-character prefixes and deepens into the ones that come back
+# full — subreddit names are letters, digits and underscores.
+_PREFIX_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789_"
+_FALLBACK_PREFIXES = list("abcdefghijklmnopqrstuvwxyz0123456789")
+_MAX_PREFIX_DEPTH = 3    # "abc" — deeper than this costs more than it returns
 
 # ---------------------------------------------------------------------------
 # Stage-2 vocabulary — is this subreddit about the stock market at all?
@@ -259,20 +262,28 @@ def _sweep_by_prefix(
     max_requests: int,
     prefixes: list[str],
     sleep: bool,
+    max_depth: int = _MAX_PREFIX_DEPTH,
 ) -> tuple[dict[str, SubredditInfo], int, bool]:
-    """Fallback sweep: one capped page per name prefix.
+    """Fallback sweep: page the archive by subreddit-name prefix.
 
-    Coverage is a fraction of the creation-time sweep — the archive returns at
-    most one page per prefix, so this finds ~100 subs per prefix and no more.
+    The archive returns at most one capped page per prefix, so a flat a–z sweep
+    would see ~100 subs per letter and stop. Instead this is adaptive and
+    breadth-first: a prefix that comes back FULL is assumed to have more behind
+    it and is expanded into its children ("a" → "aa", "ab", …), while a prefix
+    that comes back short is exhausted and closed out. Breadth-first matters
+    because the request budget usually runs out mid-sweep — this way it runs out
+    having covered every prefix at depth N, not a third of the alphabet in depth.
     """
     found: dict[str, SubredditInfo] = {}
     requests_made = 0
     truncated = False
+    queue: deque[str] = deque(prefixes)
 
-    for prefix in prefixes:
+    while queue:
         if requests_made >= max_requests:
             truncated = True
             break
+        prefix = queue.popleft()
         status, items = _page(query=prefix, limit=_PAGE_SIZE)
         requests_made += 1
         if status != 200:
@@ -281,6 +292,8 @@ def _sweep_by_prefix(
             info = info_from_item(item)
             if info is not None and info.subscribers >= min_subscribers:
                 found.setdefault(info.name.lower(), info)
+        if len(items) >= _PAGE_SIZE and len(prefix) < max_depth:
+            queue.extend(prefix + char for char in _PREFIX_ALPHABET)
         if sleep:
             time.sleep(_REQUEST_DELAY)
 
@@ -306,8 +319,9 @@ def fetch_catalog(
     2. ``created`` — same paging, floor applied locally (more pages, same yield).
     3. ``created-desc+min_subscribers`` / 4. ``created-desc`` — newest-first
        paging, which drops the explicit ``sort`` param for archives that reject it.
-    5. ``prefix`` — one page per name prefix. Much thinner coverage; a floor to
-       land on, not an equivalent.
+    5. ``prefix`` — adaptive name-prefix sweep, deepening into prefixes that come
+       back full. Thinner coverage than creation-time paging; a floor to land on,
+       not an equivalent.
 
     The shape that ran is returned so the report can state what the numbers
     actually cover.

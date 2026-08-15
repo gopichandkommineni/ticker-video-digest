@@ -141,7 +141,10 @@ python -m casino_dashboard.jobs.subreddit_catalog_run --save
   subscriber floor, then sorts by subscribers. There is no "order by
   subscribers" endpoint anywhere, so a run is complete only **down to
   `--min-subscribers` and up to `--max-requests`** — the report says which, and
-  flags itself when the budget ran out.
+  flags itself when the budget ran out. If the archive rejects creation-time
+  paging (it 400s on params it does not know), the sweep degrades to a
+  name-prefix walk that deepens into prefixes coming back full — thinner
+  coverage, and the report says so instead of quietly passing it off as a census.
 - **Stage 2** keeps the stock / stock-market subs, judged on whole-token matches
   in the name (r/StockMarket, r/pennystocks) or unmistakably financial
   title/description text. Token matching is what keeps r/Stockholm, r/marketing
