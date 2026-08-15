@@ -1,0 +1,46 @@
+name: Subreddit Metrics (live, read-only)
+
+# Manually runnable probe that fetches community metrics for named subreddits
+# straight from Arctic Shift (subscribers, recent-post volume, description,
+# NSFW/quarantine flags). Input is subreddit NAMES, not tickers — no candidate
+# generation or relevance scoring, just the raw metrics.
+#
+# Arctic Shift (arctic-shift.photon-reddit.com) is a public archive API, NOT
+# reddit.com, so it is reachable from the runner where reddit.com is IP-blocked.
+#
+# READ-ONLY: writes nothing to the database and commits nothing — safe to run
+# any time. No credentials required.
+
+on:
+  workflow_dispatch:
+    inputs:
+      subreddits:
+        description: "Comma-separated subreddit names (r/ prefix optional)"
+        required: false
+        default: "RKLB,RocketLab,IonQStock"
+
+permissions:
+  contents: read
+
+jobs:
+  metrics:
+    runs-on: ubuntu-latest
+
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+      SUBREDDIT_METRICS_NAMES: ${{ github.event.inputs.subreddits }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install project
+        run: pip install -e ".[dev]"
+
+      - name: Fetch subreddit metrics
+        run: python -m casino_dashboard.jobs.subreddit_metrics
