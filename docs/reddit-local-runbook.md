@@ -117,6 +117,65 @@ git commit -m "Update discovered subreddit map"
 Re-running discovery for a ticker overwrites only that ticker; other entries
 (including manual edits) are preserved.
 
+### 4b. Catalog sweep — the top-down alternative
+
+Discovery above is **bottom-up**: it guesses names for one ticker at a time
+(r/RKLB, r/RKLBstock, r/RocketLab, …) and probes each guess, so it can only find
+communities somebody thought to name. The catalog sweep goes the other way —
+enumerate the subreddits that exist, sorted by subscriber count, then filter:
+
+```bash
+# Stage 1 all subs -> stage 2 stock subs -> stage 3 per-stock subs
+python -m casino_dashboard.jobs.subreddit_catalog_run
+
+# Go deeper (smaller communities), dump the full catalog for offline work
+python -m casino_dashboard.jobs.subreddit_catalog_run \
+    --min-subscribers 250 --max-requests 1500 \
+    --out research/probes/subreddit_catalog
+
+# Re-filter that saved sweep offline — no network, no waiting — and save the map
+python -m casino_dashboard.jobs.subreddit_catalog_run \
+    --from-catalog research/probes/subreddit_catalog/<date>/catalog.csv --save
+```
+
+Sweep once, filter many times: `--from-catalog` replays a saved `catalog.csv`
+through stages 2–3, so tuning thresholds or writing the map costs nothing.
+
+- **Stage 1** asks Arctic Shift for subreddits **ranked by subscriber count**
+  (`sort_type=subscribers`, 1000 per page) and walks down to
+  `--min-subscribers`. If that query shape is rejected the sweep degrades —
+  creation-time paging, then a name-prefix walk — and the report names the shape
+  that ran, so a partial sweep is never passed off as a census. Either way it
+  flags itself when `--max-requests` runs out.
+- **Stage 2** keeps the stock / stock-market subs, judged on whole-token matches
+  in the name (r/StockMarket, r/pennystocks) or unmistakably financial
+  title/description text. Token matching is what keeps r/Stockholm, r/marketing
+  and r/livestock out.
+- **Stage 3** attributes a sub to one ticker using the same relevance scorer as
+  bottom-up discovery, gated on `--ticker-min-subscribers`. A sub that matches
+  two stocks equally is left unattributed rather than guessed.
+
+Cost scales with how far the floor drops — about one request per 1,000
+subreddits above it on the ranked walk, ten times that on the creation-time
+fallback. Start at the default 1,000. Also runnable from Actions — **Subreddit
+Catalog (live, read-only)** — which uploads `catalog.csv` + `per_stock.json` as
+artifacts.
+
+**Below the floor, use the per-ticker pass.** A ranked sweep cannot see under
+`--min-subscribers`, and real ticker communities live down there (r/SNDK_Stock
+had 22 members, r/CCJ 183). `--with-per-ticker` runs bottom-up `discover()` for
+exactly the stocks the sweep found nothing for, so the two passes cover each
+other's blind spots:
+
+```bash
+python -m casino_dashboard.jobs.subreddit_catalog_run --with-per-ticker --save
+```
+
+**`--newest-first` only matters on the creation-time fallback.** That shape walks
+by date, so a truncated oldest-first run covers 2005 onward and stops — the wrong
+end of history, since ticker subs are recent. The ranked walk is ordered by size,
+so the flag does nothing there.
+
 ## 5. Pull Reddit posts into the DB
 
 ```bash
@@ -178,4 +237,5 @@ authenticated PRAW; otherwise it uses the public JSON API.
 |---------|--------------|--------|
 | `python -m casino_dashboard.jobs.reddit_smoke_test [TICKERS…]` | Live probe; prints post counts | nothing |
 | `python -m casino_dashboard.jobs.subreddit_discovery_run [QUERIES…] [--save]` | Discover + rank subreddits; `--save` writes the map | `config/ticker_subreddits.yaml` (with `--save`) |
+| `python -m casino_dashboard.jobs.subreddit_catalog_run [--save] [--out DIR] [--from-catalog CSV]` | Sweep all subreddits by subscribers → stock subs → per-stock subs (`--from-catalog` re-filters a saved sweep offline) | `config/ticker_subreddits.yaml` (with `--save`), `DIR/` (with `--out`) |
 | `python -m casino_dashboard.jobs.reddit_refresh [TICKERS…]` | Pull posts into the DB (Reddit only) | `data/snapshots.db` |

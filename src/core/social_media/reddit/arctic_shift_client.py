@@ -34,6 +34,14 @@ _DEFAULT_SUBREDDITS = ["wallstreetbets", "stocks", "investing", "options", "Stoc
 _RATE_LIMIT_BACKOFF = 5.0
 
 
+class SubscriberSortUnsupported(RuntimeError):
+    """The archive rejected a subscriber-ranked subreddit query.
+
+    Raised instead of yielding nothing, so a caller can fall back to another
+    enumeration rather than mistaking a rejected param for an empty Reddit.
+    """
+
+
 def _first(item: dict, *keys, default=None):
     for k in keys:
         if item.get(k) is not None:
@@ -41,10 +49,14 @@ def _first(item: dict, *keys, default=None):
     return default
 
 
-def _get(url: str, params: dict, timeout: int = 20) -> list[dict]:
-    """GET an Arctic Shift endpoint, returning the list of result items ([] on error).
+def request(url: str, params: dict, timeout: int = 20) -> tuple[int, list[dict]]:
+    """GET an Arctic Shift endpoint, returning (http_status, items).
 
-    Retries once on HTTP 429 after the reset delay.
+    Retries once on HTTP 429 after the reset delay. Status 0 means the request
+    never completed (transport error). Callers that need to tell "the server
+    rejected this parameter" (400) from "no results" (200 + []) — e.g. the
+    catalog sweep negotiating which query params this deployment supports — use
+    this; everything else uses the simpler `_get`.
     """
     for attempt in (1, 2):
         try:
@@ -53,7 +65,7 @@ def _get(url: str, params: dict, timeout: int = 20) -> list[dict]:
             )
         except Exception as exc:  # network / proxy / any transport error
             logger.warning("Arctic Shift request error (%s): %s", url, exc)
-            return []
+            return 0, []
         if resp.status_code == 429 and attempt == 1:
             wait = float(resp.headers.get("X-RateLimit-Reset", _RATE_LIMIT_BACKOFF) or _RATE_LIMIT_BACKOFF)
             logger.warning("Arctic Shift 429 — backing off %.0fs", wait)
@@ -61,17 +73,22 @@ def _get(url: str, params: dict, timeout: int = 20) -> list[dict]:
             continue
         if resp.status_code != 200:
             logger.warning("Arctic Shift HTTP %d for %s", resp.status_code, url)
-            return []
+            return resp.status_code, []
         try:
             payload = resp.json()
         except ValueError:
-            return []
+            return resp.status_code, []
         if isinstance(payload, dict):
             data = payload.get("data", [])
         else:
             data = payload
-        return data if isinstance(data, list) else []
-    return []
+        return resp.status_code, data if isinstance(data, list) else []
+    return 429, []
+
+
+def _get(url: str, params: dict, timeout: int = 20) -> list[dict]:
+    """GET an Arctic Shift endpoint, returning the list of result items ([] on error)."""
+    return request(url, params, timeout)[1]
 
 
 def search_posts(
@@ -95,6 +112,55 @@ def search_posts(
     return _get(_POSTS_URL, params)
 
 
+def _epoch(value: "int | float | datetime | None") -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return int(value.timestamp())
+    return int(value)
+
+
+def search_subreddits_raw(
+    query: str | None = None,
+    subreddit: str | None = None,
+    limit: int = 20,
+    min_subscribers: int | None = None,
+    max_subscribers: int | None = None,
+    after: "int | float | datetime | None" = None,
+    before: "int | float | datetime | None" = None,
+    sort: str | None = None,
+    sort_type: str | None = None,
+) -> tuple[int, list[dict]]:
+    """Subreddit search returning (http_status, items) — see `search_subreddits`.
+
+    Every optional param is sent only when supplied, on purpose: Arctic Shift is
+    a community service whose accepted params drift, and a rejected one comes
+    back as HTTP 400 rather than a warning (that is how the 'query' vs
+    'subreddit_prefix' bug surfaced). Returning the status is what lets a caller
+    tell "this deployment does not support that param" from "no results", and
+    retry with a shape it does support instead of reporting an empty Reddit.
+    """
+    params: dict = {"limit": limit}
+    if subreddit:
+        params["subreddit"] = subreddit
+    if query:
+        params["subreddit_prefix"] = query
+    if min_subscribers is not None:
+        params["min_subscribers"] = min_subscribers
+    if max_subscribers is not None:
+        params["max_subscribers"] = max_subscribers
+    after_ts, before_ts = _epoch(after), _epoch(before)
+    if after_ts is not None:
+        params["after"] = after_ts
+    if before_ts is not None:
+        params["before"] = before_ts
+    if sort is not None:
+        params["sort"] = sort
+    if sort_type is not None:
+        params["sort_type"] = sort_type
+    return request(_SUBS_URL, params)
+
+
 def search_subreddits(
     query: str | None = None,
     subreddit: str | None = None,
@@ -115,20 +181,11 @@ def search_subreddits(
     range and sort/sort_type to control ordering (defaults: sort=desc,
     sort_type=subscribers). limit may be up to 1000.
     """
-    params: dict = {"limit": limit}
-    if subreddit:
-        params["subreddit"] = subreddit
-    if query:
-        params["subreddit_prefix"] = query
-    if min_subscribers is not None:
-        params["min_subscribers"] = min_subscribers
-    if max_subscribers is not None:
-        params["max_subscribers"] = max_subscribers
-    if sort is not None:
-        params["sort"] = sort
-    if sort_type is not None:
-        params["sort_type"] = sort_type
-    return _get(_SUBS_URL, params)
+    return search_subreddits_raw(
+        query=query, subreddit=subreddit, limit=limit,
+        min_subscribers=min_subscribers, max_subscribers=max_subscribers,
+        sort=sort, sort_type=sort_type,
+    )[1]
 
 
 def iter_subreddits_by_subscribers(
@@ -155,13 +212,21 @@ def iter_subreddits_by_subscribers(
         # first is the boundary-value duplicate, so a page shrunk to the leftover
         # budget could return only that dupe and stall. max_count is enforced by
         # the yield guard below instead.
-        items = search_subreddits(
+        status, items = search_subreddits_raw(
             limit=page_size,
             min_subscribers=min_subscribers,
             max_subscribers=cursor,
             sort="desc",
             sort_type="subscribers",
         )
+        # A rejected param on the FIRST page means this deployment cannot rank by
+        # subscribers at all. Yielding nothing would be indistinguishable from
+        # "Reddit has no subreddits" and would hand the caller a silently empty
+        # catalog, so say so and let it fall back to another enumeration.
+        if status != 200 and yielded == 0:
+            raise SubscriberSortUnsupported(
+                f"Arctic Shift HTTP {status} for a subscriber-ranked subreddit query"
+            )
         if not items:
             break
 
