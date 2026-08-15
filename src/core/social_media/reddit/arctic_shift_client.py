@@ -95,19 +95,99 @@ def search_posts(
     return _get(_POSTS_URL, params)
 
 
-def search_subreddits(query: str | None = None, subreddit: str | None = None, limit: int = 20) -> list[dict]:
+def search_subreddits(
+    query: str | None = None,
+    subreddit: str | None = None,
+    limit: int = 20,
+    min_subscribers: int | None = None,
+    max_subscribers: int | None = None,
+    sort: str | None = None,
+    sort_type: str | None = None,
+) -> list[dict]:
     """Raw Arctic Shift subreddit search. Returns the list of subreddit dicts.
 
     Note: /api/subreddits/search has NO 'query' param — a name lookup uses
     'subreddit' (exact) and a fuzzy lookup uses 'subreddit_prefix'. Sending
     'query' returns HTTP 400. So the *query* argument maps to subreddit_prefix.
+
+    With neither name nor prefix, the endpoint enumerates subreddits by
+    subscriber count (its default sort). Pass min/max_subscribers to bound the
+    range and sort/sort_type to control ordering (defaults: sort=desc,
+    sort_type=subscribers). limit may be up to 1000.
     """
     params: dict = {"limit": limit}
     if subreddit:
         params["subreddit"] = subreddit
     if query:
         params["subreddit_prefix"] = query
+    if min_subscribers is not None:
+        params["min_subscribers"] = min_subscribers
+    if max_subscribers is not None:
+        params["max_subscribers"] = max_subscribers
+    if sort is not None:
+        params["sort"] = sort
+    if sort_type is not None:
+        params["sort_type"] = sort_type
     return _get(_SUBS_URL, params)
+
+
+def iter_subreddits_by_subscribers(
+    min_subscribers: int = 1000,
+    max_count: int = 50_000,
+    page_size: int = 1000,
+    sleep: float = 0.5,
+):
+    """Yield subreddit dicts sorted by subscriber count DESCENDING — from the
+    largest down to *min_subscribers*, up to *max_count* subreddits.
+
+    Pages via a descending max_subscribers cursor: each page requests
+    subscribers <= the smallest count seen so far. Ties across a page boundary
+    are handled by de-duping on name; if a page yields nothing new we stop
+    (guards against an infinite loop on a large tie block).
+    """
+    page_size = min(max(page_size, 1), 1000)
+    yielded = 0
+    cursor: int | None = None
+    seen: set[str] = set()
+
+    while yielded < max_count:
+        # Always request a full page: the first item of each page after the
+        # first is the boundary-value duplicate, so a page shrunk to the leftover
+        # budget could return only that dupe and stall. max_count is enforced by
+        # the yield guard below instead.
+        items = search_subreddits(
+            limit=page_size,
+            min_subscribers=min_subscribers,
+            max_subscribers=cursor,
+            sort="desc",
+            sort_type="subscribers",
+        )
+        if not items:
+            break
+
+        page_min: int | None = None
+        made_progress = False
+        for it in items:
+            name = _first(it, "display_name", "name")
+            if name is None:
+                continue
+            key = str(name).lower()
+            subs = int(_first(it, "subscribers", "subscriber_count", default=0) or 0)
+            page_min = subs if page_min is None else min(page_min, subs)
+            if key in seen:
+                continue
+            seen.add(key)
+            made_progress = True
+            yield it
+            yielded += 1
+            if yielded >= max_count:
+                return
+
+        if not made_progress or page_min is None:
+            break
+        cursor = page_min  # next page: subscribers <= this (inclusive; dedup handles ties)
+        if sleep:
+            time.sleep(sleep)
 
 
 def count_posts_in_window(subreddit: str, days: int = 7) -> int:
