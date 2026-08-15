@@ -163,16 +163,11 @@ Set any of these in `.env` (local) or as repo Secrets/Variables (Actions):
 | `APIFY_REDDIT_ACTOR` | Which Apify actor to run (default `trudax~reddit-scraper`). | Apify Store (`username~actor-name`) |
 | `APIFY_REDDIT_INPUT` | Optional JSON to override the actor input; use `{query}` for the ticker. | your chosen actor's input schema |
 | `APEWISDOM_SUBREDDITS` | Comma-separated subreddit filters for the per-subreddit breakdown (default WSB/stocks/investing/options/stockmarket). | n/a |
-| `REDDIT_IMPERSONATE` | Browser to impersonate at the TLS layer (default `chrome`). Set to `none` to disable and use plain requests. | n/a — built in via `curl_cffi` |
-| `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` | Authenticated PRAW — works from cloud IPs | `reddit.com/prefs/apps` → "script" app |
-| `REDDIT_PROXY` | Route traffic through an allowed IP (`http://user:pass@host:port`) | A proxy provider |
-| `REDDIT_USER_AGENT` | Override the request User-Agent | A descriptive string, e.g. `casino-dashboard/0.1 by u/you` |
+| `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` / `REDDIT_USERNAME` / `REDDIT_PASSWORD` | Authenticated PRAW (`REDDIT_BACKEND=direct`). Requires a Reddit app, whose creation is currently gated. | `reddit.com/prefs/apps` → "script" app |
 
-> **Browser impersonation is on by default.** Reddit blocks requests that don't
-> look like a real browser (by TLS fingerprint, not just User-Agent), so the
-> client uses `curl_cffi` to impersonate Chrome. This is what makes the
-> credential-less public path work. If it's ever *still* blocked, the next step
-> is a real headless browser (Playwright) — not yet wired in.
+> **Note:** the credential-less direct scraping path (public JSON + browser
+> impersonation + proxy) was removed — Reddit killed that endpoint, so it could
+> never work. Access now goes through Arctic Shift (free) or Apify (paid).
 
 When `REDDIT_CLIENT_ID`/`SECRET` are set, the scraper auto-upgrades to
 authenticated PRAW; otherwise it uses the public JSON API.
