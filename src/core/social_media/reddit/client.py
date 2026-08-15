@@ -9,7 +9,7 @@ import requests
 from core.config import REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET
 from core.social_media.base import SocialPost, SocialSignals, SocialScraper
 from core.social_media.reddit._http import (
-    reddit_proxies,
+    reddit_get,
     reddit_proxy_url,
     reddit_user_agent,
 )
@@ -160,12 +160,10 @@ class RedditScraper(SocialScraper):
                     "limit": min(max_posts, 25),
                     "restrict_sr": "1",
                 }
-                resp = requests.get(
+                resp = reddit_get(
                     _SUBREDDIT_SEARCH_URL.format(sub=sub_name),
                     params=params,
-                    headers={"User-Agent": reddit_user_agent()},
                     timeout=10,
-                    proxies=reddit_proxies(),
                 )
                 resp.raise_for_status()
                 data = resp.json()

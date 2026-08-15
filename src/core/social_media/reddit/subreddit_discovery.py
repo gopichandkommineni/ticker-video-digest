@@ -20,10 +20,9 @@ import re
 import time
 from datetime import datetime, timedelta, timezone
 
-import requests
 from pydantic import BaseModel, Field
 
-from core.social_media.reddit._http import reddit_proxies, reddit_user_agent
+from core.social_media.reddit._http import reddit_get
 
 logger = logging.getLogger(__name__)
 
@@ -149,20 +148,13 @@ def generate_candidates(
 # Public-API fetchers
 # ---------------------------------------------------------------------------
 
-def _headers() -> dict[str, str]:
-    return {"User-Agent": reddit_user_agent()}
-
-
 def fetch_about(name: str) -> SubredditInfo | None:
     """Fetch /r/{name}/about.json. Returns None if the sub does not exist, is
     private/banned, or the response is not a subreddit object.
     """
     try:
-        resp = requests.get(
-            _ABOUT_URL.format(sub=name), headers=_headers(), timeout=10,
-            proxies=reddit_proxies(),
-        )
-    except requests.RequestException as exc:
+        resp = reddit_get(_ABOUT_URL.format(sub=name), timeout=10)
+    except Exception as exc:
         logger.debug("about fetch error for r/%s: %s", name, exc)
         return None
     if resp.status_code != 200:
@@ -194,14 +186,8 @@ def count_recent_posts(name: str, days: int = 7) -> int:
     """
     cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
     try:
-        resp = requests.get(
-            _NEW_URL.format(sub=name),
-            params={"limit": 100},
-            headers=_headers(),
-            timeout=10,
-            proxies=reddit_proxies(),
-        )
-    except requests.RequestException as exc:
+        resp = reddit_get(_NEW_URL.format(sub=name), params={"limit": 100}, timeout=10)
+    except Exception as exc:
         logger.debug("new fetch error for r/%s: %s", name, exc)
         return 0
     if resp.status_code != 200:
@@ -221,14 +207,8 @@ def count_recent_posts(name: str, days: int = 7) -> int:
 def search_subreddits(query: str, limit: int = 10) -> list[str]:
     """Ask Reddit for subreddits matching *query* (name/description search)."""
     try:
-        resp = requests.get(
-            _SUB_SEARCH_URL,
-            params={"q": query, "limit": limit},
-            headers=_headers(),
-            timeout=10,
-            proxies=reddit_proxies(),
-        )
-    except requests.RequestException as exc:
+        resp = reddit_get(_SUB_SEARCH_URL, params={"q": query, "limit": limit}, timeout=10)
+    except Exception as exc:
         logger.debug("subreddit search error for %r: %s", query, exc)
         return []
     if resp.status_code != 200:

@@ -112,9 +112,16 @@ Set any of these in `.env` (local) or as repo Secrets/Variables (Actions):
 
 | Variable | Purpose | Where to get it |
 |----------|---------|-----------------|
+| `REDDIT_IMPERSONATE` | Browser to impersonate at the TLS layer (default `chrome`). Set to `none` to disable and use plain requests. | n/a — built in via `curl_cffi` |
 | `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` | Authenticated PRAW — works from cloud IPs | `reddit.com/prefs/apps` → "script" app |
 | `REDDIT_PROXY` | Route traffic through an allowed IP (`http://user:pass@host:port`) | A proxy provider |
 | `REDDIT_USER_AGENT` | Override the request User-Agent | A descriptive string, e.g. `casino-dashboard/0.1 by u/you` |
+
+> **Browser impersonation is on by default.** Reddit blocks requests that don't
+> look like a real browser (by TLS fingerprint, not just User-Agent), so the
+> client uses `curl_cffi` to impersonate Chrome. This is what makes the
+> credential-less public path work. If it's ever *still* blocked, the next step
+> is a real headless browser (Playwright) — not yet wired in.
 
 When `REDDIT_CLIENT_ID`/`SECRET` are set, the scraper auto-upgrades to
 authenticated PRAW; otherwise it uses the public JSON API.
