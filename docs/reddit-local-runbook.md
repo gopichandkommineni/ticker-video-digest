@@ -117,6 +117,44 @@ git commit -m "Update discovered subreddit map"
 Re-running discovery for a ticker overwrites only that ticker; other entries
 (including manual edits) are preserved.
 
+### 4b. Catalog sweep — the top-down alternative
+
+Discovery above is **bottom-up**: it guesses names for one ticker at a time
+(r/RKLB, r/RKLBstock, r/RocketLab, …) and probes each guess, so it can only find
+communities somebody thought to name. The catalog sweep goes the other way —
+enumerate the subreddits that exist, sorted by subscriber count, then filter:
+
+```bash
+# Stage 1 all subs -> stage 2 stock subs -> stage 3 per-stock subs
+python -m casino_dashboard.jobs.subreddit_catalog_run
+
+# Go deeper (smaller communities), dump the full catalog for offline work
+python -m casino_dashboard.jobs.subreddit_catalog_run \
+    --min-subscribers 250 --max-requests 1500 \
+    --out research/probes/subreddit_catalog
+
+# Write the per-stock result into the map (same file discovery writes)
+python -m casino_dashboard.jobs.subreddit_catalog_run --save
+```
+
+- **Stage 1** pages the Arctic Shift archive by subreddit *creation time* with a
+  subscriber floor, then sorts by subscribers. There is no "order by
+  subscribers" endpoint anywhere, so a run is complete only **down to
+  `--min-subscribers` and up to `--max-requests`** — the report says which, and
+  flags itself when the budget ran out.
+- **Stage 2** keeps the stock / stock-market subs, judged on whole-token matches
+  in the name (r/StockMarket, r/pennystocks) or unmistakably financial
+  title/description text. Token matching is what keeps r/Stockholm, r/marketing
+  and r/livestock out.
+- **Stage 3** attributes a sub to one ticker using the same relevance scorer as
+  bottom-up discovery, gated on `--ticker-min-subscribers`. A sub that matches
+  two stocks equally is left unattributed rather than guessed.
+
+Cost scales steeply as the floor drops (roughly one request per 100 subreddits
+above it), so start at the default 1,000 and lower it only for the tickers it
+misses. Also runnable from Actions — **Subreddit Catalog (live, read-only)** —
+which uploads `catalog.csv` + `per_stock.json` as artifacts.
+
 ## 5. Pull Reddit posts into the DB
 
 ```bash
@@ -178,4 +216,5 @@ authenticated PRAW; otherwise it uses the public JSON API.
 |---------|--------------|--------|
 | `python -m casino_dashboard.jobs.reddit_smoke_test [TICKERS…]` | Live probe; prints post counts | nothing |
 | `python -m casino_dashboard.jobs.subreddit_discovery_run [QUERIES…] [--save]` | Discover + rank subreddits; `--save` writes the map | `config/ticker_subreddits.yaml` (with `--save`) |
+| `python -m casino_dashboard.jobs.subreddit_catalog_run [--save] [--out DIR]` | Sweep all subreddits by subscribers → stock subs → per-stock subs | `config/ticker_subreddits.yaml` (with `--save`), `DIR/` (with `--out`) |
 | `python -m casino_dashboard.jobs.reddit_refresh [TICKERS…]` | Pull posts into the DB (Reddit only) | `data/snapshots.db` |

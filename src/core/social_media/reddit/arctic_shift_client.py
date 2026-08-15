@@ -41,10 +41,14 @@ def _first(item: dict, *keys, default=None):
     return default
 
 
-def _get(url: str, params: dict, timeout: int = 20) -> list[dict]:
-    """GET an Arctic Shift endpoint, returning the list of result items ([] on error).
+def request(url: str, params: dict, timeout: int = 20) -> tuple[int, list[dict]]:
+    """GET an Arctic Shift endpoint, returning (http_status, items).
 
-    Retries once on HTTP 429 after the reset delay.
+    Retries once on HTTP 429 after the reset delay. Status 0 means the request
+    never completed (transport error). Callers that need to tell "the server
+    rejected this parameter" (400) from "no results" (200 + []) — e.g. the
+    catalog sweep negotiating which query params this deployment supports — use
+    this; everything else uses the simpler `_get`.
     """
     for attempt in (1, 2):
         try:
@@ -53,7 +57,7 @@ def _get(url: str, params: dict, timeout: int = 20) -> list[dict]:
             )
         except Exception as exc:  # network / proxy / any transport error
             logger.warning("Arctic Shift request error (%s): %s", url, exc)
-            return []
+            return 0, []
         if resp.status_code == 429 and attempt == 1:
             wait = float(resp.headers.get("X-RateLimit-Reset", _RATE_LIMIT_BACKOFF) or _RATE_LIMIT_BACKOFF)
             logger.warning("Arctic Shift 429 — backing off %.0fs", wait)
@@ -61,17 +65,22 @@ def _get(url: str, params: dict, timeout: int = 20) -> list[dict]:
             continue
         if resp.status_code != 200:
             logger.warning("Arctic Shift HTTP %d for %s", resp.status_code, url)
-            return []
+            return resp.status_code, []
         try:
             payload = resp.json()
         except ValueError:
-            return []
+            return resp.status_code, []
         if isinstance(payload, dict):
             data = payload.get("data", [])
         else:
             data = payload
-        return data if isinstance(data, list) else []
-    return []
+        return resp.status_code, data if isinstance(data, list) else []
+    return 429, []
+
+
+def _get(url: str, params: dict, timeout: int = 20) -> list[dict]:
+    """GET an Arctic Shift endpoint, returning the list of result items ([] on error)."""
+    return request(url, params, timeout)[1]
 
 
 def search_posts(
@@ -95,6 +104,48 @@ def search_posts(
     return _get(_POSTS_URL, params)
 
 
+def _epoch(value: "int | float | datetime | None") -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return int(value.timestamp())
+    return int(value)
+
+
+def search_subreddits_raw(
+    query: str | None = None,
+    subreddit: str | None = None,
+    limit: int = 20,
+    min_subscribers: int | None = None,
+    after: "int | float | datetime | None" = None,
+    before: "int | float | datetime | None" = None,
+    sort: str | None = None,
+) -> tuple[int, list[dict]]:
+    """Subreddit search returning (http_status, items) — see `search_subreddits`.
+
+    The extra params (min_subscribers / after / before / sort) drive the catalog
+    sweep, which walks subreddits by creation time. They are optional on purpose:
+    Arctic Shift is a community service whose accepted params drift, and a
+    rejected param comes back as HTTP 400, which the status lets the caller
+    detect and retry without it.
+    """
+    params: dict = {"limit": limit}
+    if subreddit:
+        params["subreddit"] = subreddit
+    if query:
+        params["subreddit_prefix"] = query
+    if min_subscribers is not None:
+        params["min_subscribers"] = min_subscribers
+    after_ts, before_ts = _epoch(after), _epoch(before)
+    if after_ts is not None:
+        params["after"] = after_ts
+    if before_ts is not None:
+        params["before"] = before_ts
+    if sort:
+        params["sort"] = sort
+    return request(_SUBS_URL, params)
+
+
 def search_subreddits(query: str | None = None, subreddit: str | None = None, limit: int = 20) -> list[dict]:
     """Raw Arctic Shift subreddit search. Returns the list of subreddit dicts.
 
@@ -102,12 +153,7 @@ def search_subreddits(query: str | None = None, subreddit: str | None = None, li
     'subreddit' (exact) and a fuzzy lookup uses 'subreddit_prefix'. Sending
     'query' returns HTTP 400. So the *query* argument maps to subreddit_prefix.
     """
-    params: dict = {"limit": limit}
-    if subreddit:
-        params["subreddit"] = subreddit
-    if query:
-        params["subreddit_prefix"] = query
-    return _get(_SUBS_URL, params)
+    return search_subreddits_raw(query=query, subreddit=subreddit, limit=limit)[1]
 
 
 def count_posts_in_window(subreddit: str, days: int = 7) -> int:
