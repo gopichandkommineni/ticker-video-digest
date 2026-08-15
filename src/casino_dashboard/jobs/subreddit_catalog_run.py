@@ -33,6 +33,7 @@ from pathlib import Path
 
 from core.social_media.reddit.subreddit_catalog import (
     CatalogReport,
+    SubredditInfo,
     UniverseEntry,
     build_report,
 )
@@ -247,6 +248,35 @@ def write_artifacts(report: CatalogReport, out_dir: Path, stamp: str) -> list[Pa
     return [csv_path, json_path]
 
 
+def load_catalog_csv(path: Path) -> list[SubredditInfo]:
+    """Read a catalog.csv written by `write_artifacts` back into SubredditInfo.
+
+    The sweep is the expensive half and the filters are the half worth iterating
+    on, so a saved catalog can be re-filtered — new keywords, a different
+    attribution floor, `--save` — without touching the network again.
+    """
+    infos: list[SubredditInfo] = []
+    with path.open(newline="") as fh:
+        for row in csv.DictReader(fh):
+            name = (row.get("subreddit") or "").strip()
+            if not name:
+                continue
+            try:
+                subscribers = int(row.get("subscribers") or 0)
+            except ValueError:
+                subscribers = 0
+            infos.append(SubredditInfo(
+                name=name,
+                subscribers=subscribers,
+                title=row.get("title") or "",
+                public_description=row.get("description") or "",
+                over18=row.get("over18") == "1",
+                quarantined=row.get("quarantined") == "1",
+            ))
+    logger.info("Loaded %d subreddits from %s", len(infos), path)
+    return infos
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument(
@@ -269,6 +299,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Directory to write catalog.csv + per_stock.json into.",
     )
     parser.add_argument(
+        "--from-catalog",
+        default=os.environ.get("SUBREDDIT_CATALOG_FROM", "").strip() or None,
+        help="Re-filter a saved catalog.csv offline instead of sweeping again.",
+    )
+    parser.add_argument(
         "--save", action="store_true", default=_env_flag("SUBREDDIT_CATALOG_SAVE"),
         help="Write the per-stock map to config/ticker_subreddits.yaml.",
     )
@@ -285,13 +320,17 @@ def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv if argv is not None else sys.argv[1:])
     entries = universe_entries(with_company_names=not args.no_company_names)
 
+    cached = load_catalog_csv(Path(args.from_catalog)) if args.from_catalog else None
     report = build_report(
         entries,
         min_subscribers=args.min_subscribers,
         ticker_min_subscribers=args.ticker_min_subscribers,
         max_requests=args.max_requests,
         sleep=not args.no_sleep,
+        infos=cached,
     )
+    if cached is not None:
+        report.strategy = f"re-filtered {Path(args.from_catalog).name}"
 
     lines = report_lines(report, expected_tickers={e.ticker for e in entries})
     stamp = date.today().isoformat()

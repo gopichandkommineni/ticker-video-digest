@@ -341,6 +341,24 @@ def test_report_lines_warn_on_truncated_and_fallback_sweeps():
     assert "Fallback strategy" in text
 
 
+def test_saved_catalog_round_trips_for_offline_refiltering(tmp_path):
+    """Dump once, re-filter many times — the sweep is the expensive half."""
+    from casino_dashboard.jobs.subreddit_catalog_run import (
+        load_catalog_csv,
+        write_artifacts,
+    )
+
+    csv_path = write_artifacts(_sample_report(), tmp_path, "2026-08-15")[0]
+    with patch.object(sc, "_page", side_effect=AssertionError("network touched")):
+        reloaded = load_catalog_csv(csv_path)
+        report = build_report(_ENTRIES, infos=reloaded, ticker_min_subscribers=50)
+
+    assert [i.name for i in reloaded] == [
+        "wallstreetbets", "Stockholm", "RKLB", "RocketLab"
+    ]
+    assert report.by_ticker() == {"RKLB": ["RKLB", "RocketLab"]}
+
+
 def test_write_artifacts_dumps_csv_and_json(tmp_path):
     from casino_dashboard.jobs.subreddit_catalog_run import write_artifacts
 

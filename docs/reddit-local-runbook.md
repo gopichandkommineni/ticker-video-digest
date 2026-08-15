@@ -133,9 +133,13 @@ python -m casino_dashboard.jobs.subreddit_catalog_run \
     --min-subscribers 250 --max-requests 1500 \
     --out research/probes/subreddit_catalog
 
-# Write the per-stock result into the map (same file discovery writes)
-python -m casino_dashboard.jobs.subreddit_catalog_run --save
+# Re-filter that saved sweep offline — no network, no waiting — and save the map
+python -m casino_dashboard.jobs.subreddit_catalog_run \
+    --from-catalog research/probes/subreddit_catalog/<date>/catalog.csv --save
 ```
+
+Sweep once, filter many times: `--from-catalog` replays a saved `catalog.csv`
+through stages 2–3, so tuning thresholds or writing the map costs nothing.
 
 - **Stage 1** pages the Arctic Shift archive by subreddit *creation time* with a
   subscriber floor, then sorts by subscribers. There is no "order by
@@ -219,5 +223,5 @@ authenticated PRAW; otherwise it uses the public JSON API.
 |---------|--------------|--------|
 | `python -m casino_dashboard.jobs.reddit_smoke_test [TICKERS…]` | Live probe; prints post counts | nothing |
 | `python -m casino_dashboard.jobs.subreddit_discovery_run [QUERIES…] [--save]` | Discover + rank subreddits; `--save` writes the map | `config/ticker_subreddits.yaml` (with `--save`) |
-| `python -m casino_dashboard.jobs.subreddit_catalog_run [--save] [--out DIR]` | Sweep all subreddits by subscribers → stock subs → per-stock subs | `config/ticker_subreddits.yaml` (with `--save`), `DIR/` (with `--out`) |
+| `python -m casino_dashboard.jobs.subreddit_catalog_run [--save] [--out DIR] [--from-catalog CSV]` | Sweep all subreddits by subscribers → stock subs → per-stock subs (`--from-catalog` re-filters a saved sweep offline) | `config/ticker_subreddits.yaml` (with `--save`), `DIR/` (with `--out`) |
 | `python -m casino_dashboard.jobs.reddit_refresh [TICKERS…]` | Pull posts into the DB (Reddit only) | `data/snapshots.db` |
