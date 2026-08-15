@@ -182,3 +182,70 @@ def test_platform_name():
 def test_is_available():
     s = RedditScraper()
     assert s.is_available is True  # public API always available
+
+
+# ---------------------------------------------------------------------------
+# Tests — authenticated PRAW path
+# ---------------------------------------------------------------------------
+
+import sys
+import types
+
+from core.social_media.reddit import client as client_mod
+
+
+def _fake_praw(calls: dict):
+    mod = types.ModuleType("praw")
+
+    class FakeReddit:
+        def __init__(self, **kw):
+            calls.update(kw)
+
+    mod.Reddit = FakeReddit
+    return mod
+
+
+def test_praw_user_grant_and_ratelimit(monkeypatch):
+    calls: dict = {}
+    monkeypatch.setitem(sys.modules, "praw", _fake_praw(calls))
+    monkeypatch.setattr(client_mod, "REDDIT_CLIENT_ID", "id")
+    monkeypatch.setattr(client_mod, "REDDIT_CLIENT_SECRET", "sec")
+    monkeypatch.setattr(client_mod, "REDDIT_USERNAME", "me")
+    monkeypatch.setattr(client_mod, "REDDIT_PASSWORD", "pw")
+
+    s = RedditScraper()
+    assert s._praw_reddit is not None
+    assert calls["username"] == "me" and calls["password"] == "pw"
+    assert calls["ratelimit_seconds"] == 300
+    assert s.auth_status().startswith("authenticated (user grant")
+
+
+def test_praw_readonly_when_no_userpass(monkeypatch):
+    calls: dict = {}
+    monkeypatch.setitem(sys.modules, "praw", _fake_praw(calls))
+    monkeypatch.setattr(client_mod, "REDDIT_CLIENT_ID", "id")
+    monkeypatch.setattr(client_mod, "REDDIT_CLIENT_SECRET", "sec")
+    monkeypatch.setattr(client_mod, "REDDIT_USERNAME", "")
+    monkeypatch.setattr(client_mod, "REDDIT_PASSWORD", "")
+
+    s = RedditScraper()
+    assert s._praw_reddit is not None
+    assert "username" not in calls and "password" not in calls
+    assert s.auth_status() == "authenticated (read-only app-only OAuth)"
+
+
+def test_auth_status_unauthenticated(monkeypatch):
+    monkeypatch.setattr(client_mod, "REDDIT_CLIENT_ID", "")
+    monkeypatch.setattr(client_mod, "REDDIT_CLIENT_SECRET", "")
+    s = RedditScraper()
+    assert s._praw_reddit is None
+    assert "unauthenticated" in s.auth_status()
+
+
+def test_verify_auth_reports_failure(monkeypatch):
+    monkeypatch.setattr(client_mod, "REDDIT_CLIENT_ID", "")
+    monkeypatch.setattr(client_mod, "REDDIT_CLIENT_SECRET", "")
+    s = RedditScraper()
+    ok, detail = s.verify_auth()
+    assert ok is False
+    assert "no credentials" in detail

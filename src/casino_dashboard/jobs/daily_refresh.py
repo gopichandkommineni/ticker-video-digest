@@ -3,7 +3,11 @@ import os
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from core.social_media.reddit.apewisdom_client import fetch_apewisdom_universe, filter_to_universe
+from core.social_media.reddit.apewisdom_client import (
+    DEFAULT_SUBREDDIT_FILTERS,
+    fetch_apewisdom_universe,
+    filter_to_universe,
+)
 from casino_dashboard.data.subreddit_map_loader import load_subreddit_map
 from casino_dashboard.jobs.reddit_pull import pull_reddit_for_tickers
 from casino_dashboard.data.congress_legislators_fetcher import fetch_committee_membership
@@ -115,6 +119,15 @@ def main(db_path: Path = _DEFAULT_DB) -> None:
         except Exception as exc:
             logger.error("ApeWisdom fetch failed (continuing): %s", exc)
             stages.append(("Social mentions", f"✗ failed — {exc}"))
+
+        logger.info("Fetching ApeWisdom per-subreddit mentions …")
+        try:
+            sub_saved, n_filters = _refresh_apewisdom_by_subreddit(all_tickers, today, db_path)
+            logger.info("Saved %d per-subreddit mention rows across %d subs", sub_saved, n_filters)
+            stages.append(("Social mentions (per-subreddit)", f"✓ {sub_saved} rows · {n_filters} subs"))
+        except Exception as exc:
+            logger.error("ApeWisdom per-subreddit fetch failed (continuing): %s", exc)
+            stages.append(("Social mentions (per-subreddit)", f"✗ failed — {exc}"))
 
         logger.info("Fetching Reddit posts …")
         try:
@@ -364,6 +377,46 @@ def refresh_single_ticker(ticker: str, db_path: Path) -> tuple[bool, str | None]
         logger.warning("refresh_single_ticker: signal compute failed for %s: %s", ticker, exc)
 
     return True, None
+
+
+def _refresh_apewisdom_by_subreddit(
+    all_tickers: list[str],
+    today: date,
+    db_path: Path,
+) -> tuple[int, int]:
+    """Fetch ApeWisdom mention data per subreddit and store a breakdown.
+
+    Saves rows as source='apewisdom' with a NON-empty subreddit, so they sit
+    alongside the aggregate (subreddit='') without disturbing the existing
+    aggregate queries. Subreddit filters come from APEWISDOM_SUBREDDITS
+    (comma-separated) or DEFAULT_SUBREDDIT_FILTERS. Returns (rows_saved, n_subs).
+    """
+    env = os.environ.get("APEWISDOM_SUBREDDITS", "").strip()
+    filters = (
+        [s.strip() for s in env.split(",") if s.strip()]
+        if env else list(DEFAULT_SUBREDDIT_FILTERS)
+    )
+    universe = set(all_tickers)
+    saved = 0
+    for sub in filters:
+        try:
+            mentions = fetch_apewisdom_universe(sub)
+        except Exception as exc:
+            logger.warning("ApeWisdom subreddit %s failed (continuing): %s", sub, exc)
+            continue
+        for m in filter_to_universe(mentions, universe):
+            save_social_mention(
+                ticker=m.ticker,
+                mention_date=today,
+                source="apewisdom",
+                mention_count=m.mentions,
+                mentions_24h_ago=m.mentions_24h_ago,
+                upvote_sum=m.upvotes,
+                subreddit=sub,
+                db_path=db_path,
+            )
+            saved += 1
+    return saved, len(filters)
 
 
 def _select_reddit_tickers(

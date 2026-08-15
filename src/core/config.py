@@ -14,11 +14,22 @@ FRED_API_KEY: str = os.environ.get("FRED_API_KEY", "").strip()
 # ---------------------------------------------------------------------------
 # Social media credentials (all optional — scrapers degrade gracefully)
 # ---------------------------------------------------------------------------
-# Reddit: PRAW OAuth app credentials. When absent, the public JSON API is used.
+# Reddit: PRAW OAuth app credentials. Reddit now 403-blocks the unauthenticated
+# public JSON API for most IPs, so these are effectively required for Reddit to
+# return data. CLIENT_ID/SECRET alone -> read-only app-only OAuth; add
+# USERNAME/PASSWORD for a "script" app's full user (password) grant.
 REDDIT_CLIENT_ID: str = os.environ.get("REDDIT_CLIENT_ID", "").strip()
 REDDIT_CLIENT_SECRET: str = os.environ.get("REDDIT_CLIENT_SECRET", "").strip()
+REDDIT_USERNAME: str = os.environ.get("REDDIT_USERNAME", "").strip()
+REDDIT_PASSWORD: str = os.environ.get("REDDIT_PASSWORD", "").strip()
 # X (Twitter): API v2 bearer token for the recent-search endpoint.
 X_BEARER_TOKEN: str = os.environ.get("X_BEARER_TOKEN", "").strip()
+
+# Apify managed Reddit scraper (handles Cloudflare/anti-bot). When APIFY_TOKEN is
+# set, the Reddit pull uses Apify instead of the (now-blocked) direct JSON path.
+APIFY_TOKEN: str = os.environ.get("APIFY_TOKEN", "").strip()
+# Actor id in the API "username~actor-name" form. Override to use a different one.
+APIFY_REDDIT_ACTOR: str = os.environ.get("APIFY_REDDIT_ACTOR", "trudax~reddit-scraper").strip()
 
 if not ANTHROPIC_API_KEY:
     raise EnvironmentError(

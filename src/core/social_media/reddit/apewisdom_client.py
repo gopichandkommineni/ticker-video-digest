@@ -19,6 +19,16 @@ _BASE_URL = "https://apewisdom.io/api/v1.0/filter/{filter}/page/{page}"
 _PAGE_DELAY = 1.0
 _RATE_LIMIT_BACKOFF = 30.0
 
+# Per-subreddit ApeWisdom filters (subreddit slugs) worth breaking out alongside
+# the "all-stocks" aggregate, so we can see WSB-vs-investing separately.
+DEFAULT_SUBREDDIT_FILTERS = [
+    "wallstreetbets",
+    "stocks",
+    "investing",
+    "options",
+    "stockmarket",
+]
+
 
 def _open(req: Request):
     """Open *req*, routing through REDDIT_PROXY when configured. Falls back to a

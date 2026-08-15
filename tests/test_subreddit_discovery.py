@@ -87,64 +87,40 @@ def test_quarantined_not_selected():
 
 
 # ---------------------------------------------------------------------------
-# discover() — routed mock over requests.get
+# discover() — metrics sourced from Arctic Shift (mocked)
 # ---------------------------------------------------------------------------
 
-def _resp(status=200, payload=None):
-    m = MagicMock()
-    m.status_code = status
-    m.json.return_value = payload if payload is not None else {}
-    return m
+def test_discover_ranks_and_flags():
+    subs = {
+        "RKLB": {"display_name": "RKLB", "subscribers": 15000,
+                 "public_description": "RKLB Rocket Lab stock"},
+        "RocketLab": {"display_name": "RocketLab", "subscribers": 42000,
+                      "public_description": "Rocket Lab discussion"},
+    }
 
+    def fake_subs(query=None, subreddit=None, limit=20):
+        if subreddit:
+            d = subs.get(subreddit)
+            return [d] if d else []
+        return [subs["RocketLab"]]
 
-def _about_payload(name, subs, desc):
-    return {"kind": "t5", "data": {
-        "display_name": name, "subscribers": subs, "active_user_count": 12,
-        "title": f"{name} community", "public_description": desc,
-        "created_utc": 1_600_000_000.0, "over18": False, "quarantine": False,
-    }}
-
-
-def test_discover_ranks_and_flags(monkeypatch):
-    now = time.time()
-
-    def router(url, params=None, headers=None, timeout=None, proxies=None):
-        if "/subreddits/search.json" in url:
-            return _resp(payload={"data": {"children": [
-                {"data": {"display_name": "RocketLab"}},
-            ]}})
-        if "/about.json" in url:
-            if "/r/RKLB/" in url:
-                return _resp(payload=_about_payload("RKLB", 15000, "RKLB Rocket Lab stock"))
-            if "/r/RocketLab/" in url:
-                return _resp(payload=_about_payload("RocketLab", 42000, "Rocket Lab discussion"))
-            return _resp(status=404)  # every other guessed pattern doesn't exist
-        if "/new.json" in url:
-            return _resp(payload={"data": {"children": [
-                {"data": {"created_utc": now}} for _ in range(20)
-            ]}})
-        return _resp(status=404)
-
-    with patch("core.social_media.reddit.subreddit_discovery.reddit_get", side_effect=router):
+    with patch("core.social_media.reddit.arctic_shift_client.search_subreddits", side_effect=fake_subs), \
+         patch("core.social_media.reddit.arctic_shift_client.count_posts_in_window",
+               side_effect=lambda name, days=7: {"RKLB": 12, "RocketLab": 40}.get(name, 0)):
         result = discover("RKLB", company_name="Rocket Lab", sleep=False)
 
     names = [s.info.name for s in result.subreddits]
     assert "RocketLab" in names and "RKLB" in names
     assert result.found is True
-    assert all(s.selected for s in result.subreddits)  # both are real communities
-    # RKLB matches BOTH ticker and company name (full relevance), so it ranks
-    # ahead of the larger RocketLab which matches the name only.
-    assert result.subreddits[0].info.name == "RKLB"
+    assert all(s.selected for s in result.subreddits)  # both real communities
+    # RocketLab (42k subs, 40 posts/7d) outranks RKLB (15k, 12) on the metrics.
+    assert result.subreddits[0].info.name == "RocketLab"
     assert result.flag is None
 
 
-def test_discover_flags_when_nothing_found(monkeypatch):
-    def router(url, params=None, headers=None, timeout=None, proxies=None):
-        if "/subreddits/search.json" in url:
-            return _resp(payload={"data": {"children": []}})
-        return _resp(status=404)  # no sub exists
-
-    with patch("core.social_media.reddit.subreddit_discovery.reddit_get", side_effect=router):
+def test_discover_flags_when_nothing_found():
+    with patch("core.social_media.reddit.arctic_shift_client.search_subreddits", return_value=[]), \
+         patch("core.social_media.reddit.arctic_shift_client.count_posts_in_window", return_value=0):
         result = discover("ZZZZ", company_name=None, sleep=False)
 
     assert result.subreddits == []

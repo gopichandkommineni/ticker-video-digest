@@ -15,7 +15,7 @@ import logging
 import os
 import sys
 
-from core.social_media.reddit.client import RedditScraper
+from casino_dashboard.jobs.reddit_pull import make_reddit_scraper
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -34,18 +34,29 @@ def _resolve_tickers(argv: list[str]) -> list[str]:
 
 def run(tickers: list[str]) -> list[str]:
     """Fetch each ticker and return markdown report lines (also printed to stdout)."""
-    scraper = RedditScraper()
-    using_praw = scraper._praw_reddit is not None
-    logger.info(
-        "Reddit smoke test — %d tickers via %s",
-        len(tickers),
-        "PRAW (authenticated)" if using_praw else "public JSON API (no auth)",
-    )
+    scraper = make_reddit_scraper()
+    status = scraper.auth_status()
+    logger.info("Reddit smoke test — %d tickers · %s", len(tickers), status)
 
     lines: list[str] = [
         "## Reddit smoke test",
         "",
-        f"Auth mode: **{'PRAW (authenticated)' if using_praw else 'public JSON API (no credentials)'}**",
+        f"Backend: **{status}**",
+        "",
+    ]
+
+    # Confirm the active backend is actually usable before fetching.
+    ok, detail = scraper.verify_auth()
+    lines.append(f"Credential check: {'✅ ' + detail if ok else '❌ ' + detail}")
+    logger.info("Reddit backend check: %s — %s", "OK" if ok else "FAILED", detail)
+    if not ok:
+        lines.append("")
+        lines.append(
+            "⚠️ No usable Reddit backend — expect 0 results. Set APIFY_TOKEN (managed "
+            "scraper) or REDDIT_CLIENT_ID/SECRET (authenticated API)."
+        )
+
+    lines += [
         "",
         "| Ticker | Posts | Avg score | Top post |",
         "|--------|-------|-----------|----------|",

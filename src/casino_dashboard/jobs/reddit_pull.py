@@ -11,11 +11,35 @@ import logging
 from datetime import date
 from pathlib import Path
 
-from core.social_media.base import SocialSignals
+from core.social_media.base import SocialSignals, SocialScraper
 from core.social_media.reddit.client import RedditScraper
 from casino_dashboard.db.repository import save_reddit_posts, save_social_mention
 
 logger = logging.getLogger(__name__)
+
+
+def make_reddit_scraper() -> SocialScraper:
+    """Return the active Reddit scraper.
+
+    Priority: REDDIT_BACKEND override → Apify (if APIFY_TOKEN) → Arctic Shift
+    (free default). The direct client (public JSON / PRAW) is last-resort only,
+    since Reddit now blocks it; select it explicitly with REDDIT_BACKEND=direct.
+    """
+    import os  # noqa: PLC0415
+    from core.config import APIFY_TOKEN  # noqa: PLC0415 — read current value
+
+    backend = os.environ.get("REDDIT_BACKEND", "").strip().lower()
+
+    if backend == "direct":
+        return RedditScraper()
+    if backend == "apify" or (not backend and APIFY_TOKEN):
+        from core.social_media.reddit.apify_client import ApifyRedditScraper  # noqa: PLC0415
+
+        return ApifyRedditScraper()
+    # Default (and backend == "arctic_shift"): the free archive that isn't blocked.
+    from core.social_media.reddit.arctic_shift_client import ArcticShiftScraper  # noqa: PLC0415
+
+    return ArcticShiftScraper()
 
 
 def save_ticker_signals(
@@ -59,7 +83,7 @@ def pull_reddit_for_tickers(
     Per-ticker failures are logged and skipped. Returns (total_posts, covered).
     """
     subreddit_map = subreddit_map or {}
-    scraper = scraper or RedditScraper()
+    scraper = scraper or make_reddit_scraper()
 
     total_posts = 0
     covered = 0

@@ -35,27 +35,53 @@ def test_run_builds_markdown_table():
     ]
 
     class FakeScraper:
-        _praw_reddit = None
-        def search_ticker(self, ticker, days_back=7, max_posts=25):
+        def auth_status(self):
+            return "unauthenticated (public JSON API — Reddit blocks this for most IPs)"
+        def verify_auth(self):
+            return False, "no credentials configured"
+        def search_ticker(self, ticker, days_back=7, max_posts=25, subreddits=None):
             if ticker == "RKLB":
                 return SocialSignals(ticker=ticker, platform="reddit", posts=posts)
             return SocialSignals(ticker=ticker, platform="reddit", posts=[])
 
-    with patch("casino_dashboard.jobs.reddit_smoke_test.RedditScraper", FakeScraper):
+    with patch("casino_dashboard.jobs.reddit_smoke_test.make_reddit_scraper", return_value=FakeScraper()):
         lines = smoke.run(["RKLB", "EMPTY"])
 
     text = "\n".join(lines)
-    assert "public JSON API (no credentials)" in text
+    assert "public JSON API" in text
+    assert "Credential check: ❌" in text     # verify_auth failed
+    assert "No usable Reddit backend" in text  # the warning
     assert "RKLB Neutron DD" in text
-    assert "no posts in last 7d" in text  # EMPTY row
+    assert "no posts in last 7d" in text       # EMPTY row
+
+
+def test_run_verifies_backend_ok():
+    class AuthedScraper:
+        def auth_status(self):
+            return "Apify managed scraper (actor: trudax~reddit-scraper)"
+        def verify_auth(self):
+            return True, "Apify managed scraper (actor: trudax~reddit-scraper)"
+        def search_ticker(self, ticker, days_back=7, max_posts=25, subreddits=None):
+            return SocialSignals(ticker=ticker, platform="reddit", posts=[])
+
+    with patch("casino_dashboard.jobs.reddit_smoke_test.make_reddit_scraper", return_value=AuthedScraper()):
+        lines = smoke.run(["RKLB"])
+
+    text = "\n".join(lines)
+    assert "Credential check: ✅" in text
+    assert "Apify managed scraper" in text
+    assert "No usable Reddit backend" not in text
 
 
 def test_run_handles_fetch_error():
     class BoomScraper:
-        _praw_reddit = None
+        def auth_status(self):
+            return "test backend"
+        def verify_auth(self):
+            return True, "ok"
         def search_ticker(self, *a, **k):
             raise RuntimeError("boom")
 
-    with patch("casino_dashboard.jobs.reddit_smoke_test.RedditScraper", BoomScraper):
+    with patch("casino_dashboard.jobs.reddit_smoke_test.make_reddit_scraper", return_value=BoomScraper()):
         lines = smoke.run(["RKLB"])
     assert any("error: boom" in ln for ln in lines)

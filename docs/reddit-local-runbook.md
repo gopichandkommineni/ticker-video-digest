@@ -1,14 +1,34 @@
 # Reddit data — local runbook
 
-How to pull Reddit data locally: discover which subreddits belong to each stock,
-save that map, and pull posts into the database. Run these **from your own
-machine** — Reddit blocks unauthenticated requests from cloud/CI IPs (GitHub
-Actions, etc.), but a residential IP works with no credentials.
+How to pull Reddit data: discover which subreddits belong to each stock, save
+that map, and pull posts + mention signal into the database.
 
-> **Why local?** The public Reddit JSON API returns `403 Blocked` from
-> datacenter IPs. From home it works credential-free. Authenticated PRAW
-> (`REDDIT_CLIENT_ID`/`SECRET`) or a residential `REDDIT_PROXY` are the only ways
-> to make the cloud path work — see [Optional: cloud / authenticated](#optional-cloud--authenticated).
+> **⚠️ Reddit closed the direct paths (2026).** Reddit shut down its public JSON
+> API and put remaining access behind Cloudflare, so direct fetches — even
+> browser-impersonated, even via residential proxy — are unreliable, and new API
+> app creation is gated. The code therefore uses **managed data sources** that
+> aren't subject to Reddit's block:
+>
+> - **Arctic Shift** (default, **free**) — the community archive API
+>   (`arctic-shift.photon-reddit.com`). Powers subreddit discovery *and* full
+>   post pulling. Not reddit.com, so no Cloudflare/IP block; works locally and in
+>   CI. Tradeoff: ~1–2 day data lag, community uptime.
+> - **Apify** (optional, paid) — managed scraper for **intraday-fresh** full
+>   posts. Set `APIFY_TOKEN` and the pull uses it instead.
+> - **ApeWisdom** (free) — aggregated mention counts + velocity, incl. a
+>   per-subreddit breakdown, already wired into the daily refresh.
+>
+> The direct client (public JSON / PRAW / proxy) remains a fallback but is no
+> longer reliable on its own — select it only with `REDDIT_BACKEND=direct`.
+
+## 0. Choose a backend
+
+The pull auto-selects: **`APIFY_TOKEN` set → Apify; else → Arctic Shift (free).**
+Force one with `REDDIT_BACKEND=arctic_shift|apify|direct`.
+
+- **Free, works today (recommended)** → set nothing. Arctic Shift powers
+  discovery + posts; ApeWisdom runs in the daily refresh for live velocity.
+- **Need this-week's posts** → add an [Apify](https://apify.com) token.
 
 ## 1. One-time setup
 
@@ -29,12 +49,38 @@ pip install -e ".[dev]"
 cat > .env <<'EOF'
 ANTHROPIC_API_KEY=placeholder
 YOUTUBE_API_KEY=placeholder
+
+# Reddit API credentials — REQUIRED (see below). Reddit now blocks the
+# unauthenticated public API, so without these you get 0 results.
+REDDIT_CLIENT_ID=your_client_id
+REDDIT_CLIENT_SECRET=your_client_secret
+# Optional but recommended for a "script" app — full user (password) grant:
+REDDIT_USERNAME=your_reddit_username
+REDDIT_PASSWORD=your_reddit_password
 EOF
 ```
 
-`config.py` refuses to import without these two, but the Reddit code never calls
-Anthropic or YouTube, so **placeholders are fine** for everything in this runbook.
-(Swap in a real `ANTHROPIC_API_KEY` only once an LLM-analysis step exists.)
+`ANTHROPIC_API_KEY` / `YOUTUBE_API_KEY` are required only so `config.py` imports;
+the Reddit code never calls them, so **placeholders are fine** for those two.
+
+### Getting the Reddit credentials (required)
+
+Reddit 403-blocks the unauthenticated JSON API for essentially all IPs now, so
+authenticated access is the only reliable path:
+
+1. Go to <https://www.reddit.com/prefs/apps> and **create another app…**.
+2. Choose type **script**.
+3. Set redirect uri to `http://localhost:8080` (unused, but required).
+4. After creating, copy:
+   - the **client id** (the string just under the app name) → `REDDIT_CLIENT_ID`
+   - the **secret** → `REDDIT_CLIENT_SECRET`
+5. `REDDIT_USERNAME` / `REDDIT_PASSWORD` are the Reddit account that owns the app.
+   With them, the client uses the full user (password) grant; without them it
+   uses read-only app-only OAuth (also fine for searching).
+
+`client_id` + `client_secret` alone is enough to start; add username/password if
+read-only mode is rejected. Authenticated OAuth talks to `oauth.reddit.com`,
+which is **not** IP-blocked — so it works locally *and* from GitHub Actions.
 
 ## 3. Smoke test — confirm live Reddit access
 
@@ -112,6 +158,11 @@ Set any of these in `.env` (local) or as repo Secrets/Variables (Actions):
 
 | Variable | Purpose | Where to get it |
 |----------|---------|-----------------|
+| `REDDIT_BACKEND` | Force a backend: `arctic_shift` (free default), `apify`, or `direct`. | n/a |
+| `APIFY_TOKEN` | Enables the Apify managed scraper (intraday-fresh full posts). When set, the pull uses Apify. | apify.com → Settings → Integrations → API token |
+| `APIFY_REDDIT_ACTOR` | Which Apify actor to run (default `trudax~reddit-scraper`). | Apify Store (`username~actor-name`) |
+| `APIFY_REDDIT_INPUT` | Optional JSON to override the actor input; use `{query}` for the ticker. | your chosen actor's input schema |
+| `APEWISDOM_SUBREDDITS` | Comma-separated subreddit filters for the per-subreddit breakdown (default WSB/stocks/investing/options/stockmarket). | n/a |
 | `REDDIT_IMPERSONATE` | Browser to impersonate at the TLS layer (default `chrome`). Set to `none` to disable and use plain requests. | n/a — built in via `curl_cffi` |
 | `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` | Authenticated PRAW — works from cloud IPs | `reddit.com/prefs/apps` → "script" app |
 | `REDDIT_PROXY` | Route traffic through an allowed IP (`http://user:pass@host:port`) | A proxy provider |
