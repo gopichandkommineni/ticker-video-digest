@@ -22,15 +22,9 @@ from datetime import datetime, timedelta, timezone
 
 from pydantic import BaseModel, Field
 
-from core.social_media.reddit._http import reddit_get
-
 logger = logging.getLogger(__name__)
 
-_ABOUT_URL = "https://www.reddit.com/r/{sub}/about.json"
-_NEW_URL = "https://www.reddit.com/r/{sub}/new.json"
-_SUB_SEARCH_URL = "https://www.reddit.com/subreddits/search.json"
-
-_REQUEST_DELAY = 0.5   # polite pause between public-API calls
+_REQUEST_DELAY = 0.5   # polite pause between metric calls
 _MAX_CANDIDATES = 40   # hard cap on subs probed per ticker (bounds request volume)
 
 # Corporate suffixes stripped before turning a company name into subreddit-name
@@ -145,81 +139,62 @@ def generate_candidates(
 
 
 # ---------------------------------------------------------------------------
-# Public-API fetchers
+# Metric fetchers — backed by Arctic Shift (free archive API, not reddit.com,
+# so not subject to Reddit's Cloudflare/IP block).
 # ---------------------------------------------------------------------------
 
+def _as_sub_field(item: dict, *keys, default=None):
+    for k in keys:
+        if item.get(k) is not None:
+            return item[k]
+    return default
+
+
 def fetch_about(name: str) -> SubredditInfo | None:
-    """Fetch /r/{name}/about.json. Returns None if the sub does not exist, is
-    private/banned, or the response is not a subreddit object.
+    """Look up a subreddit's metadata via Arctic Shift. None if not found.
+
+    Note: Arctic Shift exposes subscriber counts + description, but not a live
+    "users online" figure and not moderator-only traffic (visitors/day), so
+    active_online stays 0 and ranking leans on subscribers + post volume.
     """
-    try:
-        resp = reddit_get(_ABOUT_URL.format(sub=name), timeout=10)
-    except Exception as exc:
-        logger.debug("about fetch error for r/%s: %s", name, exc)
-        return None
-    if resp.status_code != 200:
-        return None
-    try:
-        data = resp.json()
-    except ValueError:
-        return None
-    if data.get("kind") != "t5":
-        return None
-    d = data.get("data", {})
-    if "subscribers" not in d:
+    from core.social_media.reddit import arctic_shift_client as arctic  # noqa: PLC0415
+
+    items = arctic.search_subreddits(subreddit=name, limit=5)
+    match = None
+    for it in items:
+        disp = str(_as_sub_field(it, "display_name", "name", default=""))
+        if disp.lower() == name.lower():
+            match = it
+            break
+    if match is None:
         return None
     return SubredditInfo(
-        name=d.get("display_name", name),
-        subscribers=int(d.get("subscribers") or 0),
-        active_online=int(d.get("active_user_count") or 0),
-        title=d.get("title") or "",
-        public_description=d.get("public_description") or "",
-        created_utc=float(d.get("created_utc") or 0.0),
-        over18=bool(d.get("over18")),
-        quarantined=bool(d.get("quarantine")),
+        name=str(_as_sub_field(match, "display_name", "name", default=name)),
+        subscribers=int(_as_sub_field(match, "subscribers", "subscriber_count", default=0) or 0),
+        active_online=0,
+        title=str(_as_sub_field(match, "title", default="") or ""),
+        public_description=str(_as_sub_field(match, "public_description", "description", default="") or ""),
+        created_utc=float(_as_sub_field(match, "created_utc", "created", default=0.0) or 0.0),
+        over18=bool(_as_sub_field(match, "over18", "nsfw", default=False)),
+        quarantined=bool(_as_sub_field(match, "quarantine", default=False)),
     )
 
 
 def count_recent_posts(name: str, days: int = 7) -> int:
-    """Count posts in r/{name} within the last *days* days (lower bound, capped
-    at the ~100 most-recent posts the listing returns).
-    """
-    cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
-    try:
-        resp = reddit_get(_NEW_URL.format(sub=name), params={"limit": 100}, timeout=10)
-    except Exception as exc:
-        logger.debug("new fetch error for r/%s: %s", name, exc)
-        return 0
-    if resp.status_code != 200:
-        return 0
-    try:
-        children = resp.json().get("data", {}).get("children", [])
-    except ValueError:
-        return 0
-    count = 0
-    for child in children:
-        created = child.get("data", {}).get("created_utc", 0)
-        if datetime.fromtimestamp(created, tz=timezone.utc) >= cutoff:
-            count += 1
-    return count
+    """Count a subreddit's posts in the last *days* days via Arctic Shift
+    (lower bound — capped at the 100 returned per query)."""
+    from core.social_media.reddit import arctic_shift_client as arctic  # noqa: PLC0415
+
+    return arctic.count_posts_in_window(name, days)
 
 
 def search_subreddits(query: str, limit: int = 10) -> list[str]:
-    """Ask Reddit for subreddits matching *query* (name/description search)."""
-    try:
-        resp = reddit_get(_SUB_SEARCH_URL, params={"q": query, "limit": limit}, timeout=10)
-    except Exception as exc:
-        logger.debug("subreddit search error for %r: %s", query, exc)
-        return []
-    if resp.status_code != 200:
-        return []
-    try:
-        children = resp.json().get("data", {}).get("children", [])
-    except ValueError:
-        return []
+    """Find subreddits matching *query* via Arctic Shift's subreddit search."""
+    from core.social_media.reddit import arctic_shift_client as arctic  # noqa: PLC0415
+
     names: list[str] = []
-    for child in children:
-        name = child.get("data", {}).get("display_name")
+    for it in arctic.search_subreddits(query=query, limit=limit):
+        name = _as_sub_field(it, "display_name", "name")
         if name and _valid_subreddit_name(name) and name not in names:
             names.append(name)
     return names

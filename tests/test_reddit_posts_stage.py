@@ -70,7 +70,7 @@ def test_stage_saves_posts_and_per_subreddit_aggregates(db: Path):
         def search_ticker(self, ticker, days_back=7, max_posts=25, subreddits=None):
             return fake.get(ticker, _signals(ticker, []))
 
-    with patch("casino_dashboard.jobs.reddit_pull.RedditScraper", FakeScraper), \
+    with patch("casino_dashboard.jobs.reddit_pull.make_reddit_scraper", return_value=FakeScraper()), \
          patch.dict("os.environ", {"REDDIT_POSTS_MAX_TICKERS": "10"}):
         total, covered = _refresh_reddit_posts(
             ["RKLB", "ASTS"], priority=["RKLB"], today=date(2026, 8, 13), db_path=db
@@ -95,7 +95,7 @@ def test_stage_skips_when_max_tickers_zero(db: Path):
         def search_ticker(self, *a, **k):  # pragma: no cover - must not be called
             raise AssertionError("should not fetch when disabled")
 
-    with patch("casino_dashboard.jobs.reddit_pull.RedditScraper", FakeScraper), \
+    with patch("casino_dashboard.jobs.reddit_pull.make_reddit_scraper", return_value=FakeScraper()), \
          patch.dict("os.environ", {"REDDIT_POSTS_MAX_TICKERS": "0"}):
         total, covered = _refresh_reddit_posts(
             ["RKLB"], priority=[], today=date(2026, 8, 13), db_path=db
@@ -111,7 +111,7 @@ def test_stage_survives_per_ticker_failure(db: Path):
                 raise RuntimeError("429 rate limited")
             return _signals(ticker, [("ok1", "stocks", 10)])
 
-    with patch("casino_dashboard.jobs.reddit_pull.RedditScraper", FlakyScraper), \
+    with patch("casino_dashboard.jobs.reddit_pull.make_reddit_scraper", return_value=FlakyScraper()), \
          patch.dict("os.environ", {"REDDIT_POSTS_MAX_TICKERS": "10"}):
         total, covered = _refresh_reddit_posts(
             ["BAD", "GOOD"], priority=[], today=date(2026, 8, 13), db_path=db

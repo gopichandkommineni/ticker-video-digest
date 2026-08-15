@@ -97,15 +97,26 @@ def test_factory_prefers_apify_when_token_set(monkeypatch):
     from casino_dashboard.jobs.reddit_pull import make_reddit_scraper
     import core.config as cfg
 
+    monkeypatch.delenv("REDDIT_BACKEND", raising=False)
     monkeypatch.setattr(cfg, "APIFY_TOKEN", "tok")
-    scraper = make_reddit_scraper()
-    assert scraper.__class__.__name__ == "ApifyRedditScraper"
+    assert make_reddit_scraper().__class__.__name__ == "ApifyRedditScraper"
 
 
-def test_factory_falls_back_to_direct_client(monkeypatch):
+def test_factory_defaults_to_arctic_shift(monkeypatch):
     from casino_dashboard.jobs.reddit_pull import make_reddit_scraper
     import core.config as cfg
 
+    monkeypatch.delenv("REDDIT_BACKEND", raising=False)
     monkeypatch.setattr(cfg, "APIFY_TOKEN", "")
-    scraper = make_reddit_scraper()
-    assert scraper.__class__.__name__ == "RedditScraper"
+    assert make_reddit_scraper().__class__.__name__ == "ArcticShiftScraper"
+
+
+def test_factory_backend_override(monkeypatch):
+    from casino_dashboard.jobs.reddit_pull import make_reddit_scraper
+    import core.config as cfg
+
+    monkeypatch.setattr(cfg, "APIFY_TOKEN", "tok")  # present, but override wins
+    monkeypatch.setenv("REDDIT_BACKEND", "direct")
+    assert make_reddit_scraper().__class__.__name__ == "RedditScraper"
+    monkeypatch.setenv("REDDIT_BACKEND", "arctic_shift")
+    assert make_reddit_scraper().__class__.__name__ == "ArcticShiftScraper"

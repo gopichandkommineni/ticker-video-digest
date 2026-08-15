@@ -39,6 +39,7 @@ jobs:
       REDDIT_PROXY: ${{ secrets.REDDIT_PROXY }}
       APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
       APIFY_REDDIT_ACTOR: ${{ vars.APIFY_REDDIT_ACTOR }}
+      REDDIT_BACKEND: ${{ vars.REDDIT_BACKEND }}
 
     steps:
       - name: Checkout main

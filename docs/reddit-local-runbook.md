@@ -6,23 +6,29 @@ that map, and pull posts + mention signal into the database.
 > **⚠️ Reddit closed the direct paths (2026).** Reddit shut down its public JSON
 > API and put remaining access behind Cloudflare, so direct fetches — even
 > browser-impersonated, even via residential proxy — are unreliable, and new API
-> app creation is gated. The code therefore supports two **managed** data
-> sources that handle this for you:
+> app creation is gated. The code therefore uses **managed data sources** that
+> aren't subject to Reddit's block:
 >
-> - **Apify** (full post content) — a managed scraper that solves Cloudflare.
->   Set `APIFY_TOKEN` and the Reddit pull uses it automatically. Small cost.
-> - **ApeWisdom** (aggregated mention signal) — free, no credentials, already
->   wired into the daily refresh, incl. a per-subreddit breakdown.
+> - **Arctic Shift** (default, **free**) — the community archive API
+>   (`arctic-shift.photon-reddit.com`). Powers subreddit discovery *and* full
+>   post pulling. Not reddit.com, so no Cloudflare/IP block; works locally and in
+>   CI. Tradeoff: ~1–2 day data lag, community uptime.
+> - **Apify** (optional, paid) — managed scraper for **intraday-fresh** full
+>   posts. Set `APIFY_TOKEN` and the pull uses it instead.
+> - **ApeWisdom** (free) — aggregated mention counts + velocity, incl. a
+>   per-subreddit breakdown, already wired into the daily refresh.
 >
-> The direct client (public JSON / PRAW / proxy) still exists as a fallback but
-> is no longer reliable on its own.
+> The direct client (public JSON / PRAW / proxy) remains a fallback but is no
+> longer reliable on its own — select it only with `REDDIT_BACKEND=direct`.
 
 ## 0. Choose a backend
 
-- **Full posts** → get an [Apify](https://apify.com) account + API token, set
-  `APIFY_TOKEN`. The pull auto-selects Apify when the token is present.
-- **Just mention signal / free** → set nothing; ApeWisdom runs in the daily
-  refresh and gives per-ticker and per-subreddit mention counts + velocity.
+The pull auto-selects: **`APIFY_TOKEN` set → Apify; else → Arctic Shift (free).**
+Force one with `REDDIT_BACKEND=arctic_shift|apify|direct`.
+
+- **Free, works today (recommended)** → set nothing. Arctic Shift powers
+  discovery + posts; ApeWisdom runs in the daily refresh for live velocity.
+- **Need this-week's posts** → add an [Apify](https://apify.com) token.
 
 ## 1. One-time setup
 
@@ -152,7 +158,8 @@ Set any of these in `.env` (local) or as repo Secrets/Variables (Actions):
 
 | Variable | Purpose | Where to get it |
 |----------|---------|-----------------|
-| `APIFY_TOKEN` | Enables the Apify managed scraper (full post content, solves Cloudflare). When set, the pull uses Apify. | apify.com → Settings → Integrations → API token |
+| `REDDIT_BACKEND` | Force a backend: `arctic_shift` (free default), `apify`, or `direct`. | n/a |
+| `APIFY_TOKEN` | Enables the Apify managed scraper (intraday-fresh full posts). When set, the pull uses Apify. | apify.com → Settings → Integrations → API token |
 | `APIFY_REDDIT_ACTOR` | Which Apify actor to run (default `trudax~reddit-scraper`). | Apify Store (`username~actor-name`) |
 | `APIFY_REDDIT_INPUT` | Optional JSON to override the actor input; use `{query}` for the ticker. | your chosen actor's input schema |
 | `APEWISDOM_SUBREDDITS` | Comma-separated subreddit filters for the per-subreddit breakdown (default WSB/stocks/investing/options/stockmarket). | n/a |

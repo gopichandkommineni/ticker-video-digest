@@ -35,6 +35,7 @@ jobs:
       REDDIT_PROXY: ${{ secrets.REDDIT_PROXY }}
       APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
       APIFY_REDDIT_ACTOR: ${{ vars.APIFY_REDDIT_ACTOR }}
+      REDDIT_BACKEND: ${{ vars.REDDIT_BACKEND }}
       SUBREDDIT_DISCOVERY_QUERIES: ${{ github.event.inputs.queries }}
 
     steps:
