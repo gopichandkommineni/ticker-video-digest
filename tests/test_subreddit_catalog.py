@@ -29,6 +29,21 @@ _REAL_RANKED_SWEEP = sc._sweep_by_subscribers
 
 
 @pytest.fixture(autouse=True)
+def _isolate_the_company_name_cache(tmp_path, monkeypatch):
+    """No test may write the real config/ticker_company_names.yaml.
+
+    An earlier version of this suite did exactly that — the cache path was a
+    default argument bound at import time, so a test's fake resolver wrote
+    "RKLB Corp" into the committed cache. Cached names are believed over
+    yfinance, so that quietly cost RKLB and ASTS their real company names and
+    with them every company-named match (r/RocketLab, r/ASTSpaceMobile).
+    """
+    from casino_dashboard.jobs import subreddit_catalog_run as job  # noqa: PLC0415
+
+    monkeypatch.setattr(job, "_NAMES_CACHE", tmp_path / "ticker_company_names.yaml")
+
+
+@pytest.fixture(autouse=True)
 def _archive_without_subscriber_ranking():
     """Default every test to an archive that cannot rank by subscribers.
 
