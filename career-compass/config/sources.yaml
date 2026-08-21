@@ -1,0 +1,141 @@
+# Where signal comes from.
+#
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │  EVERY ENTRY SHIPS `verified: false`.                                    │
+# │                                                                          │
+# │  The URLs and slugs below are STARTING GUESSES written from general      │
+# │  knowledge, not from a live check. ATS platforms get swapped, board      │
+# │  slugs get renamed, and blogs migrate hosts.                             │
+# │                                                                          │
+# │  A dead endpoint returns zero postings, which reads as "they aren't      │
+# │  hiring" — a confident, wrong, actionable answer. That is the single     │
+# │  most dangerous failure mode in this system.                             │
+# │                                                                          │
+# │  So: run `career sources verify`, look at what actually came back,       │
+# │  fix what's wrong, and flip the flag BY HAND. Unverified sources are     │
+# │  ingested but excluded from analysis.                                    │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
+# adapter                 config keys
+# ----------------------  ---------------------------------------------------
+# rss                     url
+# ats.greenhouse          board
+# ats.lever               org
+# ats.ashby               org
+# ats.smartrecruiters     org
+# ats.workday             tenant, site
+# ats.eightfold           host
+# careers.custom          url, method, json_path, field_map
+# manual.inbox            (none)
+#
+# See docs/03-ingestion-contracts.md.
+
+version: 1
+
+defaults:
+  refresh_interval_hours:
+    jobs: 24
+    blog: 72
+    oss: 168
+    talk: 168
+  filters:
+    # Applied at normalize time so the corpus stays about roles I'd take.
+    job_title_include:
+      - engineer
+      - architect
+      - technical lead
+      - staff
+      - principal
+    job_title_exclude:
+      - intern
+      - recruiter
+      - sales
+      - manager, non-technical
+    job_level_min: mid
+
+sources:
+
+  # ── Netflix ────────────────────────────────────────────────────────────
+  - company: netflix
+    kind: blog
+    adapter: rss
+    config: { url: "https://netflixtechblog.com/feed" }
+    verified: false
+    note: "Medium-hosted. If the feed 404s, check for a move off Medium."
+
+  - company: netflix
+    kind: jobs
+    adapter: ats.eightfold
+    config: { host: "jobs.netflix.com" }
+    verified: false
+    note: >
+      Believed to be Eightfold-backed. Confirm by opening the careers page
+      and watching which XHR returns the posting list, then set `host` and
+      any required search params to match.
+
+  # ── Google ─────────────────────────────────────────────────────────────
+  - company: google
+    kind: blog
+    adapter: rss
+    config: { url: "https://research.google/blog/rss/" }
+    verified: false
+
+  - company: google
+    kind: blog
+    adapter: rss
+    config: { url: "https://developers.googleblog.com/feeds/posts/default" }
+    verified: false
+
+  - company: google
+    kind: jobs
+    adapter: careers.custom
+    config:
+      url: "https://www.google.com/about/careers/applications/"
+      note_to_self: >
+        In-house board. Find the JSON endpoint the page calls, then fill in
+        method / json_path / field_map. If it turns out to be JS-gated,
+        route this company's jobs through manual.inbox instead — that is a
+        legitimate outcome, not a failure (see docs/08).
+    verified: false
+
+  # ── Reddit ─────────────────────────────────────────────────────────────
+  - company: reddit
+    kind: blog
+    adapter: rss
+    config: { url: "https://www.reddit.com/r/RedditEng/.rss" }
+    verified: false
+    note: "RedditEng has lived on Medium and on the subreddit. Check both."
+
+  - company: reddit
+    kind: jobs
+    adapter: ats.greenhouse
+    config: { board: "reddit" }
+    verified: false
+    note: "Greenhouse is the best-documented public board API — good first adapter."
+
+  # ── NVIDIA ─────────────────────────────────────────────────────────────
+  - company: nvidia
+    kind: blog
+    adapter: rss
+    config: { url: "https://developer.nvidia.com/blog/feed" }
+    verified: false
+
+  - company: nvidia
+    kind: jobs
+    adapter: ats.workday
+    config:
+      tenant: "nvidia"
+      site: ""          # the path segment after the tenant; fill from the URL
+    verified: false
+    note: >
+      Workday boards are POST-based JSON search. Copy the request body from
+      the careers page network tab.
+
+  # ── Manual, for every company ──────────────────────────────────────────
+  # One inbox, routed by the `company:` field in each file's front-matter.
+  - company: "*"
+    kind: manual
+    adapter: manual.inbox
+    config: { path: "manual/inbox" }
+    verified: true
+    note: "Always on. See docs/06-manual-intervention.md."

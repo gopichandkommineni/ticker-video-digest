@@ -1,0 +1,33 @@
+# Human corrections, applied AFTER scoring and always visible in output.
+#
+# Design rule (ADR-0006): overrides ADJUST, they never DELETE. A suppressed
+# row still exists and still appears under `career gaps --show-suppressed`,
+# with its reason attached. A tool that lets you silently hide inconvenient
+# findings converges on telling you what you want to hear — the one failure
+# mode a career tool cannot have.
+#
+# Every entry requires a `reason`. Loader rejects entries without one.
+
+version: 1
+
+# Override the computed supply for a skill when you know the evidence ledger
+# understates you. Prefer fixing profile/resume.yaml; use this for the cases
+# where the evidence genuinely doesn't fit the schema.
+skill_supply: []
+  # - skill: design.systems.consistency
+  #   set_supply: 70
+  #   reason: "Ledger reconciliation work is stronger than the resume shows"
+
+# Scale demand when the text under-represents what you know to be true from
+# conversations.
+demand: []
+  # - company: netflix
+  #   skill: domain.video
+  #   multiply: 1.4
+  #   reason: "Every conversation with them is about encoding. Text under-weights it."
+
+# Stop a row appearing in the default report. Still queryable.
+suppress: []
+  # - company: google
+  #   skill: craft.cpp
+  #   reason: "Not going down this road"

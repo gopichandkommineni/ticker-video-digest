@@ -1,0 +1,413 @@
+# The controlled vocabulary. The join key between what companies want and what
+# you have. See docs/04-skill-taxonomy.md and ADR-0005.
+#
+# RULES
+#   * Three levels max: branch → skill → leaf. Scoring happens at the SKILL
+#     level; leaves exist so evidence can be precise without fragmenting scores.
+#   * `aliases` do the real work — they are the surface forms that actually
+#     appear in postings and blog posts, and they are fed to the extractor in
+#     the (prompt-cached) system block.
+#   * The extractor may ONLY emit slugs from this file. Anything it cannot
+#     place goes to `unmapped[]` and surfaces in `career taxonomy review`.
+#     The corpus proposes; you dispose.
+#   * Adding a skill or alias = minor version bump. Renaming or removing a
+#     slug = major bump AND a `renames:` entry, or historical scores break.
+#   * Branch WEIGHTS are not here — they live in config/scoring.yaml. This
+#     file describes the world; that file describes your bet about it.
+
+version: 1
+renames: []
+
+branches:
+
+  # ═══════════════════════════════════════════════════════════════════════
+  - slug: design.systems
+    name: Systems design
+    description: >
+      Designing systems that work under real constraints — scale, failure,
+      change, and other people. The core of the thesis.
+    skills:
+      - slug: design.systems.decomposition
+        name: Service & component decomposition
+        aliases: [system decomposition, service boundaries, bounded context,
+                  microservices architecture, monolith decomposition,
+                  modular architecture, separation of concerns]
+        leaves: [monolith_to_services, service_boundaries, modularity]
+
+      - slug: design.systems.data_modeling
+        name: Data modelling
+        aliases: [data modeling, schema design, database design, normalization,
+                  entity relationship, domain modeling, star schema,
+                  slowly changing dimension]
+        leaves: [relational_modeling, event_modeling, warehouse_modeling]
+
+      - slug: design.systems.api_design
+        name: API & interface design
+        aliases: [API design, interface design, contract design, REST design,
+                  gRPC, protobuf, GraphQL schema, versioning strategy,
+                  backward compatibility, idempotency]
+        leaves: [rest, rpc, graphql, api_versioning, idempotency]
+
+      - slug: design.systems.consistency
+        name: Consistency & coordination
+        aliases: [eventual consistency, strong consistency, linearizability,
+                  quorum, CRDT, distributed transaction, two-phase commit,
+                  consensus, Raft, Paxos, isolation level, CAP theorem,
+                  read-after-write]
+        leaves: [consensus, crdt, transactions, replication]
+
+      - slug: design.systems.scalability
+        name: Scaling & partitioning
+        aliases: [horizontal scaling, sharding, partitioning, load balancing,
+                  hot key, capacity planning, throughput, high scale,
+                  millions of requests, fan-out]
+        leaves: [sharding, load_balancing, capacity_planning]
+
+      - slug: design.systems.reliability
+        name: Reliability & failure design
+        aliases: [fault tolerance, high availability, disaster recovery,
+                  graceful degradation, circuit breaker, backpressure,
+                  chaos engineering, blast radius, SLO, error budget,
+                  incident response, failure mode]
+        leaves: [slo, degradation, chaos, incident_management]
+
+      - slug: design.systems.caching
+        name: Caching & CDN
+        aliases: [caching strategy, cache invalidation, CDN, edge caching,
+                  read-through cache, write-behind, memcached, Redis caching,
+                  content delivery]
+        leaves: [cache_strategy, cdn, invalidation]
+
+      - slug: design.systems.streaming
+        name: Event-driven & streaming
+        aliases: [event-driven architecture, event sourcing, message queue,
+                  Kafka, pub/sub, stream processing, CDC, change data capture,
+                  exactly-once, at-least-once, event log]
+        leaves: [event_sourcing, stream_processing, cdc, messaging]
+
+      - slug: design.systems.storage
+        name: Storage systems
+        aliases: [distributed storage, object storage, blob store, LSM tree,
+                  B-tree, write-ahead log, columnar storage, storage engine,
+                  data lake]
+        leaves: [oltp, olap, object_store, storage_engines]
+
+      - slug: design.systems.performance
+        name: Performance engineering
+        aliases: [latency optimization, p99, tail latency, profiling,
+                  throughput optimization, benchmarking, performance tuning,
+                  memory optimization]
+        leaves: [latency, profiling, benchmarking]
+
+      - slug: design.systems.security
+        name: Security & privacy by design
+        aliases: [threat model, authn, authz, least privilege, zero trust,
+                  encryption at rest, PII handling, GDPR, data governance,
+                  secure by design]
+        leaves: [threat_modeling, authz, data_privacy]
+
+      - slug: design.systems.migration
+        name: Migration & evolution
+        aliases: [migration strategy, strangler fig, backfill, dual write,
+                  zero-downtime migration, rollout plan, legacy modernization,
+                  incremental migration]
+        leaves: [strangler, backfill, dual_write]
+
+  # ═══════════════════════════════════════════════════════════════════════
+  - slug: design.product
+    name: Product & problem design
+    description: >
+      Deciding what to build and why. The half of design that isn't about
+      boxes and arrows, and the half most engineers cannot evidence.
+    skills:
+      - slug: design.product.problem_framing
+        name: Problem framing
+        aliases: [problem definition, ambiguous problem, scoping,
+                  requirements gathering, first principles, root cause,
+                  ill-defined problem, zero to one]
+        leaves: [scoping, requirements, discovery]
+
+      - slug: design.product.tradeoffs
+        name: Tradeoff reasoning
+        aliases: [tradeoff analysis, design tradeoffs, cost-benefit,
+                  build vs buy, technical judgment, pragmatism,
+                  competing constraints]
+        leaves: [build_vs_buy, constraint_analysis]
+
+      - slug: design.product.prioritization
+        name: Prioritization & sequencing
+        aliases: [roadmap, prioritization, MVP, incremental delivery,
+                  phased rollout, scope management, sequencing]
+        leaves: [roadmapping, mvp, sequencing]
+
+      - slug: design.product.metrics
+        name: Metrics & experimentation
+        aliases: [A/B testing, experimentation, success metrics, north star,
+                  instrumentation, guardrail metrics, statistical significance,
+                  data-informed]
+        leaves: [ab_testing, instrumentation, metric_design]
+
+      - slug: design.product.user_empathy
+        name: User & customer sense
+        aliases: [user empathy, customer obsession, developer experience,
+                  DX, usability, product sense, user research]
+        leaves: [dx, product_sense]
+
+  # ═══════════════════════════════════════════════════════════════════════
+  - slug: design.org
+    name: Organizational & technical leadership
+    description: >
+      Design at the scale of teams. Slowest branch to close a gap in — it
+      needs an org and years — which the closability priors reflect.
+    skills:
+      - slug: design.org.technical_writing
+        name: Technical writing & RFCs
+        aliases: [design doc, RFC, technical writing, architecture decision
+                  record, ADR, written communication, one-pager, proposal]
+        leaves: [design_docs, adr, rfc_process]
+
+      - slug: design.org.cross_team
+        name: Cross-team & cross-functional design
+        aliases: [cross-functional, cross-team collaboration, stakeholder
+                  management, influence without authority, alignment,
+                  partner teams, org boundaries]
+        leaves: [alignment, stakeholders]
+
+      - slug: design.org.mentorship
+        name: Mentorship & multiplying
+        aliases: [mentorship, coaching, technical leadership, force multiplier,
+                  raising the bar, onboarding, growing engineers]
+        leaves: [mentoring, coaching]
+
+      - slug: design.org.review_culture
+        name: Review & standards
+        aliases: [code review, design review, architecture review,
+                  engineering standards, best practices, quality bar,
+                  readability]
+        leaves: [code_review, design_review]
+
+      - slug: design.org.ownership
+        name: Ownership & on-call
+        aliases: [end-to-end ownership, on-call, operational ownership,
+                  you build it you run it, DRI, accountability]
+        leaves: [oncall, e2e_ownership]
+
+  # ═══════════════════════════════════════════════════════════════════════
+  - slug: ai
+    name: AI & ML systems
+    description: >
+      Building with and around models. Fast-moving and highly closable, which
+      makes it consistently high-leverage.
+    skills:
+      - slug: ai.llm_systems
+        name: LLM application systems
+        aliases: [LLM, large language model, prompt engineering, prompt caching,
+                  structured output, function calling, tool use, context window,
+                  generative AI, foundation model]
+        leaves: [prompting, structured_output, tool_use]
+
+      - slug: ai.retrieval
+        name: Retrieval & embeddings
+        aliases: [RAG, retrieval augmented generation, vector database,
+                  embeddings, semantic search, reranking, chunking,
+                  hybrid search]
+        leaves: [rag, vector_search, reranking]
+
+      - slug: ai.agents
+        name: Agentic systems
+        aliases: [AI agent, agentic, multi-agent, orchestration, planning loop,
+                  MCP, model context protocol, autonomous workflow]
+        leaves: [agent_loops, orchestration, mcp]
+
+      - slug: ai.evaluation
+        name: Evaluation & guardrails
+        aliases: [eval, evals, LLM evaluation, golden dataset, hallucination,
+                  offline evaluation, human in the loop, red teaming,
+                  model quality]
+        leaves: [offline_eval, online_eval, red_teaming]
+
+      - slug: ai.ml_infra
+        name: ML infrastructure
+        aliases: [model serving, inference, training pipeline, feature store,
+                  MLOps, GPU cluster, model registry, distributed training,
+                  quantization, batch inference]
+        leaves: [serving, training, feature_store]
+
+      - slug: ai.modeling
+        name: Modelling & algorithms
+        aliases: [machine learning, deep learning, recommendation model,
+                  ranking model, transformer, fine-tuning, PyTorch,
+                  loss function]
+        leaves: [ranking, deep_learning, finetuning]
+
+  # ═══════════════════════════════════════════════════════════════════════
+  - slug: domain
+    name: Domain knowledge
+    description: >
+      Company-shaped context. Hardest branch to close by studying — you close
+      it by being adjacent to the work — hence the low closability prior. The
+      system's honest advice for a large domain gap is usually "lead with
+      something else".
+    skills:
+      - slug: domain.video
+        name: Video & streaming
+        aliases: [video streaming, encoding, transcoding, codec, ABR,
+                  adaptive bitrate, HLS, DASH, playback, QoE, CDN delivery,
+                  Open Connect]
+        leaves: [encoding, playback, delivery]
+
+      - slug: domain.recsys
+        name: Recommendation & personalization
+        aliases: [recommendation system, recsys, personalization, ranking,
+                  candidate generation, collaborative filtering, feed ranking,
+                  cold start]
+        leaves: [candidate_gen, ranking, personalization]
+
+      - slug: domain.social_graph
+        name: Social graph & community
+        aliases: [social graph, feed, community, moderation, user generated
+                  content, karma, comment tree, virality]
+        leaves: [feed, graph, ugc]
+
+      - slug: domain.content_moderation
+        name: Trust, safety & moderation
+        aliases: [content moderation, trust and safety, abuse detection,
+                  spam, policy enforcement, integrity]
+        leaves: [abuse, policy]
+
+      - slug: domain.gpu
+        name: GPU & accelerated computing
+        aliases: [CUDA, GPU, kernel optimization, tensor core, NCCL, HPC,
+                  accelerator, parallel computing, memory bandwidth]
+        leaves: [cuda, kernels, hpc]
+
+      - slug: domain.ai_infra
+        name: AI infrastructure at scale
+        aliases: [training cluster, inference fleet, model parallelism,
+                  accelerator scheduling, AI platform, GPU scheduling]
+        leaves: [clusters, scheduling]
+
+      - slug: domain.search
+        name: Search & information retrieval
+        aliases: [search engine, indexing, query understanding, inverted index,
+                  relevance, crawling, IR]
+        leaves: [indexing, relevance, query_understanding]
+
+      - slug: domain.ads
+        name: Ads & marketplaces
+        aliases: [advertising, ad serving, auction, bidding, RTB, attribution,
+                  marketplace, pacing, budget]
+        leaves: [auctions, serving, attribution]
+
+      - slug: domain.payments
+        name: Payments & financial systems
+        aliases: [payments, ledger, reconciliation, double-entry, settlement,
+                  fraud, PCI, money movement]
+        leaves: [ledgers, fraud, settlement]
+
+      - slug: domain.systems_software
+        name: Systems & low-level software
+        aliases: [operating system, kernel, driver, compiler, firmware,
+                  embedded, runtime, memory management, systems programming]
+        leaves: [kernel, compilers, drivers]
+
+      - slug: domain.distributed_media
+        name: Large-scale media infrastructure
+        aliases: [media pipeline, asset management, ingest pipeline,
+                  media processing, content workflow]
+        leaves: [media_pipeline, asset_mgmt]
+
+      - slug: domain.api_platform
+        name: Developer & API platforms
+        aliases: [developer platform, public API, SDK design, API gateway,
+                  partner integration, platform engineering]
+        leaves: [sdk, gateway, platform]
+
+  # ═══════════════════════════════════════════════════════════════════════
+  - slug: platform
+    name: Platform & infrastructure tooling
+    description: >
+      The operational substrate. Real, necessary, and deliberately weighted
+      below design — this is where the thesis says the commoditization is
+      happening fastest.
+    skills:
+      - slug: platform.cloud
+        name: Cloud platforms
+        aliases: [AWS, GCP, Azure, cloud infrastructure, EC2, S3, Lambda,
+                  serverless, cloud native, multi-cloud]
+        leaves: [aws, gcp, azure, serverless]
+
+      - slug: platform.orchestration
+        name: Containers & orchestration
+        aliases: [Kubernetes, k8s, Docker, container, service mesh, Istio,
+                  Helm, scheduling, EKS, GKE]
+        leaves: [kubernetes, containers, mesh]
+
+      - slug: platform.iac
+        name: Infrastructure as code & CI/CD
+        aliases: [Terraform, infrastructure as code, CI/CD, GitOps, Jenkins,
+                  GitHub Actions, deployment pipeline, ArgoCD, release
+                  engineering]
+        leaves: [terraform, cicd, gitops]
+
+      - slug: platform.observability
+        name: Observability
+        aliases: [observability, monitoring, tracing, distributed tracing,
+                  OpenTelemetry, Prometheus, Grafana, logging, alerting,
+                  eBPF, telemetry]
+        leaves: [tracing, metrics, logging]
+
+      - slug: platform.data_infra
+        name: Data infrastructure
+        aliases: [data pipeline, ETL, ELT, Spark, Flink, Airflow, dbt,
+                  data warehouse, Snowflake, BigQuery, lakehouse, Iceberg]
+        leaves: [batch, streaming_infra, warehouse]
+
+      - slug: platform.networking
+        name: Networking
+        aliases: [TCP, HTTP/2, QUIC, DNS, TLS, load balancer, proxy, BGP,
+                  network protocol, latency routing]
+        leaves: [protocols, routing, tls]
+
+  # ═══════════════════════════════════════════════════════════════════════
+  - slug: craft
+    name: Languages, frameworks & tools
+    description: >
+      Tool proficiency. Tracked because postings still list it and it is still
+      a screen, but weighted lowest — this is precisely the layer the thesis
+      says is being commoditized. Do not let a long list here feel like
+      progress.
+    skills:
+      - slug: craft.python
+        name: Python
+        aliases: [Python, pytest, FastAPI, Django, pandas, asyncio]
+        leaves: []
+      - slug: craft.java_jvm
+        name: Java / JVM
+        aliases: [Java, Kotlin, Scala, Spring, JVM]
+        leaves: []
+      - slug: craft.go
+        name: Go
+        aliases: [Go, Golang]
+        leaves: []
+      - slug: craft.rust
+        name: Rust
+        aliases: [Rust, tokio]
+        leaves: []
+      - slug: craft.cpp
+        name: C / C++
+        aliases: [C++, C programming, CMake, modern C++]
+        leaves: []
+      - slug: craft.typescript
+        name: TypeScript / JavaScript
+        aliases: [TypeScript, JavaScript, Node.js, React, Next.js]
+        leaves: []
+      - slug: craft.sql
+        name: SQL
+        aliases: [SQL, PostgreSQL, MySQL, query optimization, window functions]
+        leaves: []
+      - slug: craft.testing
+        name: Testing & quality engineering
+        aliases: [unit testing, integration testing, test automation, TDD,
+                  property-based testing, contract testing]
+        leaves: []

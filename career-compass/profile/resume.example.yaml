@@ -1,0 +1,206 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  FICTIONAL EXAMPLE — not a real person, not your data.
+#
+#  Here purely to show the SHAPE of a well-filled profile: the level of
+#  specificity that makes gap analysis useful, and what an honest mix of
+#  strong and weak claims looks like. Copy resume.template.yaml, not this.
+#
+#  Note in particular:
+#    * claim #3 — rating 4, zero evidence. That is the pattern the system
+#      exists to catch, and its prep item will be "write", not "build".
+#    * every impact_metric carries a number.
+#    * not_pursuing is used, so settled decisions stop resurfacing.
+# ═══════════════════════════════════════════════════════════════════════════
+
+version: 1
+
+identity:
+  name: "A. Example"
+  current_title: "Senior Software Engineer"
+  current_company: "MidsizeCo"
+  years_experience: 8
+  location: "Austin, TX"
+  target_level: staff
+  target_roles:
+    - "Staff Software Engineer, Platform"
+    - "Senior Software Engineer, Infrastructure"
+  constraints:
+    horizon_months: 12
+    visa: "US citizen"
+    relocation: "Remote, or relocate for the right role"
+    hours_per_week_for_prep: 5
+
+roles:
+  - company: "MidsizeCo"
+    title: "Senior Software Engineer"
+    start: "2021-03"
+    end: "present"
+    team: "Order Platform"
+    scope: >
+      Own the order lifecycle service end to end — 11 services, ~180M orders
+      a year, 4-person on-call rotation I set up. Led the 2023 migration off
+      the monolith and the 2024 multi-region rollout.
+    highlights:
+      - "Led monolith→services decomposition; 14-month strangler migration, zero customer-visible downtime"
+      - "Designed the idempotency layer that ended a 3-year class of duplicate-charge incidents"
+      - "Set up the SLO framework the org now uses across 6 teams"
+
+  - company: "StartupCo"
+    title: "Software Engineer"
+    start: "2018-06"
+    end: "2021-02"
+    team: "Backend"
+    scope: >
+      Generalist backend on a 12-person eng team. Built and ran the billing
+      integration, the search backend, and most of the deploy tooling.
+    highlights:
+      - "Built the billing/ledger service handling ~$40M/yr in GMV"
+      - "Cut deploy time 45min → 6min by rebuilding CI on parallel test sharding"
+
+claims:
+  # ── strong, well-evidenced ──────────────────────────────────────────────
+  - skill: design.systems.migration
+    self_rating: 5
+    last_used: 2024
+    notes: >
+      Strongest area. Two large migrations start to finish, one of which I
+      designed and one I inherited half-done, which taught me more.
+    evidence:
+      - kind: system
+        title: "Order monolith → service decomposition"
+        date: "2023-11"
+        description: >
+          14-month strangler-fig migration of the order lifecycle out of a
+          9-year-old Rails monolith. Constraint was zero customer-visible
+          downtime and no code freeze — the business would not accept either.
+          Chose dual-write with async reconciliation over a big-bang cutover,
+          accepting ~6 weeks of double storage cost to keep rollback possible
+          at every step. Rolled back twice; both times in under 20 minutes.
+        impact_metric: "0 downtime incidents across 14 months; p99 checkout 2.1s → 640ms"
+        confidence: high
+      - kind: design_doc
+        title: "Dual-write reconciliation design"
+        date: "2022-09"
+        description: >
+          The doc the migration ran on. Reviewed by 3 teams; the reconciliation
+          approach was adopted by the payments team afterward.
+        confidence: high
+      - kind: incident
+        title: "Reconciliation lag postmortem"
+        date: "2023-04"
+        description: >
+          Led the response when reconciliation fell 6h behind during a traffic
+          spike and orders diverged. Root cause was an unbounded retry queue I
+          had designed. Wrote the postmortem, added backpressure.
+        impact_metric: "Recovery in 90 minutes; no recurrence in 18 months"
+        confidence: high
+
+  - skill: design.systems.api_design
+    self_rating: 4
+    last_used: 2025
+    evidence:
+      - kind: system
+        title: "Order API v2"
+        date: "2024-06"
+        description: >
+          Designed the versioning and deprecation strategy for a public-facing
+          order API with 40+ internal consumers. Chose additive-only evolution
+          with a 12-month deprecation window over hard versioning.
+        impact_metric: "Migrated 40 consumers in 9 months; 0 breaking-change incidents"
+        confidence: high
+      - kind: writing
+        title: "Why we don't version our APIs"
+        date: "2024-08"
+        description: "Internal deep-dive, later published on the company blog."
+        url: "https://example.com/blog/api-versioning"
+        confidence: medium
+
+  # ── the pattern this system exists to catch ─────────────────────────────
+  - skill: design.systems.consistency
+    self_rating: 4
+    last_used: 2023
+    notes: >
+      I have genuinely done this work — the reconciliation design above is
+      squarely a consistency problem — but I have never written it up AS a
+      consistency problem, and I fumble the vocabulary when asked cold.
+    evidence: []
+    # → supply scores low despite the 4. The generated prep item will be
+    #   "write", not "build", because the work exists and is illegible.
+
+  # ── honest weak spots ───────────────────────────────────────────────────
+  - skill: domain.video
+    self_rating: 1
+    last_used: null
+    notes: "No exposure. Relevant to Netflix; low closability by studying."
+    evidence: []
+
+  - skill: ai.llm_systems
+    self_rating: 3
+    last_used: 2025
+    evidence:
+      - kind: system
+        title: "Support-ticket triage classifier"
+        date: "2025-02"
+        description: >
+          Structured-output classifier over inbound tickets. Small, but
+          shipped, and I own the eval set.
+        impact_metric: "Cut manual triage ~30%, ~12 hrs/week"
+        confidence: medium
+      - kind: course
+        title: "Building LLM applications"
+        date: "2024-11"
+        description: "Weekend course. Exposure only."
+        confidence: low
+
+  - skill: design.org.technical_writing
+    self_rating: 4
+    last_used: 2025
+    evidence:
+      - kind: design_doc
+        title: "Dual-write reconciliation design"
+        date: "2022-09"
+        description: "Cross-referenced above; adopted by another team."
+        confidence: high
+      - kind: writing
+        title: "Why we don't version our APIs"
+        date: "2024-08"
+        confidence: medium
+        description: "Company blog post."
+
+  - skill: platform.orchestration
+    self_rating: 3
+    last_used: 2022
+    notes: "Ran it, never designed the cluster topology. Rusty."
+    evidence:
+      - kind: pr
+        title: "Deploy pipeline migration to k8s"
+        date: "2022-01"
+        description: "Moved 11 services onto EKS. Followed a pattern someone else set."
+        confidence: medium
+
+stories:
+  - title: "The migration I nearly broke"
+    skills: [design.systems.migration, design.systems.consistency, design.org.ownership]
+    situation: >
+      Fourteen months into moving orders off the monolith, reconciliation fell
+      six hours behind during a Black Friday spike and the two stores diverged
+      on ~4,000 live orders.
+    what_you_did: >
+      Froze writes to the new path rather than rolling back — a rollback would
+      have been cleaner operationally but would have lost 6h of new-path data
+      we needed to diagnose the divergence. Rebuilt state from the event log,
+      then added backpressure to the retry queue whose unboundedness I had
+      designed in a year earlier.
+    outcome: >
+      90 minutes to recovery, no customer-visible impact, no recurrence in the
+      18 months since. The postmortem changed how the org reviews queue design.
+    what_youd_do_differently: >
+      I designed the retry queue without a bound because the failure mode felt
+      theoretical at our volume. It was theoretical right up until it wasn't.
+      I now treat "unbounded" as a design smell rather than a default.
+
+not_pursuing:
+  - skill: craft.cpp
+    reason: "Deliberate. Going deeper on distributed systems design instead."
+  - skill: domain.ads
+    reason: "Not interested in the domain; would not be credible pretending."

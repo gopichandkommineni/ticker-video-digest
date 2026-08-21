@@ -1,0 +1,54 @@
+# Daily pipeline. See ADR-0010.
+#
+# The cron is a HEARTBEAT, not a schedule: it just asks the database "what is
+# due?". Per-source refresh intervals live in config/sources.yaml, so adding a
+# company never touches this file.
+
+name: daily-refresh
+
+on:
+  schedule:
+    - cron: "0 11 * * *"      # 11:00 UTC daily
+  workflow_dispatch:
+
+# Single writer. The canonical store is one SQLite file and overlapping runs
+# would corrupt it.
+concurrency:
+  group: career-refresh
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --all-extras
+
+      # Raw payloads are not committed, so cache them between runs to preserve
+      # replayability without putting third-party content in git.
+      - uses: actions/cache@v4
+        with:
+          path: data/raw
+          key: raw-store-${{ github.run_id }}
+          restore-keys: raw-store-
+
+      - name: Refresh
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: uv run python -m career_compass.jobs.daily_refresh
+
+      # A stage that fails entirely leaves the DB untouched — a stale database
+      # is strictly better than a half-written one — so there is nothing to
+      # commit and this is a clean no-op.
+      - name: Commit updated database
+        run: |
+          git config user.name  "career-compass[bot]"
+          git config user.email "noreply@users.noreply.github.com"
+          git add -A data/ briefs/ || true
+          git diff --staged --quiet || git commit -m "chore: daily refresh $(date -u +%Y-%m-%d)"
+          git push

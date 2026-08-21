@@ -1,0 +1,72 @@
+# The watchlist.
+#
+# This file answers "who do I care about". It says nothing about HOW to fetch
+# from them — that lives in sources.yaml, keyed by the slug below.
+#
+#   priority : 1 = actively targeting, 2 = would take the call, 3 = curious
+#   status   : target | watching | parked
+#   why      : write this honestly. It is what you re-read in six months when
+#              you have forgotten why this company is on the list.
+#
+# Adding a company should be a four-line edit here plus a source entry.
+# If it requires Python, see docs/adr/0004-ats-adapters-not-company-adapters.md
+
+version: 1
+
+companies:
+  - slug: netflix
+    name: Netflix
+    priority: 1
+    status: target
+    why: >
+      Deepest public writing on streaming infrastructure of anyone at their
+      scale, and a culture that publishes real architecture rather than
+      marketing. The design-heavy, small-team model is the working style
+      being optimized for.
+    domains: [domain.video, domain.recsys, domain.distributed_media]
+
+  - slug: google
+    name: Google
+    priority: 1
+    status: target
+    why: >
+      Breadth. Optionality across infra, AI, and product surfaces, and the
+      levelling rubric is the most publicly legible of any large company —
+      which makes the gap analysis unusually checkable.
+    domains: [domain.search, domain.ai_infra, domain.ads]
+
+  - slug: reddit
+    name: Reddit
+    priority: 2
+    status: target
+    why: >
+      Social-graph and ranking problems at large scale with a small
+      engineering org, so individual scope is high. Public engineering blog
+      is candid about tradeoffs and migrations.
+    domains: [domain.social_graph, domain.recsys, domain.content_moderation]
+
+  - slug: nvidia
+    name: NVIDIA
+    priority: 2
+    status: target
+    why: >
+      The compute substrate everything else is being built on. Even a
+      non-CUDA role there is proximity to where the constraints are being
+      set for the next decade.
+    domains: [domain.gpu, domain.ai_infra, domain.systems_software]
+
+# Candidates. Uncomment, write an honest `why`, and add sources.
+#
+#  - slug: stripe
+#    name: Stripe
+#    priority: 3
+#    status: watching
+#    why: "API design as a first-class discipline; strong written culture."
+#    domains: [domain.payments, domain.api_platform]
+#
+#  - slug: anthropic
+#    name: Anthropic
+#    priority: 3
+#    status: watching
+#    why: ""
+#    domains: [domain.ai_infra, ai.safety]

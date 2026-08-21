@@ -1,0 +1,38 @@
+# ── personal data ─────────────────────────────────────────────────────────
+# Your filled-in profile. Remove this line if you want the history of your
+# own evidence ledger in git — there is real value in watching it grow — but
+# only while this repo is private, and know you are committing candid
+# self-assessment forever.
+profile/resume.yaml
+
+# Manual inbox contents. The directory structure is tracked; the notes are not
+# by default, since they often contain things people told you in confidence.
+manual/inbox/*
+!manual/inbox/.gitkeep
+!manual/inbox/EXAMPLE.md
+manual/processed/
+
+# ── raw store ─────────────────────────────────────────────────────────────
+# Third-party content. Kept locally for replay (ADR-0002); not committed,
+# since redistribution is not ours to do (docs/08-legal-and-etiquette.md).
+data/raw/
+
+# The canonical DB: uncomment to commit it and get the history property that
+# ADR-0003 relies on. Ignored by default until you have decided.
+data/career.db
+data/career.db-wal
+data/career.db-shm
+
+# ── standard ──────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+.env
+.DS_Store

@@ -1,0 +1,120 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  YOUR PROFILE — the supply side of every gap calculation.
+#
+#  Copy to profile/resume.yaml and fill in. Nothing in the system writes here.
+#  `career profile validate` checks every skill slug against taxonomy/skills.yaml.
+#
+#  Read profile/README.md first. The one thing that matters:
+#  CLAIMS ARE CHEAP, EVIDENCE SCORES. A rating of 5 with no evidence rows
+#  scores low on purpose — that is the system finding work you did but cannot
+#  point at, which is the most common and most fixable interview failure.
+# ═══════════════════════════════════════════════════════════════════════════
+
+version: 1
+
+# ── Who you are, and what you're aiming at ────────────────────────────────
+identity:
+  name: ""
+  current_title: ""
+  current_company: ""
+  years_experience:            # integer
+  location: ""
+  # Level you are targeting. Drives level_weights in config/scoring.yaml —
+  # mentions at this level count fully, adjacent levels count less.
+  target_level: senior         # junior | mid | senior | staff | principal
+  target_roles:
+    - ""                       # e.g. "Senior Software Engineer, Platform"
+  # Honest constraints. These are not decoration — they shape what advice is
+  # useful. A 6-month horizon rules out closing a domain gap.
+  constraints:
+    horizon_months:            # how long until you actually want to move
+    visa: ""                   # e.g. "US citizen", "H1-B transfer needed", "n/a"
+    relocation: ""             # e.g. "Bay Area only", "remote required"
+    hours_per_week_for_prep:   # be realistic. 3 honest hours beats 15 aspirational.
+
+# ── Roles ─────────────────────────────────────────────────────────────────
+# Career history. Scope and scale matter more than titles — write the numbers.
+roles:
+  - company: ""
+    title: ""
+    start: ""                  # YYYY-MM
+    end: ""                    # YYYY-MM, or "present"
+    team: ""
+    scope: >
+      What you actually owned. Not the team's mission — YOUR surface area.
+      "Owned the ingestion path end to end: 40 services, 2B events/day,
+      on-call rotation of four." Numbers here are load-bearing.
+    highlights:
+      - ""                     # one line each; the resume-bullet version
+
+# ── Skill claims ──────────────────────────────────────────────────────────
+# One entry per skill you'd claim. `skill` MUST be a slug from
+# taxonomy/skills.yaml (level 2 — the scoring level, e.g.
+# design.systems.consistency). Run `career profile validate` to check.
+#
+#   self_rating : 1 = aware · 2 = used it · 3 = competent · 4 = strong ·
+#                 5 = could design this from scratch and defend every choice
+#   last_used   : YYYY. Four-year half-life. Be truthful; stale is not zero.
+#   evidence    : the part that scores. See kinds and weights below.
+#
+# evidence.kind    weight   what it means
+# ─────────────    ──────   ─────────────────────────────────────────────────
+# system            1.0     you designed/owned a shipped system
+# design_doc        0.9     you wrote the design that others built from
+# incident          0.8     you led the response or wrote the postmortem
+# writing           0.7     public post, internal deep-dive, paper
+# talk              0.7     conference/internal talk
+# pr                0.5     a specific merged change
+# course            0.2     exposure, not evidence
+#
+# `impact_metric` gets a 1.3× multiplier. Write the number.
+
+claims:
+  - skill: design.systems.        # ← taxonomy slug
+    self_rating:                  # 1-5
+    last_used:                    # YYYY
+    notes: >
+      Optional. Where you honestly sit, including the caveats. This is for
+      you, not for a recruiter.
+    evidence:
+      - kind: system              # system|design_doc|incident|writing|talk|pr|course
+        title: ""
+        date: ""                  # YYYY-MM
+        description: >
+          What you did, what the constraint was, and what you chose. The
+          constraint is the interesting part — a design without a constraint
+          is a diagram.
+        impact_metric: ""         # "p99 900ms → 120ms across 40M req/day"
+        url: ""                   # optional; internal work often has none
+        confidence: high          # high | medium | low — how well it holds up
+
+  # Repeat. 15-30 claims is a realistic profile. Fewer and the gap report is
+  # noise; more and you are listing rather than claiming.
+
+# ── Stories ───────────────────────────────────────────────────────────────
+# The "what do I say in the room" material. `career brief <company>` matches
+# these against what a company keeps writing about, so tag them with the
+# skill slugs they genuinely demonstrate.
+#
+# Fill these in LAST, and reread them before any interview.
+stories:
+  - title: ""                  # "The multi-region cutover"
+    skills: []                 # taxonomy slugs this actually demonstrates
+    situation: >
+      The constraint and the stakes. Two or three sentences.
+    what_you_did: >
+      Your decisions specifically — not the team's. Name the alternative you
+      rejected and why.
+    outcome: >
+      What happened, with numbers. Include what went wrong; every good story
+      has a cost, and the ones that don't sound rehearsed.
+    what_youd_do_differently: >
+      The strongest signal you can give. Answer it honestly.
+
+# ── Deliberate non-goals ──────────────────────────────────────────────────
+# Skills you are choosing NOT to pursue. Gaps here are auto-suppressed with
+# your reason attached, so the report stays about real decisions rather than
+# re-arguing settled ones every month.
+not_pursuing:
+  - skill: ""
+    reason: ""
