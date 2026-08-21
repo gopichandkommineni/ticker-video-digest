@@ -1,11 +1,214 @@
-# Per-ticker subreddit map — which subreddits the Reddit scraper pulls for each
-# stock. Written by `python -m casino_dashboard.jobs.subreddit_discovery_run --save`,
-# and freely hand-editable: add/remove subreddits and they are respected on the
-# next run (re-running discovery for a ticker overwrites only that ticker).
-#
-# Format:
-#   tickers:
-#     RKLB:
-#       subreddits: [RocketLab, RKLB]
-#       updated: "2026-08-13"
-tickers: {}
+# Per-ticker subreddit map — which subreddits the Reddit scraper pulls
+# for each stock. Written by `subreddit_discovery_run --save`, and freely
+# hand-editable: add/remove subreddits and they are respected on the next
+# run (re-running discovery for a ticker overwrites only that ticker).
+tickers:
+  AAOI:
+    subreddits:
+    - AAOI
+    updated: '2026-08-22'
+  AG:
+    subreddits:
+    - FirstMajesticSilver
+    updated: '2026-08-22'
+  ARQQ:
+    subreddits:
+    - arqq
+    updated: '2026-08-22'
+  ASTS:
+    subreddits:
+    - ASTSpaceMobile
+    - ASTSwingers
+    updated: '2026-08-22'
+  BB:
+    subreddits:
+    - BB_Stock
+    - blackberrystock
+    - BBstock
+    - BlackBerryStocks
+    - Blackberry_Official
+    updated: '2026-08-22'
+  BTBT:
+    subreddits:
+    - BTBT
+    updated: '2026-08-22'
+  CCJ:
+    subreddits:
+    - CCJ
+    updated: '2026-08-22'
+  CIFR:
+    subreddits:
+    - CIFR_STOCK
+    updated: '2026-08-22'
+  COIN:
+    subreddits:
+    - Coinbasestock
+    updated: '2026-08-22'
+  HUT:
+    subreddits:
+    - HUTtrading
+    updated: '2026-08-22'
+  IONQ:
+    subreddits:
+    - IonQ
+    - IonQStock
+    updated: '2026-08-22'
+  IRDM:
+    subreddits:
+    - IRDM_Iridium
+    updated: '2026-08-22'
+  IREN:
+    subreddits:
+    - irenstocks
+    - IREN_STOCK
+    updated: '2026-08-22'
+  KEEL:
+    subreddits:
+    - KEEL_
+    - keelstock
+    updated: '2026-08-22'
+  KTOS:
+    subreddits:
+    - KTOS_Stock
+    - KTOS
+    updated: '2026-08-22'
+  LEU:
+    subreddits:
+    - CentrusEnergy
+    updated: '2026-08-22'
+  LUNR:
+    subreddits:
+    - Lunr
+    updated: '2026-08-22'
+  MRVL:
+    subreddits:
+    - MRVL_Stock
+    updated: '2026-08-22'
+  MU:
+    subreddits:
+    - Micron
+    updated: '2026-08-22'
+  NB:
+    subreddits:
+    - NIOCORP_MINE
+    updated: '2026-08-22'
+  NBIS:
+    subreddits:
+    - NBIS_Stock
+    - NEBIUSSTOCK
+    updated: '2026-08-22'
+  NNE:
+    subreddits:
+    - NanoNuclear
+    updated: '2026-08-22'
+  NOK:
+    subreddits:
+    - Nok
+    - Nokia_stock
+    - NOKIAWSB
+    - nokpf
+    updated: '2026-08-22'
+  OKLO:
+    subreddits:
+    - OKLOSTOCK
+    updated: '2026-08-22'
+  ONDS:
+    subreddits:
+    - ONDS
+    - ONDS_Investors
+    updated: '2026-08-22'
+  PATH:
+    subreddits:
+    - UiPathBulls
+    - PATH_Stock
+    updated: '2026-08-22'
+  PL:
+    subreddits:
+    - PlanetLabs
+    updated: '2026-08-22'
+  POET:
+    subreddits:
+    - PoetInvestors
+    updated: '2026-08-22'
+  QBTS:
+    subreddits:
+    - QBTSstock
+    updated: '2026-08-22'
+  QUBT:
+    subreddits:
+    - qubt_stock
+    - QuantumStockLovers
+    updated: '2026-08-22'
+  RCAT:
+    subreddits:
+    - RedCatHoldings
+    - RCAT
+    updated: '2026-08-22'
+  RGTI:
+    subreddits:
+    - rgti_stock
+    updated: '2026-08-22'
+  RKLB:
+    subreddits:
+    - RKLB
+    - RKLBInvestors
+    - RocketLabInvestorClub
+    - RocketLab_Stock
+    - RocketLab_de
+    updated: '2026-08-22'
+  SMCI:
+    subreddits:
+    - SMCIDiscussion
+    updated: '2026-08-22'
+  SMR:
+    subreddits:
+    - NuSCALE_POWER
+    updated: '2026-08-22'
+  SNDK:
+    subreddits:
+    - SNDK_Stock
+    updated: '2026-08-22'
+  STX:
+    subreddits:
+    - STXStock
+    updated: '2026-08-22'
+  UAMY:
+    subreddits:
+    - UAMY
+    updated: '2026-08-22'
+  UEC:
+    subreddits:
+    - UraniumSqueeze
+    - UraniumInvestor
+    updated: '2026-08-22'
+  UMAC:
+    subreddits:
+    - UMAC
+    - UnusualMachines
+    updated: '2026-08-22'
+  USAR:
+    subreddits:
+    - USAR_Stock
+    - rareearthmetals
+    - rareearthinvesting
+    updated: '2026-08-22'
+  UUUU:
+    subreddits:
+    - UUUU_Stock
+    updated: '2026-08-22'
+  VRT:
+    subreddits:
+    - VRTstock
+    - Vertiv
+    - vrttrading
+    updated: '2026-08-22'
+  WDC:
+    subreddits:
+    - WDCStock
+    updated: '2026-08-22'
+  WULF:
+    subreddits:
+    - TerawulfStock
+    - TeraWulfMiningBTC
+    - WulfDen
+    updated: '2026-08-22'
