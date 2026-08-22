@@ -46,10 +46,19 @@ def cmd_tweets(args: argparse.Namespace) -> None:
     src = get_source(args.provider)
     start = datetime.date.fromisoformat(args.start)
     end = datetime.date.fromisoformat(args.end)
-    tweets = src.fetch_tweets(args.handle, start, end)
-    print(f"Fetched {len(tweets)} tweets for @{args.handle} [{start} → {end}]")
-    for t in tweets:
+    # fetch_tweets returns a FetchResult, not a list. The tweets are one field
+    # of it; the other two say whether what we got back is the whole window.
+    result = src.fetch_tweets(args.handle, start, end)
+    print(f"Fetched {len(result.tweets)} tweets for @{args.handle} [{start} → {end}]")
+    for t in result.tweets:
         print(f"  {t.created_at_utc}  {t.id}  [{t.type}]  {(t.text or '')[:80]}")
+    if result.skipped:
+        print(f"  {result.skipped} tweet(s) dropped — could not be normalized.")
+    if not result.reached_floor:
+        # The page cap fired before the adapter walked back to `start`, so the
+        # count above is a floor, not the answer. Saying so beats implying it.
+        print(f"  WARNING: hit the page cap before reaching {start}; "
+              f"older tweets in this window were not fetched.")
 
 
 def cmd_compare(args: argparse.Namespace) -> None:
