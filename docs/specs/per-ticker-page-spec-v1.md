@@ -345,12 +345,12 @@ These are taste-driven and best decided when you can see variants in Claude Desi
 
 ## What to do with this spec
 
-1. **Commit this document** to your repo as `docs/per-ticker-page-spec-v1.md`
+1. **Commit this document** to your repo as `docs/specs/per-ticker-page-spec-v1.md`
 2. **Open Claude Design** (claude.ai with the design model) in a separate session
 3. **Paste this entire spec** as the input
 4. **Ask for HTML or React mockups** of the desktop and mobile layouts
 5. **Iterate visually** — try variants for the open questions above
-6. **Save the chosen mockup** as `docs/per-ticker-mockup.html` (or screenshots) in the repo
+6. **Save the chosen mockup** as `docs/specs/per-ticker-mockup.html` (or screenshots) in the repo
 7. **Build the data layer in parallel** — the 1.5-2 days of work in the Data Work section can happen alongside mockup iteration
 8. **Pass spec + mockup + data layer** to Claude Code as the implementation prompt for the UI
 

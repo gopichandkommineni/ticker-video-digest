@@ -9,8 +9,27 @@ product — personal/small-team use.
 > **Note on names.** The GitHub repo is `ticker-video-digest` and the
 > installable package is still `ticker-digest` for historical reasons. The
 > **product** is this dashboard (`casino_dashboard`). The repository was
-> reorganized into the layout below — see `docs/reorg-plan-v1.md` for the
+> reorganized into the layout below — see `docs/archive/reorg-plan-v1.md` for the
 > rationale and history.
+
+## Where the documentation lives
+
+Read `docs/README.md` first — it indexes everything. The structure is:
+
+- `docs/start-here/` — the onboarding path (7 numbered pages, written for a
+  non-technical reader). **Keep these accurate**: they are the first thing a
+  new person reads, and stale onboarding is worse than none.
+- `docs/runbooks/` — how to operate a live subsystem
+- `docs/specs/` — design decisions, written before the code
+- `docs/research/` — findings from investigations
+- `docs/archive/` — point-in-time snapshots; assume stale
+- Every major folder also has its own `README.md` (`src/`, each package,
+  `config/`, `data/`, `pages/`, `scripts/`, `tests/`, `research/`,
+  `.github/workflows/`). When you change what a folder contains, update it.
+
+`./run` at the repo root wraps the common commands (`setup`, `dashboard`,
+`test`, `check`, `market`, `refresh`, `clean`). Prefer teaching it over raw
+commands in user-facing docs.
 
 ## Subsystems
 
@@ -68,11 +87,16 @@ config/                 # themes.yaml (canonical universe), etf_mapping, star_tr
 data/                   # snapshots.db + fintwit.db (version-controlled prod data)
 scripts/                # operational + one-time migration scripts
 research/               # one-off probes + committed run outputs
-docs/                   # specs, context, and the reorg plan
+docs/                   # start-here/ runbooks/ specs/ research/ archive/
 tests/                  # pytest suite (mirrors the packages above)
+run                     # task runner: ./run setup|dashboard|test|check|market|refresh|clean
+.env.example            # every supported env var, documented
 pyproject.toml
 README.md
 ```
+
+Every major folder carries a `README.md` explaining itself — treat those as
+part of the code and keep them in sync with what the folder actually holds.
 
 ## Analysis approach (ticker_digest YouTube feature)
 Two-pass LLM pipeline:
@@ -89,10 +113,14 @@ they're reused across the per-video pass.
 ## Conventions
 - Type hints on every function signature
 - Pydantic models for every structured data boundary
-- No secrets in code — read from environment variables only
-  (ANTHROPIC_API_KEY, YOUTUBE_API_KEY)
+- No secrets in code — read from environment variables only. Every supported
+  variable is documented in `.env.example`; add new ones there too.
 - No network calls in unit tests — use fixtures or mocks
 - Log at INFO level for user-visible progress, DEBUG for diagnostics
+- Docs: a new document goes in the right `docs/` subfolder **and** gets a row
+  in `docs/README.md`. A doc nobody can find isn't documentation.
+- Write `docs/start-here/` for a non-technical reader: no unexplained jargon,
+  copy-pasteable commands, and say what the expected output looks like.
 
 ## Quality filters — YouTube digest (pre-transcription)
 - Minimum video duration: 120 seconds
@@ -118,7 +146,13 @@ must surface this clearly.
 ## v6 canonical-files policy
 The following files are CANONICAL CONFIGURATION. Do not modify, regenerate,
 or replace them without an explicit prompt instructing you to do so:
-- config/themes.yaml — the 8-sector ticker universe
+- config/themes.yaml — the thematic ticker universe (currently 12 sectors,
+  64 unique tickers; it has grown since the original 8)
 - STRATEGY.md — the casino-coherent investment thesis
 If a session begins and these files do not match what a prompt assumes,
 STOP and report the mismatch. Do not "fix" them by overwriting.
+
+Known drift, deliberately left alone: `STRATEGY.md` still describes the
+original 8 sectors / ~55 tickers. `config/themes.yaml` is the live truth
+(12 / 64). Do not reconcile them without an explicit instruction — both files
+are canonical.

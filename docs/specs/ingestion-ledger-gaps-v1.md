@@ -25,7 +25,7 @@ exists today lives in code, not in the table.
 This spec **adds retry-ledger semantics on top of the existing
 reconciliation log**, without breaking the reconciliation behavior.
 The motivation is to prevent the silent-failure class previously
-documented in `docs/project-context-v2.md`: the system has historically
+documented in `docs/archive/project-context-v2.md`: the system has historically
 lost data to silent truncation (the `_MAX_PAGES=100` bug), and the
 audit confirmed that while truncation isn't currently happening in
 the data (max observed = 126 tweets/day against a 20,000 theoretical

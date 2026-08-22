@@ -96,7 +96,7 @@ This is the dashboard, end to end:
 ## What's specced but not built
 
 ### Sector ranking (steps 7–8 of the pipeline)
-- Spec: `docs/sector-ranking-spec-v2.md`
+- Spec: `docs/specs/sector-ranking-spec-v2.md`
 - Three dimensions shown separately: Capital Flows, Hype, Stock Growth
 - 5-phase build estimate (6–9 days calendar time)
 - **Gated on 8 open questions in §8 of the spec.** Don't begin
@@ -265,7 +265,7 @@ without explicit reason.
    §8 questions in spec)
 3. **Fix the 3 known production UI bugs** (small)
 4. **Rip pattern analysis v2** (control group + de-overlap + 9 missing
-   tickers — see `docs/rip-pattern-analysis-v1.md`)
+   tickers — see `docs/specs/rip-pattern-analysis-v1.md`)
 5. **Social mentions integration** (rdt-cli + StockTwits ± twitter-cli;
    7–9 days; needs tooling decision first; needs spec)
 6. **Broader-market reality-check dashboard** (steps 9–10; 10–15 days
@@ -302,10 +302,10 @@ without explicit reason.
 
 When starting a new chat, point at these:
 
-- `docs/project-context-v2.md` — this file
-- `docs/per-ticker-page-spec-v1.md` — locked spec for the detail page
-- `docs/sector-ranking-spec-v2.md` — draft spec, gated on §8 questions
-- `docs/rip-pattern-analysis-v1.md` — empirical findings, hypothesis-level
+- `docs/archive/project-context-v2.md` — this file
+- `docs/specs/per-ticker-page-spec-v1.md` — locked spec for the detail page
+- `docs/specs/sector-ranking-spec-v2.md` — draft spec, gated on §8 questions
+- `docs/specs/rip-pattern-analysis-v1.md` — empirical findings, hypothesis-level
 - `config/themes.yaml` — canonical universe definition
 - `CLAUDE.md` — repo conventions for Claude Code
 

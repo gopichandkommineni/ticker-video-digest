@@ -1,4 +1,4 @@
-"""One-time migration: ingestion worker pool v1 (docs/ingestion-worker-pool-v1.md).
+"""One-time migration: ingestion worker pool v1 (docs/specs/ingestion-worker-pool-v1.md).
 
 Applies the additive schema changes (via storage.db.init_db, which is
 idempotent) and the §4.1 backfill rule to an existing fintwit.db:

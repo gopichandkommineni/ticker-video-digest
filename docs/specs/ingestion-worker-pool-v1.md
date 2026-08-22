@@ -4,8 +4,8 @@
 **Date drafted:** 2026-06-20
 **Status:** Spec for review. Not yet implemented.
 **Owner:** AG
-**Predecessor:** `docs/ingestion-ledger-gaps-v1.md` (shipped, merged via PR #99/#100)
-**Companion:** `docs/ingestion-behavioral-audit-v1.md` (the source of the gap list below)
+**Predecessor:** `docs/specs/ingestion-ledger-gaps-v1.md` (shipped, merged via PR #99/#100)
+**Companion:** `docs/specs/ingestion-behavioral-audit-v1.md` (the source of the gap list below)
 
 ---
 
@@ -17,7 +17,7 @@ exists. At 10 handles × daily delta this is fine. At 30-40 handles ×
 180-day backfill it is not — a single backfill run would take roughly
 8-10 hours, comfortably past the GitHub Actions 6-hour job cap.
 
-The behavioral audit (`docs/ingestion-behavioral-audit-v1.md`) found
+The behavioral audit (`docs/specs/ingestion-behavioral-audit-v1.md`) found
 that the data model is ready for a worker pool but the execution model
 is missing. Ledger v1 introduced the columns (`next_eligible_at`,
 `reached_floor`, `error_class`) and status vocabulary (`fetching`,
