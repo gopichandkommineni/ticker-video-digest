@@ -19,6 +19,12 @@ The four daily-refresh times track the US trading day: overnight (market
 closed), pre-market (before the 9:30am open), mid-session, and after the 4pm
 close.
 
+## On every pull request
+
+| Workflow | Does |
+|---|---|
+| `structure.yml` | Runs `scripts/check_structure.py` — fails if a file or function grew past the readable-size budget. Rules in [CONTRIBUTING.md](../../CONTRIBUTING.md). |
+
 ## Manual — you start these
 
 | Workflow | Does |

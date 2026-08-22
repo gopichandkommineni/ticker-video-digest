@@ -1,0 +1,31 @@
+name: Structure Guard
+
+# Keeps files and functions small enough that a human actually reads them.
+# The rules — and why they exist — are in CONTRIBUTING.md.
+#
+# This is a ratchet: today's oversized files are baselined in
+# scripts/check_structure.py and may shrink, never grow. A new file over the
+# budget fails here.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  structure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # No dependencies needed — the guard uses only the standard library.
+      - name: Check file and function budgets
+        run: python scripts/check_structure.py
