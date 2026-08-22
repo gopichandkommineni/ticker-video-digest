@@ -67,11 +67,11 @@ def test_refresh_single_ticker_success(db: Path):
 
     with (
         patch(
-            "casino_dashboard.jobs.daily_refresh.fetch_ticker_history",
+            "casino_dashboard.jobs.refresh_sources.fetch_ticker_history",
             return_value=snapshots,
         ),
         patch(
-            "casino_dashboard.jobs.daily_refresh.fetch_ticker_metadata",
+            "casino_dashboard.jobs.refresh_sources.fetch_ticker_metadata",
             return_value=mock_meta,
         ),
     ):
@@ -104,11 +104,11 @@ def test_refresh_single_ticker_writes_signals(db: Path):
 
     with (
         patch(
-            "casino_dashboard.jobs.daily_refresh.fetch_ticker_history",
+            "casino_dashboard.jobs.refresh_sources.fetch_ticker_history",
             return_value=snapshots,
         ),
         patch(
-            "casino_dashboard.jobs.daily_refresh.fetch_ticker_metadata",
+            "casino_dashboard.jobs.refresh_sources.fetch_ticker_metadata",
             return_value=mock_meta,
         ),
     ):
@@ -131,7 +131,7 @@ def test_refresh_single_ticker_writes_signals(db: Path):
 
 def test_refresh_single_ticker_fails_on_empty_history(db: Path):
     with patch(
-        "casino_dashboard.jobs.daily_refresh.fetch_ticker_history",
+        "casino_dashboard.jobs.refresh_sources.fetch_ticker_history",
         return_value=[],
     ):
         from casino_dashboard.jobs.daily_refresh import refresh_single_ticker
@@ -144,7 +144,7 @@ def test_refresh_single_ticker_fails_on_empty_history(db: Path):
 
 def test_refresh_single_ticker_fails_on_exception(db: Path):
     with patch(
-        "casino_dashboard.jobs.daily_refresh.fetch_ticker_history",
+        "casino_dashboard.jobs.refresh_sources.fetch_ticker_history",
         side_effect=RuntimeError("network error"),
     ):
         from casino_dashboard.jobs.daily_refresh import refresh_single_ticker
@@ -161,11 +161,11 @@ def test_refresh_metadata_failure_does_not_abort(db: Path):
 
     with (
         patch(
-            "casino_dashboard.jobs.daily_refresh.fetch_ticker_history",
+            "casino_dashboard.jobs.refresh_sources.fetch_ticker_history",
             return_value=snapshots,
         ),
         patch(
-            "casino_dashboard.jobs.daily_refresh.fetch_ticker_metadata",
+            "casino_dashboard.jobs.refresh_sources.fetch_ticker_metadata",
             side_effect=RuntimeError("meta fetch error"),
         ),
     ):

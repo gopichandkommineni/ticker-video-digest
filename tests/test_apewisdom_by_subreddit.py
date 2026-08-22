@@ -26,7 +26,7 @@ def test_per_subreddit_rows_saved_and_isolated(db: Path):
                    ApeWisdomMention("ZZZ", 1, 1, 1)],  # ZZZ not in universe
     }
 
-    with patch("casino_dashboard.jobs.daily_refresh.fetch_apewisdom_universe",
+    with patch("casino_dashboard.jobs.refresh_sources.fetch_apewisdom_universe",
                side_effect=lambda sub: by_sub.get(sub, [])), \
          patch.dict("os.environ", {"APEWISDOM_SUBREDDITS": "wallstreetbets,stocks"}):
         saved, n = _refresh_apewisdom_by_subreddit(["RKLB"], date(2026, 8, 15), db)
@@ -53,7 +53,7 @@ def test_subreddit_failure_is_isolated(db: Path):
             raise RuntimeError("boom")
         return [ApeWisdomMention("RKLB", 10, 5, 100)]
 
-    with patch("casino_dashboard.jobs.daily_refresh.fetch_apewisdom_universe", side_effect=flaky), \
+    with patch("casino_dashboard.jobs.refresh_sources.fetch_apewisdom_universe", side_effect=flaky), \
          patch.dict("os.environ", {"APEWISDOM_SUBREDDITS": "bad,stocks"}):
         saved, n = _refresh_apewisdom_by_subreddit(["RKLB"], date(2026, 8, 15), db)
 

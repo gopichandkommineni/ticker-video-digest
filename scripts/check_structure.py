@@ -39,7 +39,6 @@ CHECKED_PATHS = ["src", "pages", "scripts", "app.py"]
 BASELINE: dict[str, int] = {
     "src/core/social_media/reddit/subreddit_catalog.py": 594,
     "src/casino_dashboard/jobs/subreddit_catalog_run.py": 584,
-    "src/casino_dashboard/jobs/daily_refresh.py": 551,
     "src/fintwit/storage/day_log.py": 501,
     "scripts/run_variance.py": 488,
     "src/core/social_media/reddit/subreddit_match.py": 474,
@@ -51,7 +50,7 @@ BASELINE: dict[str, int] = {
 
 # How many over-long functions the repo currently has. This number may go
 # down. It may never go up.
-FUNCTION_BUDGET = 45
+FUNCTION_BUDGET = 44
 
 # Every package directly under src/ must explain itself to a newcomer.
 PACKAGE_README_ROOT = "src"

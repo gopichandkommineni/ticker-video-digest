@@ -81,6 +81,9 @@ the easiest part of the codebase to test.
 | File | Run by |
 |---|---|
 | `daily_refresh.py` | **The main one.** `daily_refresh.yml`, 4× every weekday |
+| `refresh_stages.py` | The thirteen stages of that job, one function each |
+| `refresh_sources.py` | The fetch helpers those stages call |
+| `refresh_report.py` | The per-run report written to the GitHub job summary |
 | `reddit_pull.py`, `reddit_refresh.py` | Called by the daily refresh |
 | `reddit_smoke_test.py` | `reddit_smoke_test.yml`, manually — "is Reddit still reachable?" |
 | `subreddit_discovery_run.py` | Finds which subreddits discuss a stock |
@@ -88,8 +91,10 @@ the easiest part of the codebase to test.
 | `subreddit_catalog_run.py` | Sweeps the archive for finance subreddits |
 | `subreddit_metrics.py` | Size and activity stats for named subreddits |
 
-`daily_refresh.py` runs thirteen stages, each individually error-handled so one
-dead source can't kill the run. The stage list is in
+`daily_refresh.py` is only the running order — a list of thirteen calls. Each
+stage lives in `refresh_stages.py` as its own function and handles its own
+errors, so one dead source degrades one row of the report instead of killing
+the run. What each stage does is in
 [docs/start-here/04-how-the-data-flows.md](../../docs/start-here/04-how-the-data-flows.md).
 
 ### `ui/` — display helpers
