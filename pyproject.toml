@@ -47,6 +47,7 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 markers = [
     "integration: marks tests that require real network access (deselect with '-m not integration')",
+    "parity: slow checks against the committed production database (run with ./run verify)",
 ]
 
 [dependency-groups]

@@ -28,6 +28,7 @@ cmd_help() {
     ./run setup        Install everything. Do this once, first.
     ./run dashboard    Open the dashboard in your web browser.
     ./run test         Run the automated checks.
+    ./run verify       The full sweep: structure, tests, pages, production parity.
     ./run lint         Structure guard: are files and functions readable-sized?
     ./run check        Health check: is this machine set up correctly?
     ./run market       Print the "is the market expensive?" report in the terminal.
@@ -70,7 +71,31 @@ cmd_dashboard() {
 cmd_test() {
   need_venv
   bold "Running the automated checks (skipping ones that need the internet)…"
-  "$PY" -m pytest -q -m "not integration" "$@"
+  "$PY" -m pytest -q -m "not integration and not parity" "$@"
+}
+
+cmd_verify() {
+  need_venv
+  local failed=0
+  bold "1/4  Structure guard"
+  cmd_lint || failed=1
+  echo
+  bold "2/4  Automated checks (the failing set must be exactly the known one)"
+  "$PY" scripts/check_known_failures.py || failed=1
+  echo
+  bold "3/4  Every page renders"
+  "$PY" -m pytest -q tests/test_pages_render.py || failed=1
+  echo
+  bold "4/4  Agreement with the production database"
+  "$PY" -m pytest -q -m parity || failed=1
+  echo
+  if [ "$failed" -eq 0 ]; then
+    ok "Everything passed — structure, tests, pages, and parity with production."
+  else
+    warn "Something above failed. Scroll up to the first FAIL."
+    warn "See docs/runbooks/verifying-a-change.md for what each layer proves."
+  fi
+  return "$failed"
 }
 
 cmd_lint() {
@@ -137,6 +162,7 @@ case "${1:-help}" in
   dashboard|start|app) shift; cmd_dashboard "$@" ;;
   test|tests) shift; cmd_test "$@" ;;
   lint|structure) shift; cmd_lint "$@" ;;
+  verify) shift; cmd_verify "$@" ;;
   check|doctor) shift; cmd_check "$@" ;;
   market)     shift; cmd_market "$@" ;;
   refresh)    shift; cmd_refresh "$@" ;;

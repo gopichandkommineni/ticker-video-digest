@@ -4,6 +4,7 @@
 about a minute and need no internet.
 
 ```bash
+./run verify                                 # the full sweep — start here
 ./run test                                   # everything (offline)
 ./run test tests/test_casino_rsi.py -v       # one file, verbose
 ./run test -k "sector"                       # everything matching "sector"
@@ -79,10 +80,25 @@ def test_return_is_none_without_enough_history():
 The easiest things to test are `src/casino_dashboard/signals/` and
 `src/casino_dashboard/db/` — pure logic, no I/O.
 
+## The three regression suites
+
+Beyond the unit tests, three files exist specifically to catch "it still works,
+but not the same way":
+
+| File | Catches |
+|---|---|
+| `test_public_api.py` | A name stopped resolving from where callers import it, or an entry point changed shape |
+| `test_pages_render.py` | A page raises on load — the gap unit tests structurally cannot see |
+| `test_production_parity.py` | The schema drifted from production, or the same inputs now produce different numbers |
+
+The parity checks are marked `parity` and excluded from `./run test` because
+they take ~20s. `./run verify` runs everything. Full explanation in
+[Verifying a change](../docs/runbooks/verifying-a-change.md).
+
 ## What isn't tested
 
-The Streamlit pages themselves. There are checks on the *helpers* they use, but
-nothing verifies that a screen renders correctly.
+**How a page looks.** `test_pages_render.py` proves a screen doesn't crash. It
+says nothing about layout, colour or ordering.
 
 That's why the project's rule is: **open the page in a browser before merging a
 UI change.** Green tests are not evidence that a screen looks right.

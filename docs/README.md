@@ -24,6 +24,7 @@ Read these in order. Written for a non-technical reader; ~30 minutes total.
 
 | Doc | When you need it |
 |---|---|
+| [Verifying a change](runbooks/verifying-a-change.md) | Before you merge anything: what `./run verify` proves, and what it can't |
 | [Reddit data runbook](runbooks/reddit-local-runbook.md) | Anything Reddit-shaped: which subreddits map to which stock, how to pull posts, why the direct API no longer works |
 
 The scheduled jobs themselves are documented next to the code, in

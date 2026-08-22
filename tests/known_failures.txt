@@ -1,0 +1,25 @@
+# Tests that were already failing before this file existed (2026-08-22).
+#
+# ./run verify passes when the failing set is EXACTLY this list. It fails if a
+# new test starts failing, and it also fails if one of these starts passing —
+# because then the line belongs deleted, in the same commit that fixed it.
+#
+# This list may only get shorter. Adding a line is not how you fix a failure.
+# Why each one fails is catalogued in tests/README.md.
+tests/test_casino_metadata_fetcher.py::test_earnings_amc_classification
+tests/test_casino_metadata_fetcher.py::test_earnings_bmo_classification
+tests/test_casino_sector_aggregator.py::test_deal_log_30d_total_sums_amounts
+tests/test_casino_sector_aggregator.py::test_deal_log_null_amounts_count_but_not_total
+tests/test_casino_sector_repository.py::test_deal_log_filters_by_days
+tests/test_casino_sector_repository.py::test_deal_log_filters_by_sector
+tests/test_casino_sector_repository.py::test_deal_log_idempotent_on_duplicate_id
+tests/test_casino_sector_repository.py::test_save_and_get_deal_log
+tests/test_casino_ui_loaders.py::test_load_universe_for_ui_returns_dict_with_sector_metadata
+tests/test_casino_universe.py::test_sector_count
+tests/test_casino_universe.py::test_unique_ticker_count
+tests/test_congress_trades_fetcher.py::test_fetch_bioguide_filter_applied
+tests/test_congress_trades_fetcher.py::test_fetch_bioguide_none_when_unmatched
+tests/test_congress_trades_fetcher.py::test_fetch_dedupe_by_trade_id
+tests/test_congress_trades_fetcher.py::test_fetch_keeps_sector_etf
+tests/test_congress_trades_fetcher.py::test_fetch_returns_trade_records
+tests/test_tile_readability.py::test_inject_tile_css_contains_dark_media_query
