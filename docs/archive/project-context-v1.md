@@ -55,7 +55,7 @@ Key working principles, established through this project's history:
 
 ### UI layer (production, with known issues)
 
-- **Per-ticker detail page** (`pages/02_Ticker_Detail.py`) implemented per locked spec at `docs/per-ticker-page-spec-v1.md`.
+- **Per-ticker detail page** (`pages/02_Ticker_Detail.py`) implemented per locked spec at `docs/specs/per-ticker-page-spec-v1.md`.
 - Layout: header + 3 Tier-1 tiles + 5 Tier-2 tiles + 4 Tier-3 tiles + 5-cell fundamentals strip + recent news + footer.
 - Tile component, color logic, formatters, loaders all live in `src/casino_dashboard/ui/`.
 
@@ -94,9 +94,9 @@ These are real, visible, and need addressing in any v2 work:
 
 These are non-code documents that capture decisions, findings, and open hypotheses:
 
-- **`docs/per-ticker-page-spec-v1.md`** — The locked design spec for the per-ticker page. Tile-based, breathing-room layout, no charts (use Finviz linkout), 12 tiles + fundamentals strip. Open questions documented (Catalyst/Red Flag prominence variant testing).
+- **`docs/specs/per-ticker-page-spec-v1.md`** — The locked design spec for the per-ticker page. Tile-based, breathing-room layout, no charts (use Finviz linkout), 12 tiles + fundamentals strip. Open questions documented (Catalyst/Red Flag prominence variant testing).
 
-- **`docs/rip-pattern-analysis-v1.md`** — Empirical analysis of indicators preceding "rip" events (≥50% return over 60 days). **Important caveat: only 3 of 12 requested tickers had data available in the analysis environment (AAOI, COHR, LITE — all photonics).** 17 events analyzed. Headline findings:
+- **`docs/specs/rip-pattern-analysis-v1.md`** — Empirical analysis of indicators preceding "rip" events (≥50% return over 60 days). **Important caveat: only 3 of 12 requested tickers had data available in the analysis environment (AAOI, COHR, LITE — all photonics).** 17 events analyzed. Headline findings:
   - Strongest signal: ATR(14) as % of price rises pre-rip (r=+0.85). Volatility *expands* into rips, doesn't compress.
   - Counter-intuitive: RSI ~49 and MACD histogram negative the week before rip. "Quiet day" pattern.
   - Bollinger band squeeze and tight consolidation **never appeared** in any pre-rip period.
@@ -198,7 +198,7 @@ Concrete behaviors that have served this project well — worth preserving in th
 A suggested opening to anchor a fresh conversation productively:
 
 1. Read this document.
-2. Pull the repo, look at `docs/per-ticker-page-spec-v1.md`, `docs/rip-pattern-analysis-v1.md`, `STRATEGY.md`, `CLAUDE.md`. Review them with fresh eyes.
+2. Pull the repo, look at `docs/specs/per-ticker-page-spec-v1.md`, `docs/specs/rip-pattern-analysis-v1.md`, `STRATEGY.md`, `CLAUDE.md`. Review them with fresh eyes.
 3. Visit the live Streamlit Cloud URL on desktop and mobile. Note specifically what's working, what's broken, what's missing.
 4. Decide on the Section 6 open questions one at a time, in priority order. Don't try to answer all six in the first hour.
 5. Pick **one** thing to build. The smallest one that produces a visible deliverable. Resist the urge to plan the whole arc before shipping the next small thing.

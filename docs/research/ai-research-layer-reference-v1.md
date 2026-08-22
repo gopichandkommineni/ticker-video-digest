@@ -327,7 +327,7 @@ answer quality.
    chat UI = existing Claude subscription, $0, first consumer of
    fintwit.db.
 2. Only if the team wants in-app chat: Streamlit chat page reusing the
-   same tool layer + §5 grounding prompt, per a docs/chat-spec-v1.md
+   same tool layer + §5 grounding prompt, per a docs/specs/chat-spec-v1.md
    written first.
 
 ## 9. Open questions / unverified

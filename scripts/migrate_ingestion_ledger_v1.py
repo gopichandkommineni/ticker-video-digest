@@ -1,4 +1,4 @@
-"""One-time migration: ingestion ledger v1 (docs/ingestion-ledger-gaps-v1.md).
+"""One-time migration: ingestion ledger v1 (docs/specs/ingestion-ledger-gaps-v1.md).
 
 Applies the additive schema changes (via storage.db.init_db, which is
 idempotent) and the §4 backfill rules to an existing fintwit.db:
