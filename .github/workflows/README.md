@@ -24,6 +24,7 @@ close.
 | Workflow | Does |
 |---|---|
 | `structure.yml` | Runs `scripts/check_structure.py` — fails if a file or function grew past the readable-size budget. Rules in [CONTRIBUTING.md](../../CONTRIBUTING.md). |
+| `verify.yml` | The regression net: the failing-test set must match `tests/known_failures.txt`, every page must render, and the code must still agree with the production database. See [Verifying a change](../../docs/runbooks/verifying-a-change.md). |
 
 ## Manual — you start these
 

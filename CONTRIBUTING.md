@@ -121,10 +121,14 @@ Adding a row to `BASELINE` is not how you fix a failure. Splitting the file is.
 ## Before you open a PR
 
 ```bash
-./run test     # 887 pass, 17 pre-existing failures — see tests/README.md
-./run lint     # structure guard
-./run check    # environment sanity
+./run verify   # structure + tests + every page renders + production parity
 ```
+
+That's four layers, ~90 seconds. What each one proves — and what none of them
+can — is in [Verifying a change](docs/runbooks/verifying-a-change.md).
+
+If you touched the daily job, also run it for real: `./run refresh` writes to a
+throwaway database and exercises all thirteen stages against live sources.
 
 And if you touched a screen, **open it in a browser**. That is a
 non-negotiable rule in this project: passing tests tell you nothing about

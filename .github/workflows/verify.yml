@@ -1,0 +1,39 @@
+name: Verify
+
+# The regression net: does it still work, and does it still work the SAME?
+# What each layer proves is in docs/runbooks/verifying-a-change.md.
+#
+# Note the "known failures" step. 17 tests have been failing for a while; this
+# checks the failing set is EXACTLY that list, so a new failure is caught and a
+# newly-passing one is caught too. The list may only get shorter.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install project
+        run: pip install -e ".[dev]"
+
+      - name: Tests — the failing set must match tests/known_failures.txt
+        run: python scripts/check_known_failures.py
+
+      - name: Every dashboard page renders
+        run: python -m pytest -q tests/test_pages_render.py
+
+      - name: Agreement with the committed production database
+        run: python -m pytest -q -m parity
