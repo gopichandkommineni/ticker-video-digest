@@ -1,13 +1,24 @@
+"""The shape of `data/snapshots.db` — every table, grouped by subject.
+
+The DDL below mirrors the modules in `repository/`: one constant per subject,
+in the same order. Adding a table means adding it to the matching constant
+here and a query for it to the matching module there.
+
+Everything is `IF NOT EXISTS`, so init_db() is safe on every run — and it is
+called on every run, by both the daily job and the Add Stocks page.
+
+The indentation inside each block is load-bearing in one narrow sense: SQLite
+stores the literal CREATE text in sqlite_master, so reflowing it would make
+freshly created databases differ from existing ones for no reason.
+"""
 import sqlite3
 from pathlib import Path
 
 _DEFAULT_DB_PATH = Path("data/snapshots.db")
 
 
-def init_db(db_path: Path = _DEFAULT_DB_PATH) -> None:
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(db_path) as conn:
-        conn.executescript("""
+# Daily OHLCV rows and the news items attached to them.
+_SNAPSHOTS_DDL = """
             CREATE TABLE IF NOT EXISTS ticker_snapshots (
                 ticker        TEXT    NOT NULL,
                 date          TEXT    NOT NULL,
@@ -31,7 +42,11 @@ def init_db(db_path: Path = _DEFAULT_DB_PATH) -> None:
                 published_at TEXT    NOT NULL,
                 fetched_at   TEXT    NOT NULL
             );
+"""
 
+
+# Computed per-ticker numbers: returns, RSI, distance from high/low.
+_SIGNALS_DDL = """
             CREATE TABLE IF NOT EXISTS signals (
                 ticker       TEXT NOT NULL,
                 date         TEXT NOT NULL,
@@ -39,7 +54,11 @@ def init_db(db_path: Path = _DEFAULT_DB_PATH) -> None:
                 value        REAL,
                 PRIMARY KEY (ticker, date, signal_name)
             );
+"""
 
+
+# Reddit mention counts and the posts behind them.
+_SOCIAL_DDL = """
             -- subreddit defaults to '' (empty string, not NULL) for the
             -- apewisdom aggregate row so the PRIMARY KEY constraint works.
             CREATE TABLE IF NOT EXISTS social_mentions (
@@ -53,6 +72,37 @@ def init_db(db_path: Path = _DEFAULT_DB_PATH) -> None:
                 PRIMARY KEY (ticker, date, source, subreddit)
             );
 
+            -- Individual Reddit posts pulled by RedditScraper (public JSON API
+            -- or PRAW). Unlike social_mentions (aggregate counts), this stores
+            -- the post itself: title, body, score, comments — the raw material
+            -- for future LLM extraction and richer momentum signals.
+            -- Keyed on (post_id, ticker) because one post can surface under
+            -- more than one ticker's search and we keep each association.
+            CREATE TABLE IF NOT EXISTS reddit_posts (
+                post_id       TEXT    NOT NULL,
+                ticker        TEXT    NOT NULL,
+                subreddit     TEXT    NOT NULL DEFAULT '',
+                author        TEXT    NOT NULL DEFAULT '',
+                title         TEXT    NOT NULL DEFAULT '',
+                content       TEXT    NOT NULL DEFAULT '',
+                url           TEXT    NOT NULL DEFAULT '',
+                score         INTEGER NOT NULL DEFAULT 0,
+                comment_count INTEGER NOT NULL DEFAULT 0,
+                published_at  TEXT    NOT NULL,
+                fetched_at    TEXT    NOT NULL,
+                PRIMARY KEY (post_id, ticker)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_reddit_posts_ticker
+                ON reddit_posts(ticker, published_at DESC);
+
+            CREATE INDEX IF NOT EXISTS idx_reddit_posts_subreddit
+                ON reddit_posts(subreddit, published_at DESC);
+"""
+
+
+# Company facts, plus the hand-written notes from config/manual_notes.yaml.
+_METADATA_DDL = """
             CREATE TABLE IF NOT EXISTS ticker_metadata (
                 ticker                  TEXT NOT NULL,
                 date                    TEXT NOT NULL,
@@ -86,7 +136,11 @@ def init_db(db_path: Path = _DEFAULT_DB_PATH) -> None:
                 updated_at  TEXT NOT NULL,
                 PRIMARY KEY (ticker)
             );
+"""
 
+
+# Theme-level data: ETF flows, the deal log, and sector heat rollups.
+_SECTORS_DDL = """
             CREATE TABLE IF NOT EXISTS etf_flows (
                 etf_ticker   TEXT NOT NULL,
                 date         TEXT NOT NULL,
@@ -130,8 +184,11 @@ def init_db(db_path: Path = _DEFAULT_DB_PATH) -> None:
                 constituent_count      INTEGER NOT NULL,
                 PRIMARY KEY (sector, date)
             );
-        """)
-        conn.executescript("""
+"""
+
+
+# US congressional members, their committees, and their disclosed trades.
+_CONGRESS_DDL = """
             CREATE TABLE IF NOT EXISTS congress_members (
                 bioguide_id   TEXT PRIMARY KEY,
                 full_name     TEXT NOT NULL,
@@ -173,57 +230,17 @@ def init_db(db_path: Path = _DEFAULT_DB_PATH) -> None:
 
             CREATE INDEX IF NOT EXISTS idx_congress_trades_disclosure
                 ON congress_trades(disclosure_date DESC);
+
             CREATE INDEX IF NOT EXISTS idx_congress_trades_bioguide
                 ON congress_trades(bioguide_id, disclosure_date DESC);
+
             CREATE INDEX IF NOT EXISTS idx_congress_trades_ticker
                 ON congress_trades(ticker, disclosure_date DESC);
-        """)
-        conn.executescript("""
-            -- Individual Reddit posts pulled by RedditScraper (public JSON API
-            -- or PRAW). Unlike social_mentions (aggregate counts), this stores
-            -- the post itself: title, body, score, comments — the raw material
-            -- for future LLM extraction and richer momentum signals.
-            -- Keyed on (post_id, ticker) because one post can surface under
-            -- more than one ticker's search and we keep each association.
-            CREATE TABLE IF NOT EXISTS reddit_posts (
-                post_id       TEXT    NOT NULL,
-                ticker        TEXT    NOT NULL,
-                subreddit     TEXT    NOT NULL DEFAULT '',
-                author        TEXT    NOT NULL DEFAULT '',
-                title         TEXT    NOT NULL DEFAULT '',
-                content       TEXT    NOT NULL DEFAULT '',
-                url           TEXT    NOT NULL DEFAULT '',
-                score         INTEGER NOT NULL DEFAULT 0,
-                comment_count INTEGER NOT NULL DEFAULT 0,
-                published_at  TEXT    NOT NULL,
-                fetched_at    TEXT    NOT NULL,
-                PRIMARY KEY (post_id, ticker)
-            );
+"""
 
-            CREATE INDEX IF NOT EXISTS idx_reddit_posts_ticker
-                ON reddit_posts(ticker, published_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_reddit_posts_subreddit
-                ON reddit_posts(subreddit, published_at DESC);
-        """)
-        # Migrate existing DBs that predate notes/tags columns
-        for col in ("notes", "tags"):
-            try:
-                conn.execute(f"ALTER TABLE manual_notes ADD COLUMN {col} TEXT")
-            except Exception:
-                pass  # column already exists
 
-        # Migrate existing DBs that predate analyst high/low/count columns
-        for col in (
-            "analyst_target_high REAL",
-            "analyst_target_low REAL",
-            "analyst_count REAL",
-        ):
-            try:
-                conn.execute(f"ALTER TABLE ticker_metadata ADD COLUMN {col}")
-            except Exception:
-                pass  # column already exists
-
-        conn.executescript("""
+# Tickers and themes added through the Add Stocks page.
+_USER_UNIVERSE_DDL = """
             CREATE TABLE IF NOT EXISTS user_added_themes (
                 theme_id       TEXT PRIMARY KEY,
                 display_name   TEXT NOT NULL,
@@ -246,4 +263,45 @@ def init_db(db_path: Path = _DEFAULT_DB_PATH) -> None:
 
             CREATE INDEX IF NOT EXISTS idx_user_tickers_status
               ON user_added_tickers(status);
-        """)
+"""
+
+
+# Applied in this order on every run. The names match the repository/ modules.
+_SCHEMA = (
+    _SNAPSHOTS_DDL,
+    _SIGNALS_DDL,
+    _SOCIAL_DDL,
+    _METADATA_DDL,
+    _SECTORS_DDL,
+    _CONGRESS_DDL,
+    _USER_UNIVERSE_DDL,
+)
+
+# Columns added to tables that shipped before them. SQLite has no
+# "ADD COLUMN IF NOT EXISTS", so on a database that already has the column
+# the ALTER raises and we move on.
+_ADDED_COLUMNS = (
+    ("manual_notes", "notes TEXT"),
+    ("manual_notes", "tags TEXT"),
+    ("ticker_metadata", "analyst_target_high REAL"),
+    ("ticker_metadata", "analyst_target_low REAL"),
+    ("ticker_metadata", "analyst_count REAL"),
+)
+
+
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    """Bring a database created by an older version up to the current columns."""
+    for table, column in _ADDED_COLUMNS:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column}")
+        except Exception:
+            pass  # column already exists
+
+
+def init_db(db_path: Path = _DEFAULT_DB_PATH) -> None:
+    """Create every table and index that does not exist yet. Idempotent."""
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db_path) as conn:
+        for ddl in _SCHEMA:
+            conn.executescript(ddl)
+        _add_missing_columns(conn)
