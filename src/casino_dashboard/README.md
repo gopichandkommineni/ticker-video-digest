@@ -43,9 +43,26 @@ clean Python objects".
 | File | Does |
 |---|---|
 | `schema.py` | Creates the tables. Safe to re-run. |
-| `repository.py` | **Every** database read and write in the dashboard |
+| `repository/` | **Every** database read and write in the dashboard, one module per subject |
 
-If you're writing SQL anywhere else, move it here instead. One module owning
+`repository/` is a package, not a file — one module per subject area:
+
+| Module | Owns |
+|---|---|
+| `snapshots.py` | Daily OHLCV rows and their news items |
+| `signals.py` | Computed numbers: returns, RSI, distance from high/low |
+| `social.py` | Reddit mention counts and the posts behind them |
+| `metadata.py` | Company facts and hand-written notes |
+| `sectors.py` | ETF flows, the deal log, sector heat rollups |
+| `congress.py` | Congressional members, committees, disclosed trades |
+| `user_universe.py` | Tickers and themes added via the Add Stocks page |
+
+`repository/__init__.py` re-exports all of them, so
+`from casino_dashboard.db.repository import save_snapshot` works regardless of
+which module a function lives in. Add a new query to the module that owns the
+subject, then list it in `__all__`.
+
+If you're writing SQL anywhere else, move it here instead. One package owning
 the database is what keeps the rest of the code readable.
 
 ### `signals/` — the maths

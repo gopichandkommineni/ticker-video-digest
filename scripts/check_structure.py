@@ -37,7 +37,6 @@ CHECKED_PATHS = ["src", "pages", "scripts", "app.py"]
 # Each may SHRINK or be removed. None may grow. Adding a row is not a fix —
 # split the file instead.
 BASELINE: dict[str, int] = {
-    "src/casino_dashboard/db/repository.py": 1132,
     "src/core/social_media/reddit/subreddit_catalog.py": 594,
     "src/casino_dashboard/jobs/subreddit_catalog_run.py": 584,
     "src/casino_dashboard/jobs/daily_refresh.py": 551,
