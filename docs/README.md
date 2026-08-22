@@ -85,6 +85,7 @@ how the project got to where it is.
 | File | Why it's there |
 |---|---|
 | [`README.md`](../README.md) | The front door — first thing anyone sees on GitHub |
+| [`CONTRIBUTING.md`](../CONTRIBUTING.md) | How we build here: the size budgets, the one-thing-per-PR rule, and why |
 | [`STRATEGY.md`](../STRATEGY.md) | 🔒 The investment thesis. Protected file. |
 | [`CLAUDE.md`](../CLAUDE.md) | Instructions for AI coding assistants working in this repo |
 | [`.env.example`](../.env.example) | Every API key the project understands, and what each unlocks |

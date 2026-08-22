@@ -29,6 +29,9 @@ Then keep two more bookmarked for when you actually change something:
 
 The full documentation index lives at **[docs/README.md](docs/README.md)**.
 
+About to change something? Read **[CONTRIBUTING.md](CONTRIBUTING.md)** — it's
+short, and it explains the size budgets this repo enforces.
+
 ---
 
 ## The 60-second version

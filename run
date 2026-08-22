@@ -28,6 +28,7 @@ cmd_help() {
     ./run setup        Install everything. Do this once, first.
     ./run dashboard    Open the dashboard in your web browser.
     ./run test         Run the automated checks.
+    ./run lint         Structure guard: are files and functions readable-sized?
     ./run check        Health check: is this machine set up correctly?
     ./run market       Print the "is the market expensive?" report in the terminal.
     ./run refresh      Download fresh data into a THROWAWAY local database.
@@ -70,6 +71,15 @@ cmd_test() {
   need_venv
   bold "Running the automated checks (skipping ones that need the internet)…"
   "$PY" -m pytest -q -m "not integration" "$@"
+}
+
+cmd_lint() {
+  # Uses only the standard library, so it works even before ./run setup.
+  local py="$PY"
+  [ -x "$py" ] || py="$(command -v python3)"
+  [ -n "$py" ] || die "Python 3 is not installed."
+  bold "Checking file and function sizes…"
+  "$py" scripts/check_structure.py
 }
 
 cmd_market() {
@@ -126,6 +136,7 @@ case "${1:-help}" in
   setup)      shift; cmd_setup "$@" ;;
   dashboard|start|app) shift; cmd_dashboard "$@" ;;
   test|tests) shift; cmd_test "$@" ;;
+  lint|structure) shift; cmd_lint "$@" ;;
   check|doctor) shift; cmd_check "$@" ;;
   market)     shift; cmd_market "$@" ;;
   refresh)    shift; cmd_refresh "$@" ;;
