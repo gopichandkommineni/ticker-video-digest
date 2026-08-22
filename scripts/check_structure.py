@@ -50,7 +50,7 @@ BASELINE: dict[str, int] = {
 
 # How many over-long functions the repo currently has. This number may go
 # down. It may never go up.
-FUNCTION_BUDGET = 44
+FUNCTION_BUDGET = 43
 
 # Every package directly under src/ must explain itself to a newcomer.
 PACKAGE_README_ROOT = "src"
