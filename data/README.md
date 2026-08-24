@@ -11,15 +11,22 @@
 
 ---
 
-## The two files
+## The files
 
-| File | Size | Holds | Written by |
-|---|---|---|---|
-| `snapshots.db` | ~20 MB | The dashboard's data | `daily_refresh.yml`, 4× every weekday |
-| `fintwit.db` | ~36 MB | The tweet archive | `fintwit-daily.yml`, nightly |
+| File | Size | Holds | Written by | Committed? |
+|---|---|---|---|---|
+| `snapshots.db` | ~20 MB | The dashboard's data | `daily_refresh.yml`, 4× every weekday | **Yes** |
+| `fintwit.db` | ~36 MB | The tweet archive | `fintwit-daily.yml`, nightly | **Yes** |
+| `digests.db` | small | Your YouTube digest history | `./run digest RKLB`, when you run it | No — git-ignored |
 
-Both are **SQLite** databases: a complete database inside one ordinary file.
+All are **SQLite** databases: a complete database inside one ordinary file.
 Nothing to install, nothing to start.
+
+The warning above is about the first two. `digests.db` is yours: it only exists
+if you've run a digest, it's git-ignored, and deleting it costs you nothing but
+the memory of which YouTube claims you'd already seen (which is what makes the
+next run's "what's new" meaningful). Point it somewhere else with
+`TICKER_DIGEST_DB`.
 
 ## Why are databases committed to git?
 
@@ -61,6 +68,17 @@ sqlite3 data/snapshots.db "SELECT ticker, close FROM ticker_snapshots ORDER BY d
 
 `sqlite3` ships with macOS. To click around instead of typing SQL, use the free
 [DB Browser for SQLite](https://sqlitebrowser.org/) — just don't press Save.
+
+## What's inside `digests.db`
+
+| Table | Holds |
+|---|---|
+| `digest_runs` | One row per digest you ran, with the whole run as JSON |
+| `claims` | Every distinct claim heard about a ticker, and when it was **first** heard |
+| `threads` | The generated threads, readable with `./run threads` |
+
+`claims.first_seen_at` is never overwritten. That is how a later run knows a
+claim isn't news any more.
 
 ## Testing changes to the data pipeline
 

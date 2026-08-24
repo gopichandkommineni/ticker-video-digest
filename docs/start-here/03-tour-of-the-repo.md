@@ -102,7 +102,7 @@ this is where you end up.
 | `casino_dashboard/` | **The product.** Split into `data/` (fetching), `db/` (storing), `signals/` (calculating), `jobs/` (the scheduled work), `ui/` (display helpers). |
 | `core/` | Shared plumbing: config, caching, market indicators, Reddit and X clients. Used by everything. |
 | `fintwit/` | An independent pipeline archiving finance tweets. Own database, own schedules. |
-| `ticker_digest/` | The original YouTube-summarising idea. A placeholder — the code exists, the feature isn't built. |
+| `ticker_digest/` | The original YouTube idea, now working: reads videos about a stock and tells you what's *new*. Run it with `./run digest RKLB`. |
 
 Read [`src/README.md`](../../src/README.md) for how they depend on each other.
 

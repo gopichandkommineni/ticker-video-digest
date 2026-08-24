@@ -1,69 +1,139 @@
-# `ticker_digest/` — the YouTube digest (placeholder)
+# `ticker_digest/` — the YouTube insight thread
 
 The project's **original** idea, and the reason the repository is called
 `ticker-video-digest`: watch what stock commentators say on YouTube, and
 summarise it with AI so you don't have to sit through hours of video.
 
-**It is not finished.** The modules exist and much of the machinery works, but
-the feature isn't wired up end to end. It's on the roadmap, not in production.
+It now runs end to end. Point it at a ticker (or at a channel you already
+trust), and it comes back with a **thread**: a short, ordered list of posts
+about what was said, with every claim marked as new, developing or already
+known, and every claim clickable back to the second of video it came from.
 
-Don't delete it — it's deliberately kept.
+```bash
+python -m ticker_digest ticker RKLB                       # search YouTube
+python -m ticker_digest ticker RKLB --channel @spaceinvesting   # one channel
+python -m ticker_digest threads --ticker RKLB             # what you saved earlier
+python -m ticker_digest threads --show 4f2a91c0d3b7       # print one in full
+```
+
+You need `YOUTUBE_API_KEY` and `ANTHROPIC_API_KEY` in `.env`.
+
+---
+
+## Why "new" is the whole point
+
+Most YouTube commentary about a stock repeats the same bull case week after
+week. A digest that just summarises the videos would tell you the same thing
+every time you ran it.
+
+So every claim is stored, and every run is judged against what's already
+stored. What you read is the *delta*:
+
+| Verdict | Means |
+|---|---|
+| `new` | Nothing on record covered this before |
+| `developing` | An update to something tracked — a firmer date, a revised number |
+| `known` | A restatement of something already on record |
+
+The first run for a ticker has nothing to compare against, so everything is
+`new`. The second run is where it starts earning its keep.
 
 ---
 
 ## What's here
 
-| File | Does | State |
-|---|---|---|
-| `youtube_client.py` | Finds videos via the YouTube Data API | Written |
-| `transcripts.py` | Pulls the captions out of a video | Written |
-| `analyzer.py` | The two-pass AI summarisation | Written |
-| `cli.py` | The command-line entry point | Written |
-| `__main__.py` | Makes `python -m ticker_digest` work | Written |
+| File | Does |
+|---|---|
+| `quality.py` | Which videos are worth reading, and how much to trust each one. Pure functions, no network. |
+| `youtube_client.py` | Finds videos — by search, or from one channel |
+| `transcripts.py` | Pulls the captions out of a video (cached 30 days) |
+| `analyzer.py` | Per-video extraction: catalysts, red flags, events, sentiment |
+| `novelty.py` | Is any of this actually new? |
+| `thread.py` | Writes the thread |
+| `store.py` | SQLite: runs, claims, threads |
+| `pipeline.py` | Wires the above together |
+| `cli.py` | The command-line entry point |
 
-## The one part that *is* live
+## The flow
 
-The CLI has two subcommands, and one of them is used daily:
-
-```bash
-python -m ticker_digest ticker RKLB      # the YouTube digest — placeholder
-python -m ticker_digest market --thesis  # the Market Reality Check — LIVE ✅
+```
+   ticker  ──► YouTube search ──┐
+                                ├──► quality filter ──► reliability ranking
+   channel ──► channel uploads ─┘                              │
+                                                               ▼
+                          transcripts (cached) ──► per-video extraction (Sonnet)
+                                                               │
+                                                               ▼
+                    claims  ──►  novelty check  ──►  thread (Opus)  ──►  SQLite
+                                      ▲                                    │
+                                      └──── claims from earlier runs ◄──────┘
 ```
 
-`market` prints the same Reality Score the dashboard shows, in the terminal.
-The logic behind it lives in [`core/market/`](../core/README.md), not here —
-this package just exposes it as a command.
+Two models, on purpose: a cheaper one per video (that cost grows with the
+number of videos), a stronger one once at the end.
 
-## The intended design
+## Picking sources
 
-A two-pass AI pipeline, so cost stays predictable as the video count grows:
+**Ticker input.** YouTube search returns whatever it returns, so the results go
+through a filter and then a ranking:
 
-**Pass 1 — per video.** Transcript in, structured summary out: catalysts, red
-flags, upcoming events, sentiment. Every item carries a timestamp so a claim
-can be traced back to the second of video it came from.
+- *dropped* — under 120 seconds, channels under 500 subscribers, or a title
+  that's shouted or stuffed with 🚀🔥 emoji
+- *ranked* — subscribers (30%), views (25%), views-per-subscriber (15%),
+  duration (15%), recency (15%)
 
-**Pass 2 — across videos.** All those summaries in, one digest out. Themes
-several commentators agree on rank higher; citations are preserved.
+Views-per-subscriber is in there deliberately: a 2k-subscriber channel with a
+30k-view video said something people passed around. Every weighting lives in
+`core/config.py`; the scoring itself is in `quality.py` and is unit-tested
+without an API key.
 
-Prompt caching is enabled on the system prompt and schema, since they're
-identical on every video in pass 1.
+**Channel input.** When you already trust a commentator, `--channel` takes a
+name, an `@handle`, a channel URL or a raw channel id. Their uploads are
+narrowed to the ticker first, so a digest about RKLB doesn't ingest their
+Bitcoin video. If the name matches nothing, the run stops and says so rather
+than quietly falling back to a search.
 
-## Quality filters (planned, from `CLAUDE.md`)
+## Novelty, in two stages
 
-Before spending money transcribing a video, skip it if:
+Cheap first. Each claim is normalised to a token set and compared against
+stored claims: an exact fingerprint match, or a Jaccard similarity over the
+threshold, is a restatement — marked `known` for free.
 
-- it's shorter than 120 seconds
-- the channel has fewer than 500 subscribers
-- the title is ALL CAPS, or full of 🚀/🔥 emoji
+Only what survives goes to the model, *with* the known claims as context, which
+is what catches a paraphrase the token overlap missed. On a first run, or when
+nothing survives, no model call happens at all.
 
-Prefer videos from the last 7 days, sorted by view count.
+## Where it stores things
 
-## To pick this up
+`data/digests.db` — its own database, not the dashboard's `snapshots.db`.
+Git-ignored: this is your reading history, not production data. Override the
+location with `TICKER_DIGEST_DB`.
 
-1. Read [`analyzer.py`](analyzer.py) — the two-pass design is already expressed
-   there in code.
-2. Data shapes (`Transcript`, `VideoInsights`, `DigestReport`) are in
-   [`core/models.py`](../core/models.py).
-3. You'll need `YOUTUBE_API_KEY` and `ANTHROPIC_API_KEY` in `.env`.
-4. Tests already exist: `tests/test_youtube_client.py`,
-   `tests/test_transcripts.py`, `tests/test_analyzer.py`.
+Three tables: `digest_runs` (the whole run), `claims` (one row per distinct
+claim per ticker, and `first_seen_at` is never overwritten — that column *is*
+the novelty check), and `threads`.
+
+## Also here: the Market Reality Check
+
+```bash
+python -m ticker_digest market --thesis
+```
+
+Prints the same Reality Score the dashboard shows, in the terminal. The logic
+behind it lives in [`core/market/`](../core/README.md), not here — this package
+just exposes it as a command.
+
+## Tests
+
+`tests/test_digest_*.py`, plus `test_youtube_client.py`,
+`test_youtube_channels.py`, `test_transcripts.py` and `test_analyzer.py`.
+Nothing hits the network or an LLM.
+
+## Caveats
+
+- YouTube search quota is 100 units per query — a run is a handful of calls,
+  but a loop over 64 tickers is not free.
+- Captions are unavailable on plenty of videos. Those are skipped, with the
+  reason reported; the run continues.
+- The output is aggregated commentary from strangers on the internet. Every
+  thread carries the disclaimer for a reason.

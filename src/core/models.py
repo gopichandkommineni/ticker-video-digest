@@ -1,5 +1,7 @@
 """Pydantic models: VideoMetadata, Transcript, VideoInsights, DigestReport,
-MarketIndicator, MarketSnapshot, RealityScore, MarketThesis."""
+MarketIndicator, MarketSnapshot, RealityScore, MarketThesis, plus the
+insight-thread shapes (ChannelInfo, ScoredVideo, Claim, ThreadPost,
+InsightThread, DigestRequest, DigestRun)."""
 from datetime import datetime
 from typing import Literal
 
@@ -124,3 +126,115 @@ class MarketThesis(BaseModel):
     key_watch_items: list[str]
     regime: MarketRegime
     generated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# YouTube insight-thread models (ticker_digest)
+# ---------------------------------------------------------------------------
+
+# How a digest run picked its videos: a YouTube search for the ticker, or a
+# specific channel the user nominated.
+SourceKind = Literal["ticker_search", "channel"]
+
+# What kind of claim a Citation carries once it has been lifted out of a
+# per-video extraction and tracked across runs.
+ClaimKind = Literal["catalyst", "red_flag", "upcoming_event"]
+
+# Is this claim actually news? "new" = not seen in any earlier run for this
+# ticker; "developing" = an update to something already tracked; "known" =
+# a restatement of an existing claim.
+Novelty = Literal["new", "developing", "known"]
+
+DISCLAIMER = (
+    "Aggregated commentary from public YouTube videos. Not investment advice."
+)
+
+
+class ChannelInfo(BaseModel):
+    """A YouTube channel resolved from a name, handle, URL or channel id."""
+
+    channel_id: str
+    title: str
+    handle: str | None = None
+    subscriber_count: int = 0
+    video_count: int = 0
+    view_count: int = 0
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def url(self) -> str:
+        return f"https://youtube.com/channel/{self.channel_id}"
+
+
+class ScoredVideo(BaseModel):
+    """A candidate video plus the reliability score that ranked it."""
+
+    metadata: VideoMetadata
+    reliability_score: float
+    score_components: dict[str, float] = Field(default_factory=dict)
+
+
+class Claim(BaseModel):
+    """One extracted claim, tracked across runs so novelty can be judged."""
+
+    ticker: str
+    kind: ClaimKind
+    text: str
+    citation: Citation
+    fingerprint: str
+    novelty: Novelty = "new"
+    novelty_reasoning: str = ""
+    related_claim: str | None = None
+    first_seen_at: datetime | None = None
+
+
+class ThreadPost(BaseModel):
+    """One post in the generated insight thread."""
+
+    position: int
+    headline: str
+    body: str
+    novelty: Novelty
+    citations: list[Citation] = Field(default_factory=list)
+
+
+class InsightThread(BaseModel):
+    """The stored deliverable: a thread of insights across analysed videos."""
+
+    thread_id: str
+    ticker: str
+    company_name: str
+    source_kind: SourceKind
+    source_label: str
+    generated_at: datetime
+    video_count: int
+    new_claim_count: int
+    overall_sentiment: Sentiment
+    headline: str
+    posts: list[ThreadPost]
+    disclaimer: str = DISCLAIMER
+
+
+class DigestRequest(BaseModel):
+    """What the user asked for: a ticker, and where to look for videos."""
+
+    ticker: str
+    company_name: str
+    source_kind: SourceKind = "ticker_search"
+    channel_query: str | None = None
+    days: int = 7
+    max_videos: int = 5
+
+
+class DigestRun(BaseModel):
+    """Everything one end-to-end run produced, stored and returned to the CLI."""
+
+    run_id: str
+    request: DigestRequest
+    generated_at: datetime
+    channel: ChannelInfo | None = None
+    videos: list[ScoredVideo] = Field(default_factory=list)
+    insights: list[VideoInsights] = Field(default_factory=list)
+    claims: list[Claim] = Field(default_factory=list)
+    thread: InsightThread | None = None
+    skipped: dict[str, str] = Field(default_factory=dict)

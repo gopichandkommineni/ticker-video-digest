@@ -89,7 +89,7 @@ detail. Click into any folder on GitHub and you'll get an explanation.
 | `casino_dashboard` | **The product.** The dashboard, its data fetching, its database, its signals, its screens. | Live |
 | `core` | Shared plumbing used by everything else — settings, caching, market data, Reddit/X clients. | Live |
 | `fintwit` | A separate pipeline that archives finance tweets into `data/fintwit.db`. | Live, independent |
-| `ticker_digest` | The original idea: summarise YouTube stock videos with AI. | Placeholder, on the roadmap |
+| `ticker_digest` | The original idea: read YouTube stock videos with AI and surface only what's new. | Live, run from the command line |
 
 ---
 

@@ -41,10 +41,11 @@ The layout mirrors the packages under `src/`:
 | `market/test_*.py` | `src/core/market/` — indicators and the Reality Score |
 | `test_reddit_*`, `test_subreddit_*`, `test_social_media_*`, `test_apewisdom_*`, `test_arctic_shift*`, `test_apify_*` | `src/core/social_media/` |
 | `test_storage_*`, `test_worker_pool_*`, `test_orchestration*`, `test_fintwit_*`, `test_rate_limiter*`, `test_reconciler*` | `src/fintwit/` |
-| `test_youtube_client`, `test_transcripts`, `test_analyzer` | `src/ticker_digest/` |
+| `test_digest_*`, `test_youtube_client`, `test_youtube_channels`, `test_transcripts`, `test_analyzer` | `src/ticker_digest/` — the YouTube insight threads |
 | `test_migrate_*` | the migration scripts |
 
-`conftest.py` holds fixtures shared by everything.
+`conftest.py` holds fixtures shared by everything; `digest_helpers.py` holds
+the builders the `test_digest_*` files share.
 
 ## Two rules
 

@@ -28,8 +28,8 @@ Read `docs/README.md` first — it indexes everything. The structure is:
   `.github/workflows/`). When you change what a folder contains, update it.
 
 `./run` at the repo root wraps the common commands (`setup`, `dashboard`,
-`test`, `check`, `market`, `refresh`, `clean`). Prefer teaching it over raw
-commands in user-facing docs.
+`test`, `check`, `market`, `digest`, `threads`, `refresh`, `clean`). Prefer
+teaching it over raw commands in user-facing docs.
 
 ## Subsystems
 
@@ -41,10 +41,12 @@ All importable code lives under `src/` in four packages:
 - **`core`** (`src/core/`) — shared substrate imported by both the dashboard
   and the YouTube feature: `models`, `config`, `cache`, and the `market/` +
   `social_media/` data sources.
-- **`ticker_digest`** (`src/ticker_digest/`) — the original **YouTube digest**
-  feature (`youtube_client`, `transcripts`, `analyzer`, and the `ticker` CLI
-  subcommand), importing shared bits from `core`. Currently a placeholder;
-  still on the roadmap.
+- **`ticker_digest`** (`src/ticker_digest/`) — the **YouTube insight threads**
+  feature (`sources`, `quality`, `youtube_client`, `transcripts`, `analyzer`,
+  `novelty`, `thread`, `store`, `pipeline`, and the `ticker`/`threads` CLI
+  subcommands), importing shared bits from `core`. Runs end to end from the
+  CLI; stores runs, claims and threads in `data/digests.db`. Not scheduled and
+  not on the dashboard yet — see `docs/specs/youtube-insight-threads-v1.md`.
 - **`fintwit`** (`src/fintwit/`) — a standalone tweet-ingestion pipeline
   (`orchestration/`, `storage/`, `tweet_sources/`) writing to
   `data/fintwit.db`, driven by its own GitHub Actions.
@@ -57,7 +59,9 @@ Non-package trees: **`research/`** (one-off probes + committed run outputs),
 - Dashboard daily refresh: `python -m casino_dashboard.jobs.daily_refresh`
   (runs in GitHub Actions — see Daily refresh ops).
 - Market Reality Score CLI: `python -m ticker_digest market --thesis`.
-- YouTube digest CLI (placeholder): `python -m ticker_digest ticker RKLB`.
+- YouTube insight thread: `python -m ticker_digest ticker RKLB`
+  (add `--channel @handle` to read one trusted channel instead of searching).
+- Stored threads: `python -m ticker_digest threads --ticker RKLB`.
 - FinTwit ingestion: `python -m fintwit.storage` / `python -m fintwit.tweet_sources`
   (see each package's `__main__`).
 
@@ -71,7 +75,8 @@ Non-package trees: **`research/`** (one-off probes + committed run outputs),
 - anthropic SDK — Claude API calls (thesis, per-video extraction)
 - pydantic v2 — structured LLM output schemas
 - SQLite (stdlib sqlite3) — `data/snapshots.db` (dashboard),
-  `data/fintwit.db` (FinTwit), plus transcript/metadata caching
+  `data/fintwit.db` (FinTwit), `data/digests.db` (YouTube threads,
+  git-ignored), plus transcript/metadata caching
 - praw / tweepy — social scrapers
 - pytest — tests
 
@@ -79,7 +84,7 @@ Non-package trees: **`research/`** (one-off probes + committed run outputs),
 ```
 src/casino_dashboard/   # live dashboard: data/ db/ jobs/ signals/ ui/ models.py universe.py
 src/core/               # shared: models.py config.py cache.py market/ social_media/
-src/ticker_digest/      # YouTube digest feature: youtube_client transcripts analyzer cli
+src/ticker_digest/      # YouTube insight threads: sources quality novelty thread store pipeline cli
 src/fintwit/            # tweet ingestion: orchestration/ storage/ tweet_sources/
 app.py                  # Streamlit dashboard entrypoint (root)
 pages/                  # Streamlit dashboard pages 00–06
@@ -89,7 +94,7 @@ scripts/                # operational + one-time migration scripts
 research/               # one-off probes + committed run outputs
 docs/                   # start-here/ runbooks/ specs/ research/ archive/
 tests/                  # pytest suite (mirrors the packages above)
-run                     # task runner: ./run setup|dashboard|test|check|market|refresh|clean
+run                     # task runner: ./run setup|dashboard|test|check|market|digest|threads|refresh|clean
 .env.example            # every supported env var, documented
 pyproject.toml
 README.md
@@ -99,16 +104,23 @@ Every major folder carries a `README.md` explaining itself — treat those as
 part of the code and keep them in sync with what the folder actually holds.
 
 ## Analysis approach (ticker_digest YouTube feature)
-Two-pass LLM pipeline:
+Two-pass LLM pipeline, with a novelty check between the passes:
 1. Per-video extraction (Claude Sonnet 4.6) — transcript in, VideoInsights
    pydantic model out. Includes catalysts, red_flags, upcoming_events,
    sentiment, each with timestamp_seconds for citations.
-2. Cross-video synthesis (Claude Opus 4.7) — list of VideoInsights in,
-   DigestReport out. Aggregates themes, ranks by source count, preserves
-   citations.
+2. Novelty — extracted claims are compared against claims stored from earlier
+   runs for that ticker: deterministic fingerprint/similarity match first, then
+   Claude for whatever survives. Each claim ends up new / developing / known.
+3. Cross-video synthesis (Claude Opus 4.7) — judged claims in, InsightThread
+   out: an ordered thread of posts led by what's new, citations preserved.
 
 Enable prompt caching on the system prompt + schema definitions since
 they're reused across the per-video pass.
+
+The delta is the product: a run where nothing is new must say so rather than
+restate the standing bull case. Ranking and duplicate detection stay
+deterministic and unit-tested (`quality.py`, `novelty.partition`); the LLM is
+reserved for judgement the code can't do.
 
 ## Conventions
 - Type hints on every function signature

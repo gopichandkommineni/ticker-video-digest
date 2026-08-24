@@ -15,7 +15,7 @@ first.
 | [`casino_dashboard/`](casino_dashboard/README.md) | **The product** — the dashboard, its data, its database, its signals | Live |
 | [`core/`](core/README.md) | Shared plumbing everything else imports | Live |
 | [`fintwit/`](fintwit/README.md) | Independent tweet-archiving pipeline | Live, separate |
-| [`ticker_digest/`](ticker_digest/README.md) | The original YouTube-summarising idea | Placeholder |
+| [`ticker_digest/`](ticker_digest/README.md) | The original YouTube idea — insight threads from video transcripts | Live, CLI only |
 
 ## How they depend on each other
 
