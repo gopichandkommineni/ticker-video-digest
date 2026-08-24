@@ -2,7 +2,7 @@
 
 **Project:** Casino-Coherent Momentum Dashboard
 **Date locked:** 2026-08-24
-**Status:** Spec — agreed, not yet built
+**Status:** Unit 1 shipped. Units 2–3 specced, not started.
 **Extends:** `docs/specs/youtube-insight-threads-v1.md` (v1 still describes the
 shipped pipeline; this document supersedes its *Novelty detection* and
 *Storage* sections only)
@@ -24,7 +24,7 @@ claim ledger's key, and novelty stays per-company.
 
 ---
 
-# Unit 1 — Corroboration
+# Unit 1 — Corroboration  ✅ shipped
 
 ## The gap
 
@@ -244,28 +244,28 @@ says so.
 ./run digest-batch --tickers RKLB,ASTS --trusted
 ```
 
-## Open question: where the universe comes from
+## Decided: where the universe comes from
 
 `casino_dashboard.universe.load_universe` reads `config/themes.yaml` **and**
 merges user-added tickers from `snapshots.db`. `ticker_digest` importing it
 would break the package rule that only `core` is shared.
 
-**Recommendation:** a read-only `core/universe.py` exposing the YAML half —
+**Decision:** a read-only `core/universe.py` exposing the YAML half —
 `load_themes(path) -> dict[sector_id, list[ticker]]` — used by the batch job.
 `casino_dashboard.universe` keeps its DB merge and delegates its YAML half to
 `core` in a **separate** PR, so this unit can't destabilise the dashboard.
 `config/themes.yaml` stays canonical and read-only either way.
 
-## Open question: local only, or scheduled?
+## Decided: local only, not scheduled
 
 `data/digests.db` is git-ignored, which is what keeps your reading history out
 of production data. A GitHub Action has nowhere to persist results without
 committing that database — which would reverse the decision that made it
 git-ignored, and put a robot in charge of your claim ledger.
 
-**Recommendation:** local-only for now (`./run digest-batch`). Scheduling is a
-separate decision that should be made on its own merits, not smuggled in as an
-implementation detail of batching.
+**Decision:** local-only (`./run digest-batch`). Scheduling stays a separate
+decision to be made on its own merits, not smuggled in as an implementation
+detail of batching.
 
 ## Tests
 

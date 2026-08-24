@@ -38,6 +38,11 @@ stored. What you read is the *delta*:
 The first run for a ticker has nothing to compare against, so everything is
 `new`. The second run is where it starts earning its keep.
 
+There's a fourth case that isn't a verdict: a `known` claim repeated by a
+channel that had never said it before. The claim is old; the agreement is what
+changed. Those are flagged `newly_corroborated` and rank above plain `known`.
+Channels, not videos — one commentator posting three times is one source.
+
 ---
 
 ## What's here
@@ -48,7 +53,7 @@ The first run for a ticker has nothing to compare against, so everything is
 | `youtube_client.py` | Finds videos — by search, or from one channel |
 | `transcripts.py` | Pulls the captions out of a video (cached 30 days) |
 | `analyzer.py` | Per-video extraction: catalysts, red flags, events, sentiment |
-| `novelty.py` | Is any of this actually new? |
+| `novelty.py` | Is any of this actually new? Also ranks what the thread sees. |
 | `thread.py` | Writes the thread |
 | `store.py` | SQLite: runs, claims, threads |
 | `pipeline.py` | Wires the above together |
@@ -103,15 +108,25 @@ Only what survives goes to the model, *with* the known claims as context, which
 is what catches a paraphrase the token overlap missed. On a first run, or when
 nothing survives, no model call happens at all.
 
+What reaches the thread arrives pre-ranked by `rank_claims`: new, then
+developing, then newly corroborated, then known — and within a band, whatever
+more sources said. The model decides what deserves a post; it doesn't decide
+what leads.
+
 ## Where it stores things
 
 `data/digests.db` — its own database, not the dashboard's `snapshots.db`.
 Git-ignored: this is your reading history, not production data. Override the
 location with `TICKER_DIGEST_DB`.
 
-Three tables: `digest_runs` (the whole run), `claims` (one row per distinct
-claim per ticker, and `first_seen_at` is never overwritten — that column *is*
-the novelty check), and `threads`.
+Four tables: `digest_runs` (the whole run), `claims` (identity — one row per
+distinct claim per ticker, where `first_seen_at` is never overwritten and *is*
+the novelty check), `claim_citations` (evidence — one row per video that made
+the claim, with the channel that published it), and `threads`.
+
+An older database migrates itself on first open; there's no script to run.
+Citations recovered from a pre-split database are marked with an unknown
+channel, and corroboration stays unflagged for those rather than guessed.
 
 ## Also here: the Market Reality Check
 

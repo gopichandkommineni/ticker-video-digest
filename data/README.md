@@ -75,10 +75,16 @@ sqlite3 data/snapshots.db "SELECT ticker, close FROM ticker_snapshots ORDER BY d
 |---|---|
 | `digest_runs` | One row per digest you ran, with the whole run as JSON |
 | `claims` | Every distinct claim heard about a ticker, and when it was **first** heard |
+| `claim_citations` | Every video that made each claim, and which channel published it |
 | `threads` | The generated threads, readable with `./run threads` |
 
 `claims.first_seen_at` is never overwritten. That is how a later run knows a
 claim isn't news any more.
+
+`claim_citations` is why the digest can say "four of five videos said this",
+and why a claim repeated by a channel that never said it before gets flagged
+even though the claim itself is old. Counting *channels* matters: one
+commentator posting three times is one source, not three.
 
 ## Testing changes to the data pipeline
 

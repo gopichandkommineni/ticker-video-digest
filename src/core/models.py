@@ -175,17 +175,32 @@ class ScoredVideo(BaseModel):
 
 
 class Claim(BaseModel):
-    """One extracted claim, tracked across runs so novelty can be judged."""
+    """One extracted claim, tracked across runs so novelty can be judged.
+
+    A claim holds *every* citation that supports it, not just the first. Three
+    videos reporting one contract award are one claim with three citations —
+    and how many independent sources said a thing is the strongest signal the
+    thread has.
+    """
 
     ticker: str
     kind: ClaimKind
     text: str
-    citation: Citation
+    citations: list[Citation]
     fingerprint: str
     novelty: Novelty = "new"
     novelty_reasoning: str = ""
     related_claim: str | None = None
+    # True when a claim already on record was repeated this run by a channel
+    # that had never said it before: the claim is old, the agreement is new.
+    newly_corroborated: bool = False
     first_seen_at: datetime | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def source_count(self) -> int:
+        """Distinct videos backing this claim — not citations, videos."""
+        return len({citation.video_id for citation in self.citations})
 
 
 class ThreadPost(BaseModel):

@@ -111,6 +111,9 @@ Two-pass LLM pipeline, with a novelty check between the passes:
 2. Novelty — extracted claims are compared against claims stored from earlier
    runs for that ticker: deterministic fingerprint/similarity match first, then
    Claude for whatever survives. Each claim ends up new / developing / known.
+   A claim holds every citation that supports it, so "four of five videos said
+   this" survives; a known claim repeated by a channel that never said it
+   before is flagged newly_corroborated.
 3. Cross-video synthesis (Claude Opus 4.7) — judged claims in, InsightThread
    out: an ordered thread of posts led by what's new, citations preserved.
 

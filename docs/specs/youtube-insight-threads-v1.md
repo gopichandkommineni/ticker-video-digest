@@ -3,6 +3,9 @@
 **Project:** Casino-Coherent Momentum Dashboard
 **Date locked:** 2026-08-24
 **Status:** Shipped. Implemented in `src/ticker_digest/`.
+**Amended by:** `youtube-insight-threads-v2.md` — the *Novelty detection*
+and *Storage* sections below describe the original single-citation claim
+ledger, which v2 replaced with a claims/citations split.
 **Code:** `pipeline.py`, `sources.py`, `quality.py`, `novelty.py`, `thread.py`, `store.py`
 
 ---

@@ -91,8 +91,14 @@ def similarity(a: set[str], b: set[str]) -> float:
 def claims_from_insights(ticker: str, insights: list[VideoInsights]) -> list[Claim]:
     """Flatten per-video extractions into one list of tracked claims.
 
-    Duplicates *within* the batch collapse to the first occurrence, so three
-    videos repeating one contract win produce one claim, not three.
+    Duplicates *within* the batch merge rather than collapse: three videos
+    repeating one contract win produce one claim carrying three citations. The
+    count is the point — it is what lets the thread say "four of five sources".
+
+    ``text`` keeps the wording from the first video to make the claim. Videos
+    are analysed in reliability order, so first-wins means best-source-wins;
+    this function depends on that order and would give a worse paraphrase
+    without it.
     """
     kinds: list[tuple[ClaimKind, str]] = [
         ("catalyst", "catalysts"),
@@ -100,8 +106,7 @@ def claims_from_insights(ticker: str, insights: list[VideoInsights]) -> list[Cla
         ("upcoming_event", "upcoming_events"),
     ]
 
-    claims: list[Claim] = []
-    seen: set[str] = set()
+    claims: dict[str, Claim] = {}
     for insight in insights:
         for kind, attribute in kinds:
             for citation in getattr(insight, attribute):
@@ -109,19 +114,41 @@ def claims_from_insights(ticker: str, insights: list[VideoInsights]) -> list[Cla
                 if not text:
                     continue
                 fp = fingerprint(kind, text)
-                if fp in seen:
-                    continue
-                seen.add(fp)
-                claims.append(
-                    Claim(
+                existing = claims.get(fp)
+                if existing is None:
+                    claims[fp] = Claim(
                         ticker=ticker.upper(),
                         kind=kind,
                         text=text,
-                        citation=citation,
+                        citations=[citation],
                         fingerprint=fp,
                     )
-                )
-    return claims
+                elif citation not in existing.citations:
+                    existing.citations.append(citation)
+    return list(claims.values())
+
+
+# Lead with what's new, then what moved, then what several people newly agreed
+# on, then the rest. Ordering the thread's input is a decision the code makes,
+# not the model.
+_NOVELTY_RANK: dict[str, int] = {"new": 0, "developing": 1, "known": 3}
+
+
+def rank_claims(claims: list[Claim]) -> list[Claim]:
+    """Order claims by how much they deserve the reader's attention.
+
+    Newest first; within a novelty band, the claim more sources made wins. A
+    ``known`` claim that a new channel just repeated ranks above a plain
+    ``known`` one — the claim is old, but the agreement isn't.
+    """
+
+    def key(claim: Claim) -> tuple[int, int]:
+        rank = _NOVELTY_RANK.get(claim.novelty, 3)
+        if claim.novelty == "known" and claim.newly_corroborated:
+            rank = 2
+        return (rank, -claim.source_count)
+
+    return sorted(claims, key=key)
 
 
 def partition(
@@ -325,6 +352,7 @@ __all__ = [
     "classify_novelty",
     "fingerprint",
     "partition",
+    "rank_claims",
     "similarity",
     "tokenise",
 ]

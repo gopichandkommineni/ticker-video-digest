@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from collections import Counter
 
 from core.market import compute_reality_score, generate_thesis, get_snapshot
 from core.models import DigestRun, InsightThread, MarketSnapshot, RealityScore
@@ -105,6 +106,23 @@ def render_thread(thread: InsightThread) -> str:
     return "\n".join(lines)
 
 
+def claim_summary(run: DigestRun) -> str:
+    """One line on what the run's claims turned out to be."""
+    counts = Counter(claim.novelty for claim in run.claims)
+    line = (
+        f"Claims: {counts.get('new', 0)} new · "
+        f"{counts.get('developing', 0)} developing · "
+        f"{counts.get('known', 0)} known"
+    )
+    corroborated = sum(1 for claim in run.claims if claim.newly_corroborated)
+    if corroborated:
+        line += f"  ({corroborated} newly corroborated)"
+    multi = sum(1 for claim in run.claims if claim.source_count > 1)
+    if multi:
+        line += f"  ({multi} backed by more than one video)"
+    return line
+
+
 def _print_run_sources(run: DigestRun) -> None:
     print(f"\nSources ({len(run.videos)} selected):")
     for scored in run.videos:
@@ -155,6 +173,8 @@ def _cmd_ticker(args: argparse.Namespace) -> int:
         return 0
 
     _print_run_sources(run)
+    if run.claims:
+        print(f"\n{claim_summary(run)}")
 
     if run.thread is None:
         print("\nNo transcripts could be analysed, so there is no thread.")

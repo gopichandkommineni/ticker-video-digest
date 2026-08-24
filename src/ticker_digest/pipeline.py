@@ -11,10 +11,10 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from core.models import DigestRequest, DigestRun, VideoInsights
+from core.models import Claim, DigestRequest, DigestRun, VideoInsights
 from ticker_digest import store
 from ticker_digest.analyzer import extract_insights
-from ticker_digest.novelty import assess, claims_from_insights
+from ticker_digest.novelty import assess, claims_from_insights, rank_claims
 from ticker_digest.sources import select_videos
 from ticker_digest.thread import build_thread
 from ticker_digest.transcripts import get_transcript
@@ -25,6 +25,37 @@ log = logging.getLogger(__name__)
 def _run_id(ticker: str, generated_at: datetime, source_label: str) -> str:
     seed = f"run|{ticker.upper()}|{generated_at.isoformat()}|{source_label}"
     return hashlib.sha1(seed.encode()).hexdigest()[:12]
+
+
+def mark_corroboration(
+    claims: list[Claim],
+    known_channels: dict[str, set[str]],
+    channel_by_video: dict[str, str],
+) -> list[Claim]:
+    """Flag already-tracked claims that a *new* channel just repeated.
+
+    The claim is old; the agreement is what changed. Counting channels rather
+    than videos is deliberate — one commentator posting three times is one
+    source, not three.
+
+    Two cases stay unflagged: a claim nothing on record covers (it's already
+    ``new``), and a claim whose recorded history predates channel tracking. In
+    the second case we genuinely cannot tell, and saying "newly corroborated"
+    when we don't know would be a lie the reader can't check.
+    """
+    marked: list[Claim] = []
+    for claim in claims:
+        previous = known_channels.get(claim.fingerprint, set())
+        if claim.novelty == "new" or not previous or store.UNKNOWN_CHANNEL in previous:
+            marked.append(claim)
+            continue
+        this_run = {
+            channel_by_video.get(citation.video_id, store.UNKNOWN_CHANNEL)
+            for citation in claim.citations
+        }
+        fresh = {channel for channel in this_run if channel and channel not in previous}
+        marked.append(claim.model_copy(update={"newly_corroborated": bool(fresh)}))
+    return marked
 
 
 def run_digest(
@@ -63,8 +94,16 @@ def run_digest(
     analysed = [sv for sv in videos if sv.metadata.video_id not in skipped]
 
     claims = claims_from_insights(ticker, insights)
+    # Both reads must happen before this run is saved, or it would be judged
+    # against itself.
     known = store.known_claims(ticker, db_path=db_path)
+    known_channels = store.known_claim_channels(ticker, db_path=db_path)
+
     judged = assess(ticker, request.company_name, claims, known)
+    channel_by_video = {
+        scored.metadata.video_id: scored.metadata.channel_id for scored in videos
+    }
+    judged = rank_claims(mark_corroboration(judged, known_channels, channel_by_video))
     for claim in judged:
         claim.first_seen_at = generated_at
 

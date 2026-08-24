@@ -1,24 +1,55 @@
 """Digest storage — every test writes to a tmp_path database, never the real one."""
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
-from core.models import Citation, Claim, DigestRequest, DigestRun, InsightThread, ThreadPost
+from core.models import (
+    Citation,
+    Claim,
+    DigestRequest,
+    DigestRun,
+    InsightThread,
+    ScoredVideo,
+    ThreadPost,
+)
 from ticker_digest import store
+
+from .digest_helpers import make_metadata
 
 # Stored claims are filtered by a lookback window measured from *now*, so
 # these fixtures are anchored to the clock rather than a fixed date.
 NOW = datetime.now(timezone.utc)
 
 
-def _claim(text: str, *, kind: str = "catalyst", fingerprint: str = "fp1") -> Claim:
+def _claim(
+    text: str,
+    *,
+    kind: str = "catalyst",
+    fingerprint: str = "fp1",
+    videos: tuple[str, ...] = ("vid001",),
+) -> Claim:
     return Claim(
         ticker="RKLB",
         kind=kind,
         text=text,
-        citation=Citation(video_id="vid001", timestamp_seconds=10, quote_paraphrase=text),
+        citations=[
+            Citation(video_id=video_id, timestamp_seconds=10, quote_paraphrase=text)
+            for video_id in videos
+        ],
         fingerprint=fingerprint,
         novelty="new",
         novelty_reasoning="First time seen.",
     )
+
+
+def _scored(*videos: tuple[str, str]) -> list:
+    """ScoredVideo stubs carrying just the video → channel mapping."""
+    return [
+        ScoredVideo(
+            metadata=make_metadata(video_id, channel_id=channel_id),
+            reliability_score=0.5,
+        )
+        for video_id, channel_id in videos
+    ]
 
 
 def _thread(thread_id: str = "th001", generated_at: datetime = NOW) -> InsightThread:
@@ -57,12 +88,13 @@ def _run(
     claims: list[Claim] | None = None,
     thread: InsightThread | None = None,
     generated_at: datetime = NOW,
+    videos: list | None = None,
 ) -> DigestRun:
     return DigestRun(
         run_id=run_id,
         request=DigestRequest(ticker="RKLB", company_name="Rocket Lab"),
         generated_at=generated_at,
-        videos=[],
+        videos=videos if videos is not None else [],
         insights=[],
         claims=claims or [],
         thread=thread,
@@ -100,7 +132,7 @@ def test_known_claims_returns_stored_claims(tmp_path) -> None:
 
     assert len(known) == 1
     assert known[0].text == "New defence contract"
-    assert known[0].citation.video_id == "vid001"
+    assert [c.video_id for c in known[0].citations] == ["vid001"]
 
 
 def test_known_claims_is_scoped_to_the_ticker(tmp_path) -> None:
@@ -166,3 +198,171 @@ def test_saving_the_same_run_twice_updates_rather_than_duplicates(tmp_path) -> N
     store.save_run(run, db_path=db)
 
     assert len(store.list_threads(db_path=db)) == 1
+
+
+# ---------------------------------------------------------------------------
+# Citations and corroboration
+# ---------------------------------------------------------------------------
+
+
+def test_every_citation_survives_the_round_trip(tmp_path) -> None:
+    db = tmp_path / "digests.db"
+    claim = _claim("New defence contract", videos=("vid001", "vid002", "vid003"))
+
+    store.save_run(_run(claims=[claim]), db_path=db)
+
+    known = store.known_claims("RKLB", db_path=db)
+    assert known[0].source_count == 3
+    assert {c.video_id for c in known[0].citations} == {"vid001", "vid002", "vid003"}
+
+
+def test_citations_record_the_channel_that_published_each_video(tmp_path) -> None:
+    db = tmp_path / "digests.db"
+    run = _run(
+        claims=[_claim("New defence contract", videos=("vid001", "vid002"))],
+        videos=_scored(("vid001", "chan_A"), ("vid002", "chan_B")),
+    )
+
+    store.save_run(run, db_path=db)
+
+    assert store.known_claim_channels("RKLB", db_path=db) == {
+        "fp1": {"chan_A", "chan_B"}
+    }
+
+
+def test_a_video_the_run_never_ranked_records_an_unknown_channel(tmp_path) -> None:
+    db = tmp_path / "digests.db"
+    run = _run(claims=[_claim("New defence contract")], videos=[])
+
+    store.save_run(run, db_path=db)
+
+    assert store.known_claim_channels("RKLB", db_path=db) == {
+        "fp1": {store.UNKNOWN_CHANNEL}
+    }
+
+
+def test_a_second_sighting_adds_citations_without_duplicating_them(tmp_path) -> None:
+    db = tmp_path / "digests.db"
+    store.save_run(
+        _run("run001", claims=[_claim("New defence contract", videos=("vid001",))]),
+        db_path=db,
+    )
+    store.save_run(
+        _run(
+            "run002",
+            claims=[_claim("New defence contract", videos=("vid001", "vid002"))],
+        ),
+        db_path=db,
+    )
+
+    known = store.known_claims("RKLB", db_path=db)
+    assert len(known) == 1
+    assert known[0].source_count == 2
+
+
+def test_last_seen_at_moves_while_first_seen_at_holds(tmp_path) -> None:
+    db = tmp_path / "digests.db"
+    first = NOW - timedelta(days=5)
+    store.save_run(
+        _run("run001", claims=[_claim("New defence contract")], generated_at=first),
+        db_path=db,
+    )
+    store.save_run(
+        _run("run002", claims=[_claim("New defence contract")], generated_at=NOW),
+        db_path=db,
+    )
+
+    with sqlite3.connect(db) as conn:
+        first_seen, last_seen = conn.execute(
+            "SELECT first_seen_at, last_seen_at FROM claims"
+        ).fetchone()
+
+    assert datetime.fromisoformat(first_seen) == first
+    assert datetime.fromisoformat(last_seen) == NOW
+
+
+# ---------------------------------------------------------------------------
+# Migration from the v1 shape
+# ---------------------------------------------------------------------------
+
+_V1_SCHEMA = """
+CREATE TABLE claims (
+    ticker            TEXT    NOT NULL,
+    fingerprint       TEXT    NOT NULL,
+    kind              TEXT    NOT NULL,
+    text              TEXT    NOT NULL,
+    video_id          TEXT    NOT NULL,
+    timestamp_seconds INTEGER NOT NULL,
+    quote_paraphrase  TEXT    NOT NULL,
+    novelty           TEXT    NOT NULL,
+    novelty_reasoning TEXT    NOT NULL DEFAULT '',
+    related_claim     TEXT,
+    run_id            TEXT    NOT NULL,
+    first_seen_at     TEXT    NOT NULL,
+    PRIMARY KEY (ticker, fingerprint)
+);
+"""
+
+
+def _write_v1_database(db, first_seen: datetime) -> None:
+    with sqlite3.connect(db) as conn:
+        conn.executescript(_V1_SCHEMA)
+        conn.execute(
+            "INSERT INTO claims VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "RKLB",
+                "fp1",
+                "catalyst",
+                "New defence contract",
+                "vid001",
+                42,
+                "Award confirmed",
+                "new",
+                "First time seen.",
+                None,
+                "run001",
+                first_seen.isoformat(),
+            ),
+        )
+        conn.commit()
+
+
+def test_a_v1_database_migrates_in_place(tmp_path) -> None:
+    db = tmp_path / "digests.db"
+    first = NOW - timedelta(days=30)
+    _write_v1_database(db, first)
+
+    store.init_db(db)
+
+    known = store.known_claims("RKLB", db_path=db)
+    assert len(known) == 1
+    assert known[0].text == "New defence contract"
+    # The date that makes novelty mean anything must survive the migration.
+    assert known[0].first_seen_at == first
+    assert known[0].citations[0].timestamp_seconds == 42
+
+    with sqlite3.connect(db) as conn:
+        version = conn.execute("SELECT version FROM schema_version").fetchone()[0]
+    assert version == store.SCHEMA_VERSION
+
+
+def test_migrated_citations_are_marked_unknown_channel(tmp_path) -> None:
+    """v1 didn't record channels, and guessing would be worse than admitting it."""
+    db = tmp_path / "digests.db"
+    _write_v1_database(db, NOW)
+
+    store.init_db(db)
+
+    assert store.known_claim_channels("RKLB", db_path=db) == {
+        "fp1": {store.UNKNOWN_CHANNEL}
+    }
+
+
+def test_migration_is_idempotent(tmp_path) -> None:
+    db = tmp_path / "digests.db"
+    _write_v1_database(db, NOW)
+
+    store.init_db(db)
+    store.init_db(db)
+
+    assert len(store.known_claims("RKLB", db_path=db)) == 1

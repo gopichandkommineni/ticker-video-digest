@@ -108,12 +108,22 @@ def build_thread(
                 "- new: nothing on record covered this before\n"
                 "- developing: an update to something already tracked\n"
                 "- known: a restatement of an existing claim\n\n"
+                "Each claim also carries source_count (how many of this run's videos "
+                "made it) and newly_corroborated (an old claim that a channel which "
+                "had never said it before just repeated).\n\n"
                 "Rules:\n"
                 f"- At most {_MAX_POSTS} posts. Lead with the 'new' claims, then "
                 "'developing'. Only include a 'known' claim when it is needed as "
                 "context for a new one, or when several sources newly agreed on it.\n"
                 "- If nothing is new, say so plainly in the first post. Do not "
                 "manufacture significance.\n"
+                "- A newly_corroborated claim earns a post even though it isn't new. "
+                "Say plainly that the claim is old and the agreement is what changed.\n"
+                "- Say how many sources made a claim when it is more than one. "
+                "Weight agreement between independent commentators over a single "
+                "confident one.\n"
+                "- The claims arrive in priority order. Keep that order unless a post "
+                "genuinely needs an earlier one as context.\n"
                 "- One idea per post. Never merge an unrelated catalyst and red flag.\n"
                 "- Every post carries the citations for the claims it covers, copied "
                 "verbatim from the input. Never invent a video_id or a timestamp.\n"
@@ -143,7 +153,9 @@ def build_thread(
                 "novelty": claim.novelty,
                 "novelty_reasoning": claim.novelty_reasoning,
                 "related_claim": claim.related_claim,
-                "citation": claim.citation.model_dump(mode="json"),
+                "source_count": claim.source_count,
+                "newly_corroborated": claim.newly_corroborated,
+                "citations": [c.model_dump(mode="json") for c in claim.citations],
             }
             for claim in claims
         ],
@@ -175,10 +187,12 @@ def build_thread(
     )
 
     new_count = sum(1 for c in claims if c.novelty == "new")
+    corroborated = sum(1 for c in claims if c.newly_corroborated)
     user_msg = (
         f"Ticker: {ticker} ({company_name})\n"
         f"Source: {source_label} ({source_kind})\n"
-        f"Videos analysed: {len(videos)} — {new_count} of {len(claims)} claims are new\n\n"
+        f"Videos analysed: {len(videos)} — {new_count} of {len(claims)} claims are new, "
+        f"{corroborated} newly corroborated\n\n"
         f"Videos:\n{sources_payload}\n\n"
         f"Per-video summaries:\n{summaries_payload}\n\n"
         f"Judged claims:\n{claims_payload}"

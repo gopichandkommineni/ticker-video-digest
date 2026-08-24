@@ -3,8 +3,15 @@ from datetime import datetime, timezone
 
 import pytest
 
-from core.models import Citation, DigestRequest, DigestRun, InsightThread, ThreadPost
-from ticker_digest.cli import main, render_thread
+from core.models import (
+    Citation,
+    Claim,
+    DigestRequest,
+    DigestRun,
+    InsightThread,
+    ThreadPost,
+)
+from ticker_digest.cli import claim_summary, main, render_thread
 from ticker_digest.quality import score_videos
 from ticker_digest.sources import SourceResolutionError
 
@@ -41,7 +48,27 @@ def _thread() -> InsightThread:
     )
 
 
-def _run(thread: InsightThread | None = None, videos=("vid001",), skipped=None) -> DigestRun:
+def _claim(novelty: str, videos: tuple[str, ...] = ("vid001",), corroborated=False) -> Claim:
+    return Claim(
+        ticker="RKLB",
+        kind="catalyst",
+        text=f"claim-{novelty}-{videos}",
+        citations=[
+            Citation(video_id=v, timestamp_seconds=1, quote_paraphrase="x")
+            for v in videos
+        ],
+        fingerprint=f"fp-{novelty}-{videos}",
+        novelty=novelty,
+        newly_corroborated=corroborated,
+    )
+
+
+def _run(
+    thread: InsightThread | None = None,
+    videos=("vid001",),
+    skipped=None,
+    claims=None,
+) -> DigestRun:
     return DigestRun(
         run_id="run001",
         request=DigestRequest(ticker="RKLB", company_name="Rocket Lab"),
@@ -49,6 +76,7 @@ def _run(thread: InsightThread | None = None, videos=("vid001",), skipped=None) 
         videos=score_videos([make_metadata(v) for v in videos], now=NOW),
         thread=thread,
         skipped=skipped or {},
+        claims=claims or [],
     )
 
 
@@ -194,3 +222,40 @@ def test_threads_empty_list_is_not_an_error(mocker, capsys) -> None:
 def test_unknown_subcommand_is_rejected() -> None:
     with pytest.raises(SystemExit):
         main(["nonsense"])
+
+
+# ---------------------------------------------------------------------------
+# Claim summary line
+# ---------------------------------------------------------------------------
+
+
+def test_claim_summary_counts_each_verdict() -> None:
+    run = _run(claims=[_claim("new"), _claim("new"), _claim("developing"), _claim("known")])
+
+    assert claim_summary(run) == "Claims: 2 new · 1 developing · 1 known"
+
+
+def test_claim_summary_calls_out_corroboration_and_multiple_sources() -> None:
+    run = _run(
+        claims=[
+            _claim("known", ("vid001", "vid002"), corroborated=True),
+            _claim("new"),
+        ]
+    )
+
+    summary = claim_summary(run)
+
+    assert "1 newly corroborated" in summary
+    assert "1 backed by more than one video" in summary
+
+
+def test_ticker_command_prints_the_claim_summary(mocker, capsys) -> None:
+    mocker.patch("ticker_digest.sources.resolve_company_name", return_value="Rocket Lab")
+    mocker.patch(
+        "ticker_digest.pipeline.run_digest",
+        return_value=_run(_thread(), claims=[_claim("new")]),
+    )
+
+    main(["ticker", "RKLB"])
+
+    assert "Claims: 1 new" in capsys.readouterr().out

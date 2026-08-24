@@ -10,6 +10,7 @@ from ticker_digest.novelty import (
     classify_novelty,
     fingerprint,
     partition,
+    rank_claims,
     similarity,
     tokenise,
 )
@@ -22,7 +23,9 @@ def _known(text: str, kind: str = "catalyst") -> Claim:
         ticker="RKLB",
         kind=kind,
         text=text,
-        citation=Citation(video_id="old01", timestamp_seconds=5, quote_paraphrase=text),
+        citations=[
+            Citation(video_id="old01", timestamp_seconds=5, quote_paraphrase=text)
+        ],
         fingerprint=fingerprint(kind, text),
         novelty="new",
         first_seen_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
@@ -83,10 +86,10 @@ def test_claims_from_insights_covers_all_three_kinds() -> None:
 
     assert [c.kind for c in claims] == ["catalyst", "red_flag", "upcoming_event"]
     assert all(c.ticker == "RKLB" for c in claims)
-    assert claims[0].citation.timestamp_seconds == 10
+    assert claims[0].citations[0].timestamp_seconds == 10
 
 
-def test_claims_from_insights_collapses_duplicates_within_the_batch() -> None:
+def test_duplicates_within_the_batch_merge_into_one_claim_with_both_citations() -> None:
     insights = [
         make_insights("vid001", catalysts=["New defence contract"]),
         make_insights("vid002", catalysts=["new defence contract"]),
@@ -95,7 +98,22 @@ def test_claims_from_insights_collapses_duplicates_within_the_batch() -> None:
     claims = claims_from_insights("RKLB", insights)
 
     assert len(claims) == 1
-    assert claims[0].citation.video_id == "vid001"
+    assert claims[0].source_count == 2
+    assert [c.video_id for c in claims[0].citations] == ["vid001", "vid002"]
+    # Wording comes from the first (highest-ranked) source.
+    assert claims[0].text == "New defence contract"
+
+
+def test_source_count_counts_videos_not_citations() -> None:
+    """One commentator repeating themselves is still one source."""
+    insights = [
+        make_insights("vid001", catalysts=["New defence contract"]),
+        make_insights("vid001", catalysts=["New defence contract"]),
+    ]
+
+    claims = claims_from_insights("RKLB", insights)
+
+    assert claims[0].source_count == 1
 
 
 def test_claims_from_insights_ignores_blank_paraphrases() -> None:
@@ -265,3 +283,56 @@ def test_assess_preserves_order_and_only_judges_the_survivors(mocker) -> None:
     sent = client.messages.create.call_args.kwargs["messages"][0]["content"]
     assert "Virginia" in sent
     assert "0. [red_flag]" in sent
+
+
+# ---------------------------------------------------------------------------
+# Ranking
+# ---------------------------------------------------------------------------
+
+
+def _ranked(novelty: str, *, sources: int = 1, corroborated: bool = False) -> Claim:
+    return Claim(
+        ticker="RKLB",
+        kind="catalyst",
+        text=f"{novelty}-{sources}-{corroborated}",
+        citations=[
+            Citation(
+                video_id=f"vid{index}",
+                timestamp_seconds=index,
+                quote_paraphrase="x",
+            )
+            for index in range(sources)
+        ],
+        fingerprint=f"fp-{novelty}-{sources}-{corroborated}",
+        novelty=novelty,
+        newly_corroborated=corroborated,
+    )
+
+
+def test_rank_puts_new_first_then_developing_then_corroborated_then_known() -> None:
+    claims = [
+        _ranked("known"),
+        _ranked("known", corroborated=True),
+        _ranked("developing"),
+        _ranked("new"),
+    ]
+
+    order = [c.novelty for c in rank_claims(claims)]
+
+    assert order == ["new", "developing", "known", "known"]
+    assert rank_claims(claims)[2].newly_corroborated is True
+
+
+def test_within_a_band_more_sources_wins() -> None:
+    lonely = _ranked("new", sources=1)
+    crowded = _ranked("new", sources=4)
+
+    assert rank_claims([lonely, crowded])[0] is crowded
+
+
+def test_ranking_does_not_mutate_the_input() -> None:
+    claims = [_ranked("known"), _ranked("new")]
+
+    rank_claims(claims)
+
+    assert [c.novelty for c in claims] == ["known", "new"]

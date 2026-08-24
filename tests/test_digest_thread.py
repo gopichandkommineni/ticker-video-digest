@@ -6,14 +6,24 @@ from ticker_digest.thread import build_thread
 from .digest_helpers import NOW, make_insights, make_metadata, tool_response
 
 
-def _claim(text: str, novelty: str = "new", video_id: str = "vid001") -> Claim:
+def _claim(
+    text: str,
+    novelty: str = "new",
+    videos: tuple[str, ...] = ("vid001",),
+    *,
+    corroborated: bool = False,
+) -> Claim:
     return Claim(
         ticker="RKLB",
         kind="catalyst",
         text=text,
-        citation=Citation(video_id=video_id, timestamp_seconds=42, quote_paraphrase=text),
+        citations=[
+            Citation(video_id=video_id, timestamp_seconds=42, quote_paraphrase=text)
+            for video_id in videos
+        ],
         fingerprint=f"fp-{text[:8]}",
         novelty=novelty,
+        newly_corroborated=corroborated,
     )
 
 
@@ -136,3 +146,24 @@ def test_a_run_with_nothing_new_still_produces_a_thread(mocker) -> None:
 
     assert thread.new_claim_count == 0
     assert thread.posts[0].novelty == "known"
+
+
+def test_prompt_carries_source_counts_and_corroboration(mocker) -> None:
+    claims = [
+        _claim("Contract award", "known", videos=("vid001", "vid002"), corroborated=True)
+    ]
+    _, client = _build(mocker, _draft([_post()]), claims=claims)
+
+    sent = client.messages.create.call_args.kwargs["messages"][0]["content"]
+    assert '"source_count": 2' in sent
+    assert '"newly_corroborated": true' in sent
+    assert "1 newly corroborated" in sent
+
+
+def test_a_claim_with_several_citations_sends_all_of_them(mocker) -> None:
+    claims = [_claim("Contract award", videos=("vid001", "vid002", "vid003"))]
+    _, client = _build(mocker, _draft([_post()]), claims=claims)
+
+    sent = client.messages.create.call_args.kwargs["messages"][0]["content"]
+    assert sent.count('"video_id": "vid003"') == 1
+    assert '"video_id": "vid002"' in sent

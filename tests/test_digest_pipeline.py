@@ -1,7 +1,7 @@
 """End-to-end pipeline — every external call (YouTube, captions, Claude) is mocked."""
-from core.models import ChannelInfo, DigestRequest, InsightThread
+from core.models import ChannelInfo, Citation, Claim, DigestRequest, InsightThread
 from ticker_digest import store
-from ticker_digest.pipeline import run_digest
+from ticker_digest.pipeline import mark_corroboration, run_digest
 from ticker_digest.quality import score_videos
 
 from .digest_helpers import NOW, make_insights, make_metadata
@@ -149,3 +149,83 @@ def test_claims_are_stamped_with_this_run_time(mocker, tmp_path) -> None:
     run = run_digest(_request(), db_path=tmp_path / "d.db")
 
     assert all(c.first_seen_at == run.generated_at for c in run.claims)
+
+
+# ---------------------------------------------------------------------------
+# mark_corroboration — pure, no pipeline needed
+# ---------------------------------------------------------------------------
+
+
+def _claim(novelty: str = "known", videos: tuple[str, ...] = ("vid001",)) -> Claim:
+    return Claim(
+        ticker="RKLB",
+        kind="catalyst",
+        text="New defence contract",
+        citations=[
+            Citation(video_id=v, timestamp_seconds=10, quote_paraphrase="award")
+            for v in videos
+        ],
+        fingerprint="fp1",
+        novelty=novelty,
+    )
+
+
+def test_a_new_channel_repeating_an_old_claim_is_newly_corroborated() -> None:
+    marked = mark_corroboration(
+        [_claim("known", ("vid002",))],
+        known_channels={"fp1": {"chan_A"}},
+        channel_by_video={"vid002": "chan_B"},
+    )
+
+    assert marked[0].newly_corroborated is True
+
+
+def test_the_same_channel_repeating_itself_is_not_corroboration() -> None:
+    marked = mark_corroboration(
+        [_claim("known", ("vid002",))],
+        known_channels={"fp1": {"chan_A"}},
+        channel_by_video={"vid002": "chan_A"},
+    )
+
+    assert marked[0].newly_corroborated is False
+
+
+def test_a_new_claim_is_never_flagged_as_corroborated() -> None:
+    marked = mark_corroboration(
+        [_claim("new")],
+        known_channels={},
+        channel_by_video={"vid001": "chan_A"},
+    )
+
+    assert marked[0].newly_corroborated is False
+
+
+def test_history_without_channel_attribution_stays_unflagged() -> None:
+    """A pre-v2 database can't answer this, so we don't pretend it can."""
+    from ticker_digest import store
+
+    marked = mark_corroboration(
+        [_claim("known", ("vid002",))],
+        known_channels={"fp1": {store.UNKNOWN_CHANNEL}},
+        channel_by_video={"vid002": "chan_B"},
+    )
+
+    assert marked[0].newly_corroborated is False
+
+
+def test_pipeline_hands_the_thread_ranked_claims(mocker, tmp_path) -> None:
+    mocks = _wire(mocker)
+    # assess() is stubbed in _wire to pass claims through; make it label them
+    # so ranking has something to sort on.
+    labels = iter(["known", "new"])
+    mocker.patch(
+        "ticker_digest.pipeline.assess",
+        side_effect=lambda t, c, claims, known: [
+            claim.model_copy(update={"novelty": next(labels)}) for claim in claims
+        ],
+    )
+
+    run = run_digest(_request(), db_path=tmp_path / "d.db")
+
+    assert [c.novelty for c in run.claims] == ["new", "known"]
+    assert mocks["build"].call_args.kwargs["claims"][0].novelty == "new"

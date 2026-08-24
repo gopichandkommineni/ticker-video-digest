@@ -209,6 +209,45 @@ def test_a_changed_claim_reaches_the_novelty_model(wired) -> None:
     assert len(store.known_claims("RKLB", db_path=wired["db"])) == 2
 
 
+def test_a_second_channel_repeating_a_claim_is_newly_corroborated(wired) -> None:
+    run_digest(_request(), db_path=wired["db"])
+
+    # A different channel, a different video, the same claim in the same words.
+    other_channel = "UC" + "b" * 22
+    wired["youtube"].videos.return_value.list.return_value.execute.return_value = {
+        "items": [
+            {
+                **VIDEOS_RESPONSE["items"][0],
+                "id": "vid003",
+                "snippet": {
+                    **VIDEOS_RESPONSE["items"][0]["snippet"],
+                    "channelId": other_channel,
+                    "channelTitle": "Orbital Notes",
+                },
+            }
+        ]
+    }
+    wired["youtube"].channels.return_value.list.return_value.execute.return_value = {
+        "items": [{"id": other_channel, "statistics": {"subscriberCount": "40000"}}]
+    }
+    wired["payloads"]["report_video_insights"] = {
+        **EXTRACTION,
+        "video_id": "vid003",
+        "catalysts": [
+            {**EXTRACTION["catalysts"][0], "video_id": "vid003"},
+        ],
+    }
+
+    second = run_digest(_request(), db_path=wired["db"])
+
+    assert second.claims[0].novelty == "known"
+    assert second.claims[0].newly_corroborated is True
+
+    # Both channels are now on record as having made the same claim.
+    channels = store.known_claim_channels("RKLB", db_path=wired["db"])
+    assert len(next(iter(channels.values()))) == 2
+
+
 def test_a_video_without_captions_is_skipped_not_fatal(wired) -> None:
     wired["captions"].return_value.fetch.side_effect = TranscriptsDisabled("vid001")
 
