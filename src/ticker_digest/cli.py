@@ -139,8 +139,9 @@ def _print_run_sources(run: DigestRun) -> None:
 
 def _cmd_ticker(args: argparse.Namespace) -> int:
     from core.models import DigestRequest
-    from ticker_digest.pipeline import run_digest
+    from ticker_digest.pipeline import DigestSetupError, run_digest
     from ticker_digest.sources import SourceResolutionError, resolve_company_name
+    from ticker_digest.youtube_client import YouTubeAccessError
 
     ticker = args.symbol.upper()
     company_name = args.company or resolve_company_name(ticker)
@@ -156,8 +157,9 @@ def _cmd_ticker(args: argparse.Namespace) -> int:
 
     try:
         run = run_digest(request, persist=not args.no_store)
-    except SourceResolutionError as exc:
-        print(f"{exc}", file=sys.stderr)
+    except (SourceResolutionError, YouTubeAccessError, DigestSetupError) as exc:
+        # Expected, actionable failures: say what to fix, not where it broke.
+        print(f"\n{exc}\n", file=sys.stderr)
         return 1
 
     if args.json:

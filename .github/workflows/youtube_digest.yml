@@ -1,0 +1,112 @@
+name: YouTube Digest (manual, costs money)
+
+# Runs the YouTube insight thread for one ticker and prints it into the run's
+# Summary tab. Started by hand from the Actions tab — never on a schedule.
+#
+# 💸 This makes Claude API calls: one per video analysed, plus one for the
+# thread, plus at most one for novelty. Keep "limit" small. There is no spend
+# metering yet — see docs/specs/youtube-insight-threads-v2.md, unit 3.
+#
+# COMMITS NOTHING. data/digests.db is git-ignored on purpose: it is a reading
+# history, not production data, and a robot should not own it. To let "what's
+# new" mean anything across runs, the database is carried between runs in the
+# Actions cache instead of in git. Cache eviction (7 days idle) resets that
+# history, and the next run simply reports everything as new again.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ticker:
+        description: "Ticker to digest, e.g. RKLB"
+        required: true
+        default: "RKLB"
+      channel:
+        description: "Optional: read one channel instead of searching (name, @handle, URL or channel id)"
+        required: false
+        default: ""
+      days:
+        description: "How far back to look, in days"
+        required: false
+        default: "7"
+      limit:
+        description: "Maximum videos to analyse (each one is a Claude call)"
+        required: false
+        default: "3"
+
+# Deliberately NOT the db-writer group: this workflow commits nothing, so it
+# neither blocks nor waits for the workflows that write snapshots.db.
+concurrency:
+  group: youtube-digest-${{ github.event.inputs.ticker }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install project
+        run: pip install -e ".[dev]"
+
+      # Rolling key: restore the newest previous cache, save a fresh one each
+      # run, so the claim ledger accumulates without ever entering git.
+      - name: Restore the claim ledger
+        uses: actions/cache@v4
+        with:
+          path: data/digests.db
+          key: digests-db-${{ github.run_id }}
+          restore-keys: |
+            digests-db-
+
+      - name: Report what history we have
+        run: |
+          if [ -f data/digests.db ]; then
+            echo "Restored a ledger: $(du -h data/digests.db | cut -f1)"
+          else
+            echo "No ledger restored — this run will treat every claim as new."
+          fi
+
+      - name: Run the digest
+        run: |
+          set -o pipefail
+          ARGS=(ticker "${{ github.event.inputs.ticker }}"
+                --days "${{ github.event.inputs.days }}"
+                --limit "${{ github.event.inputs.limit }}"
+                --json)
+          if [ -n "${{ github.event.inputs.channel }}" ]; then
+            ARGS+=(--channel "${{ github.event.inputs.channel }}")
+          fi
+          python -m ticker_digest "${ARGS[@]}" > run.json
+
+      - name: Write the thread into the run summary
+        if: always()
+        run: |
+          if [ -s run.json ]; then
+            python -m ticker_digest.report run.json >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## Digest failed" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "No run was produced. See the step log above." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload the raw run
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ github.event.inputs.ticker }}-${{ github.run_id }}
+          path: run.json
+          if-no-files-found: warn
+          retention-days: 30

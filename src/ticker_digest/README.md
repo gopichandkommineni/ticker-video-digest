@@ -16,7 +16,13 @@ python -m ticker_digest threads --ticker RKLB             # what you saved earli
 python -m ticker_digest threads --show 4f2a91c0d3b7       # print one in full
 ```
 
-You need `YOUTUBE_API_KEY` and `ANTHROPIC_API_KEY` in `.env`.
+You need `YOUTUBE_API_KEY` and `ANTHROPIC_API_KEY` in `.env` — real keys, not
+placeholders. A placeholder gets you a one-line message telling you which
+setting is wrong, which is the second-best outcome.
+
+No keys to hand? The same run works from GitHub: **Actions → YouTube Digest →
+Run workflow**, which uses the repository secrets and prints the thread in the
+run's Summary tab.
 
 ---
 
@@ -57,6 +63,7 @@ Channels, not videos — one commentator posting three times is one source.
 | `thread.py` | Writes the thread |
 | `store.py` | SQLite: runs, claims, threads |
 | `pipeline.py` | Wires the above together |
+| `report.py` | Renders a stored run as Markdown, for GitHub or anywhere else |
 | `cli.py` | The command-line entry point |
 
 ## The flow
