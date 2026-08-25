@@ -11,6 +11,8 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
+import anthropic
+
 from core.models import Claim, DigestRequest, DigestRun, VideoInsights
 from ticker_digest import store
 from ticker_digest.analyzer import extract_insights
@@ -20,6 +22,10 @@ from ticker_digest.thread import build_thread
 from ticker_digest.transcripts import get_transcript
 
 log = logging.getLogger(__name__)
+
+
+class DigestSetupError(RuntimeError):
+    """The run can't proceed because of how it's configured, not what it found."""
 
 
 def _run_id(ticker: str, generated_at: datetime, source_label: str) -> str:
@@ -87,6 +93,14 @@ def run_digest(
             continue
         try:
             insights.append(extract_insights(transcript, scored.metadata))
+        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as exc:
+            # Not a bad video — a bad key. Every remaining video would fail the
+            # same way, so stop instead of paying to find that out N times.
+            raise DigestSetupError(
+                "Claude rejected the request: "
+                f"{getattr(exc, 'message', str(exc))}\n"
+                "  Check ANTHROPIC_API_KEY in .env is a real key, not a placeholder."
+            ) from exc
         except Exception as exc:  # noqa: BLE001 — one bad video must not kill the run
             log.warning("Extraction failed for %s: %s", video_id, exc)
             skipped[video_id] = f"extraction failed: {exc}"

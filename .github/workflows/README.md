@@ -1,6 +1,6 @@
 # `.github/workflows/` — the robots
 
-Ten automated jobs that GitHub runs for this project. They're why the dashboard
+Eleven automated jobs that GitHub runs for this project. They're why the dashboard
 has fresh data without anyone pressing anything.
 
 Watch them in the **Actions** tab on GitHub. Anything with "manual" below is
@@ -23,6 +23,7 @@ close.
 
 | Workflow | Does |
 |---|---|
+| `youtube_digest.yml` | Read what YouTube said about one stock, and print the thread in the run's Summary tab. 💸 Costs money. |
 | `fintwit-backfill.yml` | Fill in tweet history for one or more handles. 💸 Costs money. |
 | `fintwit-schedule.yml` | Pause or resume the nightly tweet ingest. |
 | `fintwit-variance.yml` | Ask both tweet providers the same question N times and compare — do they agree with themselves? |
@@ -34,6 +35,21 @@ close.
 
 Not every job has a workflow: `subreddit_match_run.py` in
 `src/casino_dashboard/jobs/` is run by hand, not on a schedule.
+
+### The digest is manual on purpose
+
+`youtube_digest.yml` has no `schedule:` block and won't get one by accident.
+Running it across the whole universe would multiply YouTube quota by 64 and
+Claude spend by however many videos each stock attracts — a decision to make
+deliberately, with the spend metering that doesn't exist yet
+(`docs/specs/youtube-insight-threads-v2.md`, unit 3).
+
+It also **commits nothing**. `data/digests.db` is git-ignored because it's a
+reading history, not production data. To keep "what's new" meaningful between
+runs, the workflow carries that database in the **Actions cache** rather than
+in git — a rolling key restores the newest copy and saves a fresh one each run.
+Caches are evicted after 7 idle days; when that happens the next run just
+reports everything as new again. Nothing breaks.
 
 ---
 

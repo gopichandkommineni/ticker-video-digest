@@ -17,12 +17,50 @@ import re
 from datetime import datetime, timedelta, timezone
 
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 from core.config import YOUTUBE_API_KEY
 from core.models import ChannelInfo, VideoMetadata
 from ticker_digest.quality import passes_quality_filters
 
 log = logging.getLogger(__name__)
+
+
+class YouTubeAccessError(RuntimeError):
+    """The YouTube API refused us — bad key, disabled API, or quota gone.
+
+    Raised instead of letting googleapiclient's HttpError reach the user: the
+    three ways this fails in practice each have a different fix, and a stack
+    trace tells you none of them.
+    """
+
+
+def _execute(request, what: str):
+    """Run an API request, turning the predictable refusals into plain English."""
+    try:
+        return request.execute()
+    except HttpError as exc:
+        reason = ""
+        try:
+            reason = exc.error_details[0].get("reason", "")  # type: ignore[index]
+        except (AttributeError, IndexError, KeyError, TypeError):
+            pass
+        status = getattr(exc.resp, "status", None)
+
+        if reason in {"quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded"}:
+            raise YouTubeAccessError(
+                "YouTube API quota is used up for today. The daily free quota is "
+                "10,000 units and one search costs 100. It resets at midnight "
+                "Pacific."
+            ) from exc
+        if status in {400, 403} or reason in {"badRequest", "keyInvalid", "forbidden"}:
+            raise YouTubeAccessError(
+                f"YouTube API rejected the request ({what}): {exc.reason}.\n"
+                "  Check YOUTUBE_API_KEY in .env is a real key, not a placeholder, "
+                "and that\n"
+                "  'YouTube Data API v3' is enabled for it in the Google Cloud console."
+            ) from exc
+        raise
 
 # YouTube channel ids are always "UC" + 22 url-safe characters.
 _CHANNEL_ID_RE = re.compile(r"^UC[\w-]{22}$")
@@ -60,10 +98,9 @@ def _published_after(days: int) -> str:
 def _subscriber_counts(youtube, channel_ids: list[str]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for chunk in _chunks(channel_ids):
-        resp = (
-            youtube.channels()
-            .list(id=",".join(chunk), part="statistics")
-            .execute()
+        resp = _execute(
+            youtube.channels().list(id=",".join(chunk), part="statistics"),
+            "channel lookup",
         )
         for channel in resp.get("items", []):
             counts[channel["id"]] = int(
@@ -80,10 +117,11 @@ def _hydrate_videos(youtube, video_ids: list[str]) -> list[VideoMetadata]:
     """
     video_items: list[dict] = []
     for chunk in _chunks(video_ids):
-        resp = (
-            youtube.videos()
-            .list(id=",".join(chunk), part="snippet,contentDetails,statistics")
-            .execute()
+        resp = _execute(
+            youtube.videos().list(
+                id=",".join(chunk), part="snippet,contentDetails,statistics"
+            ),
+            "video lookup",
         )
         video_items.extend(resp.get("items", []))
 
@@ -146,9 +184,8 @@ def search_recent_videos(
     query = f'"{ticker}" OR "{company_name}" stock'
     log.info("YouTube search: %r published after %s", query, published_after)
 
-    search_resp = (
-        youtube.search()
-        .list(
+    search_resp = _execute(
+        youtube.search().list(
             q=query,
             part="id",
             type="video",
@@ -157,8 +194,8 @@ def search_recent_videos(
             publishedAfter=published_after,
             regionCode="US",
             relevanceLanguage="en",
-        )
-        .execute()
+        ),
+        "video search",
     )
 
     video_ids = [item["id"]["videoId"] for item in search_resp.get("items", [])]
@@ -173,10 +210,9 @@ def search_recent_videos(
 
 
 def _channel_info_by_id(youtube, channel_id: str) -> ChannelInfo | None:
-    resp = (
-        youtube.channels()
-        .list(id=channel_id, part="snippet,statistics")
-        .execute()
+    resp = _execute(
+        youtube.channels().list(id=channel_id, part="snippet,statistics"),
+        "channel lookup",
     )
     items = resp.get("items", [])
     if not items:
@@ -222,12 +258,13 @@ def resolve_channel(query: str) -> ChannelInfo | None:
     if handle_match:
         handle = handle_match.group(1)
         try:
-            resp = (
-                youtube.channels()
-                .list(forHandle=f"@{handle}", part="snippet,statistics")
-                .execute()
+            resp = _execute(
+                youtube.channels().list(forHandle=f"@{handle}", part="snippet,statistics"),
+                "handle lookup",
             )
         except Exception as exc:  # noqa: BLE001 — older clients lack forHandle
+            # Includes a genuinely bad key; the name search below hits the same
+            # wall and reports it properly rather than blaming the handle.
             log.debug("forHandle lookup failed for @%s, falling back: %s", handle, exc)
         else:
             items = resp.get("items", [])
@@ -235,10 +272,9 @@ def resolve_channel(query: str) -> ChannelInfo | None:
                 return _to_channel_info(items[0])
         query = handle  # fall through to a name search on the bare handle
 
-    search_resp = (
-        youtube.search()
-        .list(q=query, part="snippet", type="channel", maxResults=1)
-        .execute()
+    search_resp = _execute(
+        youtube.search().list(q=query, part="snippet", type="channel", maxResults=1),
+        "channel search",
     )
     items = search_resp.get("items", [])
     if not items:
@@ -278,7 +314,7 @@ def list_channel_videos(
     if query:
         params["q"] = query
 
-    search_resp = youtube.search().list(**params).execute()
+    search_resp = _execute(youtube.search().list(**params), "channel video list")
     video_ids = [
         item["id"]["videoId"]
         for item in search_resp.get("items", [])

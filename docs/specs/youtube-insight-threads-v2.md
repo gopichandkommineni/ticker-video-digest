@@ -267,6 +267,14 @@ git-ignored, and put a robot in charge of your claim ledger.
 decision to be made on its own merits, not smuggled in as an implementation
 detail of batching.
 
+**Amended 2026-08-25.** A manually-triggered workflow (`youtube_digest.yml`)
+now runs a *single-ticker* digest on GitHub, for people without keys on their
+own machine. It changes nothing about the decision above: no `schedule:` block,
+one ticker per run, and it still commits nothing. Persistence between runs is
+the Actions cache — the ledger survives without entering git, and an evicted
+cache degrades to "everything is new" rather than to an error. Batch across the
+universe remains local-only and still waits on unit 3's metering.
+
 ## Tests
 
 The ledger refuses the call that would exceed a cap; quota is charged at real
