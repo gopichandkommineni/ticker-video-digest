@@ -9,6 +9,7 @@ from typing import Any
 import anthropic
 from pydantic import BaseModel, ValidationError
 
+from core.config import EXTRACTION_MODEL, MAX_TRANSCRIPT_CHARS, SYNTHESIS_MODEL
 from core.models import (
     DigestReport,
     Sentiment,
@@ -48,6 +49,14 @@ def extract_insights(transcript: Transcript, metadata: VideoMetadata) -> VideoIn
     formatted = "\n".join(
         f"[{int(seg.start_seconds)}s] {seg.text}" for seg in transcript.segments
     )
+    if len(formatted) > MAX_TRANSCRIPT_CHARS:
+        log.info(
+            "Truncating transcript for %s: %d chars -> %d",
+            metadata.video_id,
+            len(formatted),
+            MAX_TRANSCRIPT_CHARS,
+        )
+        formatted = formatted[:MAX_TRANSCRIPT_CHARS] + "\n[transcript truncated]"
 
     system = [
         {
@@ -86,7 +95,7 @@ def extract_insights(transcript: Transcript, metadata: VideoMetadata) -> VideoIn
 
     def _call(msgs: list[dict[str, Any]]) -> Any:
         return client.messages.create(
-            model="claude-sonnet-4-6",
+            model=EXTRACTION_MODEL,
             max_tokens=4096,
             system=system,  # type: ignore[arg-type]
             messages=msgs,  # type: ignore[arg-type]
@@ -160,7 +169,7 @@ def synthesize_digest(
     messages: list[dict[str, Any]] = [{"role": "user", "content": user_msg}]
 
     response = client.messages.create(
-        model="claude-opus-4-7",
+        model=SYNTHESIS_MODEL,
         max_tokens=8192,
         system=system,  # type: ignore[arg-type]
         messages=messages,  # type: ignore[arg-type]

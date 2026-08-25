@@ -149,6 +149,39 @@ To force a refresh in production instead: GitHub → **Actions** → *Daily Refr
 
 ---
 
+## Read what YouTube is saying about a stock *(a command)*
+
+```bash
+./run digest RKLB
+```
+
+This finds recent YouTube videos about the stock, reads their subtitles, and
+prints a short thread of what commentators said — with each point marked **NEW**,
+**DEVELOPING** or **KNOWN**, and a link that jumps to the exact second of video
+it came from.
+
+"New" is compared against digests you ran before, so the first run for a stock
+marks everything new and the second one starts being useful.
+
+If you already trust a particular YouTube channel, name it instead of searching:
+
+```bash
+./run digest RKLB --channel "@spaceinvesting"
+```
+
+Every digest is saved. To re-read them without paying for the AI again:
+
+```bash
+./run threads --ticker RKLB      # list them
+./run threads --show 4f2a91c0d3b7   # print one
+```
+
+This needs two API keys in `.env` (`YOUTUBE_API_KEY` and `ANTHROPIC_API_KEY` —
+see *Add an API key* below), makes AI calls that cost a small amount of money,
+and takes a minute or two. Nothing it prints is investment advice.
+
+---
+
 ## Change how something looks on a page *(a code change)*
 
 Find the page in `pages/` — the filename matches the sidebar entry. Streamlit

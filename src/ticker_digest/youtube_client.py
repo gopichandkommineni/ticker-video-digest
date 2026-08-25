@@ -1,14 +1,40 @@
-"""YouTube Data API v3 client: search_recent_videos, get_video_metadata."""
+"""YouTube Data API v3 client.
+
+Two ways in, matching the two ways a user asks for a digest:
+
+- ``search_recent_videos`` — "what is YouTube saying about RKLB?"
+- ``resolve_channel`` + ``list_channel_videos`` — "what did *this channel*
+  say?", for when the user already trusts a specific commentator.
+
+Both paths return plain ``VideoMetadata`` that has been through the quality
+filter in :mod:`ticker_digest.quality`; ranking happens in
+:mod:`ticker_digest.sources`.
+"""
+from __future__ import annotations
+
 import logging
 import re
 from datetime import datetime, timedelta, timezone
 
 from googleapiclient.discovery import build
 
-from core.config import MIN_SUBSCRIBER_COUNT, MIN_VIDEO_DURATION_SECONDS, YOUTUBE_API_KEY
-from core.models import VideoMetadata
+from core.config import YOUTUBE_API_KEY
+from core.models import ChannelInfo, VideoMetadata
+from ticker_digest.quality import passes_quality_filters
 
 log = logging.getLogger(__name__)
+
+# YouTube channel ids are always "UC" + 22 url-safe characters.
+_CHANNEL_ID_RE = re.compile(r"^UC[\w-]{22}$")
+_CHANNEL_URL_ID_RE = re.compile(r"youtube\.com/channel/(UC[\w-]{22})")
+_HANDLE_RE = re.compile(r"@([A-Za-z0-9._-]+)")
+
+# The API accepts at most 50 ids per videos.list / channels.list call.
+_MAX_IDS_PER_CALL = 50
+
+
+def _client():
+    return build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
 
 
 def _parse_iso8601_duration(duration: str) -> int:
@@ -20,23 +46,103 @@ def _parse_iso8601_duration(duration: str) -> int:
     return hours * 3600 + minutes * 60 + seconds
 
 
+def _chunks(items: list[str], size: int = _MAX_IDS_PER_CALL):
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
+
+
+def _published_after(days: int) -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=days)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+
+
+def _subscriber_counts(youtube, channel_ids: list[str]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for chunk in _chunks(channel_ids):
+        resp = (
+            youtube.channels()
+            .list(id=",".join(chunk), part="statistics")
+            .execute()
+        )
+        for channel in resp.get("items", []):
+            counts[channel["id"]] = int(
+                channel.get("statistics", {}).get("subscriberCount", 0)
+            )
+    return counts
+
+
+def _hydrate_videos(youtube, video_ids: list[str]) -> list[VideoMetadata]:
+    """Turn bare video ids into full metadata.
+
+    Two batched calls: ``videos.list`` for snippet/duration/views, then one
+    ``channels.list`` for the subscriber counts of every channel involved.
+    """
+    video_items: list[dict] = []
+    for chunk in _chunks(video_ids):
+        resp = (
+            youtube.videos()
+            .list(id=",".join(chunk), part="snippet,contentDetails,statistics")
+            .execute()
+        )
+        video_items.extend(resp.get("items", []))
+
+    if not video_items:
+        return []
+
+    channel_ids = list({item["snippet"]["channelId"] for item in video_items})
+    subscriber_map = _subscriber_counts(youtube, channel_ids)
+
+    videos: list[VideoMetadata] = []
+    for item in video_items:
+        snippet = item["snippet"]
+        channel_id = snippet["channelId"]
+        videos.append(
+            VideoMetadata(
+                video_id=item["id"],
+                title=snippet["title"],
+                channel_id=channel_id,
+                channel_title=snippet["channelTitle"],
+                channel_subscriber_count=subscriber_map.get(channel_id, 0),
+                published_at=datetime.fromisoformat(
+                    snippet["publishedAt"].replace("Z", "+00:00")
+                ),
+                duration_seconds=_parse_iso8601_duration(
+                    item["contentDetails"]["duration"]
+                ),
+                view_count=int(item.get("statistics", {}).get("viewCount", 0)),
+            )
+        )
+    return videos
+
+
+def _apply_quality_filter(
+    videos: list[VideoMetadata], ticker: str | None
+) -> list[VideoMetadata]:
+    kept: list[VideoMetadata] = []
+    for video in videos:
+        ok, reason = passes_quality_filters(video, ticker)
+        if ok:
+            kept.append(video)
+        else:
+            log.debug("Skipping %s (%s): %s", video.video_id, video.title, reason)
+    return kept
+
+
 def search_recent_videos(
     ticker: str,
     company_name: str,
     days: int = 7,
+    max_results: int = 50,
 ) -> list[VideoMetadata]:
-    """Return quality-filtered VideoMetadata for recent YouTube videos about *ticker*.
+    """Return quality-filtered videos about *ticker* published in the last *days*.
 
-    Makes three batched API calls: search, videos.list, channels.list.
-    Filters out videos shorter than MIN_VIDEO_DURATION_SECONDS or from channels
-    with fewer than MIN_SUBSCRIBER_COUNT subscribers.
-    Results are sorted by view_count descending.
+    Results are sorted by view count descending. Reliability ranking is a
+    separate step — see :func:`ticker_digest.sources.select_videos`.
     """
-    youtube = build("youtube", "v3", developerKey=YOUTUBE_API_KEY)
+    youtube = _client()
 
-    published_after = (datetime.now(timezone.utc) - timedelta(days=days)).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
+    published_after = _published_after(days)
     query = f'"{ticker}" OR "{company_name}" stock'
     log.info("YouTube search: %r published after %s", query, published_after)
 
@@ -47,7 +153,7 @@ def search_recent_videos(
             part="id",
             type="video",
             order="date",
-            maxResults=50,
+            maxResults=min(max_results, _MAX_IDS_PER_CALL),
             publishedAfter=published_after,
             regionCode="US",
             relevanceLanguage="en",
@@ -60,61 +166,129 @@ def search_recent_videos(
         log.info("No videos found for %r", query)
         return []
 
-    # Single batched call for snippet + duration + view counts
-    videos_resp = (
-        youtube.videos()
-        .list(
-            id=",".join(video_ids),
-            part="snippet,contentDetails,statistics",
-        )
-        .execute()
-    )
-    video_items = videos_resp.get("items", [])
-
-    # Single batched call for subscriber counts
-    channel_ids = list({item["snippet"]["channelId"] for item in video_items})
-    channels_resp = (
-        youtube.channels()
-        .list(
-            id=",".join(channel_ids),
-            part="statistics",
-        )
-        .execute()
-    )
-    subscriber_map: dict[str, int] = {
-        ch["id"]: int(ch["statistics"].get("subscriberCount", 0))
-        for ch in channels_resp.get("items", [])
-    }
-
-    results: list[VideoMetadata] = []
-    for item in video_items:
-        snippet = item["snippet"]
-        duration_s = _parse_iso8601_duration(item["contentDetails"]["duration"])
-        channel_id = snippet["channelId"]
-        subs = subscriber_map.get(channel_id, 0)
-
-        if duration_s < MIN_VIDEO_DURATION_SECONDS:
-            log.debug("Skipping %s: %ds < min duration", item["id"], duration_s)
-            continue
-        if subs < MIN_SUBSCRIBER_COUNT:
-            log.debug("Skipping %s: %d subs < min subs", item["id"], subs)
-            continue
-
-        results.append(
-            VideoMetadata(
-                video_id=item["id"],
-                title=snippet["title"],
-                channel_id=channel_id,
-                channel_title=snippet["channelTitle"],
-                channel_subscriber_count=subs,
-                published_at=datetime.fromisoformat(
-                    snippet["publishedAt"].replace("Z", "+00:00")
-                ),
-                duration_seconds=duration_s,
-                view_count=int(item["statistics"].get("viewCount", 0)),
-            )
-        )
-
+    results = _apply_quality_filter(_hydrate_videos(youtube, video_ids), ticker)
     results.sort(key=lambda v: v.view_count, reverse=True)
     log.info("Returning %d videos after quality filter", len(results))
+    return results
+
+
+def _channel_info_by_id(youtube, channel_id: str) -> ChannelInfo | None:
+    resp = (
+        youtube.channels()
+        .list(id=channel_id, part="snippet,statistics")
+        .execute()
+    )
+    items = resp.get("items", [])
+    if not items:
+        return None
+    return _to_channel_info(items[0])
+
+
+def _to_channel_info(item: dict) -> ChannelInfo:
+    snippet = item.get("snippet", {})
+    stats = item.get("statistics", {})
+    custom_url = snippet.get("customUrl") or ""
+    handle_match = _HANDLE_RE.search(custom_url)
+    return ChannelInfo(
+        channel_id=item["id"],
+        title=snippet.get("title", item["id"]),
+        handle=f"@{handle_match.group(1)}" if handle_match else None,
+        subscriber_count=int(stats.get("subscriberCount", 0)),
+        video_count=int(stats.get("videoCount", 0)),
+        view_count=int(stats.get("viewCount", 0)),
+    )
+
+
+def resolve_channel(query: str) -> ChannelInfo | None:
+    """Resolve a channel id, ``@handle``, channel URL or plain name.
+
+    Returns None when nothing matches, so the caller can tell the user their
+    channel name was wrong rather than silently digesting the wrong creator.
+    """
+    query = query.strip()
+    if not query:
+        return None
+
+    youtube = _client()
+
+    url_match = _CHANNEL_URL_ID_RE.search(query)
+    if url_match:
+        return _channel_info_by_id(youtube, url_match.group(1))
+
+    if _CHANNEL_ID_RE.match(query):
+        return _channel_info_by_id(youtube, query)
+
+    handle_match = _HANDLE_RE.search(query)
+    if handle_match:
+        handle = handle_match.group(1)
+        try:
+            resp = (
+                youtube.channels()
+                .list(forHandle=f"@{handle}", part="snippet,statistics")
+                .execute()
+            )
+        except Exception as exc:  # noqa: BLE001 — older clients lack forHandle
+            log.debug("forHandle lookup failed for @%s, falling back: %s", handle, exc)
+        else:
+            items = resp.get("items", [])
+            if items:
+                return _to_channel_info(items[0])
+        query = handle  # fall through to a name search on the bare handle
+
+    search_resp = (
+        youtube.search()
+        .list(q=query, part="snippet", type="channel", maxResults=1)
+        .execute()
+    )
+    items = search_resp.get("items", [])
+    if not items:
+        log.info("No channel matched %r", query)
+        return None
+
+    snippet_id = items[0]["id"]
+    channel_id = snippet_id.get("channelId") if isinstance(snippet_id, dict) else snippet_id
+    if not channel_id:
+        return None
+    return _channel_info_by_id(youtube, channel_id)
+
+
+def list_channel_videos(
+    channel_id: str,
+    days: int = 30,
+    query: str | None = None,
+    max_results: int = 50,
+    ticker: str | None = None,
+) -> list[VideoMetadata]:
+    """Return quality-filtered recent videos from one channel, newest first.
+
+    *query* narrows the channel's uploads to a topic (usually the ticker or
+    company name) — useful when the user trusts a generalist channel but only
+    cares about one holding.
+    """
+    youtube = _client()
+
+    params = {
+        "channelId": channel_id,
+        "part": "id",
+        "type": "video",
+        "order": "date",
+        "maxResults": min(max_results, _MAX_IDS_PER_CALL),
+        "publishedAfter": _published_after(days),
+    }
+    if query:
+        params["q"] = query
+
+    search_resp = youtube.search().list(**params).execute()
+    video_ids = [
+        item["id"]["videoId"]
+        for item in search_resp.get("items", [])
+        if item.get("id", {}).get("videoId")
+    ]
+    if not video_ids:
+        log.info("Channel %s has no matching videos in the last %d days", channel_id, days)
+        return []
+
+    results = _apply_quality_filter(_hydrate_videos(youtube, video_ids), ticker)
+    results.sort(key=lambda v: v.published_at, reverse=True)
+    log.info("Channel %s: %d videos after quality filter", channel_id, len(results))
     return results

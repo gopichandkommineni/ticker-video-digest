@@ -117,3 +117,63 @@ REALITY_SCORE_WEIGHTS: dict[str, float] = {
     "market": 0.5,
     "economy": 0.5,
 }
+
+
+# ---------------------------------------------------------------------------
+# YouTube digest — models, source scoring, novelty, storage
+# ---------------------------------------------------------------------------
+
+# Two-pass pipeline: a cheaper model per video, a stronger one for synthesis.
+# Overridable so a run can be pinned to a different model without a code change.
+EXTRACTION_MODEL: str = os.environ.get(
+    "TICKER_DIGEST_EXTRACTION_MODEL", "claude-sonnet-4-6"
+).strip()
+SYNTHESIS_MODEL: str = os.environ.get(
+    "TICKER_DIGEST_SYNTHESIS_MODEL", "claude-opus-4-7"
+).strip()
+
+# Transcripts are truncated before they reach the model. A 2-hour video is
+# ~90k characters; this keeps a single extraction call bounded.
+MAX_TRANSCRIPT_CHARS: int = 120_000
+
+# Reliability scoring. Each component is normalised to 0..1 and combined with
+# these weights, so the total is also 0..1. Subscribers and views say "does
+# anyone listen to this channel"; engagement (views per subscriber) says "did
+# this particular video land"; depth rewards long-form over a 3-minute take;
+# recency prefers commentary published against current facts.
+RELIABILITY_WEIGHTS: dict[str, float] = {
+    "subscribers": 0.30,
+    "views": 0.25,
+    "engagement": 0.15,
+    "depth": 0.15,
+    "recency": 0.15,
+}
+
+# Saturation points for the log-scaled components — a channel at or above this
+# subscriber count scores 1.0 on that component.
+RELIABILITY_SUBSCRIBER_SATURATION: int = 500_000
+RELIABILITY_VIEW_SATURATION: int = 100_000
+# Depth saturates at 20 minutes; a video this long or longer is "in depth".
+RELIABILITY_DEPTH_SATURATION_SECONDS: int = 1_200
+
+# Titles that look like engagement bait are dropped before transcription.
+SPAM_TITLE_EMOJI: tuple[str, ...] = ("🚀", "🔥", "💎", "🌙", "💰")
+# ALL-CAPS detection ignores the ticker itself, so "RKLB stock" is fine but
+# "RKLB STOCK IS ABOUT TO EXPLODE" is not. A title is spammy when this share
+# of its long words are upper-case.
+SPAM_TITLE_CAPS_RATIO: float = 0.7
+# More than this many spam emoji anywhere in the title is also bait.
+SPAM_TITLE_MAX_EMOJI: int = 1
+
+# Novelty detection. Claims from a new run are compared against claims stored
+# from earlier runs for the same ticker within this window.
+NOVELTY_LOOKBACK_DAYS: int = 90
+# Jaccard similarity over normalised claim tokens. At or above this, the claim
+# is a restatement and is marked "known" without spending an LLM call.
+CLAIM_SIMILARITY_THRESHOLD: float = 0.72
+
+# Where digest runs, claims and threads are stored. Separate from the
+# dashboard's snapshots.db, and git-ignored (see .gitignore).
+DIGEST_DB_PATH: Path = Path(
+    os.environ.get("TICKER_DIGEST_DB", str(Path(__file__).parents[2] / "data" / "digests.db"))
+)

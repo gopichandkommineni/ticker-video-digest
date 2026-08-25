@@ -30,6 +30,8 @@ cmd_help() {
     ./run test         Run the automated checks.
     ./run check        Health check: is this machine set up correctly?
     ./run market       Print the "is the market expensive?" report in the terminal.
+    ./run digest RKLB  Read what YouTube said about a stock, and what's new.
+    ./run threads      Show the digests you generated earlier.
     ./run refresh      Download fresh data into a THROWAWAY local database.
                        (The real data is refreshed automatically on GitHub.)
     ./run clean        Delete caches and throwaway files. Safe.
@@ -75,6 +77,22 @@ cmd_test() {
 cmd_market() {
   need_venv
   "$PY" -m ticker_digest market --thesis
+}
+
+cmd_digest() {
+  need_venv
+  if [ $# -eq 0 ]; then
+    die "Which stock? Try:  ./run digest RKLB"
+  fi
+  bold "Reading what YouTube said about $1…"
+  echo "This makes AI calls, so it costs a little money and takes a minute."
+  echo
+  "$PY" -m ticker_digest ticker "$@"
+}
+
+cmd_threads() {
+  need_venv
+  "$PY" -m ticker_digest threads "$@"
 }
 
 cmd_refresh() {
@@ -128,6 +146,8 @@ case "${1:-help}" in
   test|tests) shift; cmd_test "$@" ;;
   check|doctor) shift; cmd_check "$@" ;;
   market)     shift; cmd_market "$@" ;;
+  digest)     shift; cmd_digest "$@" ;;
+  threads)    shift; cmd_threads "$@" ;;
   refresh)    shift; cmd_refresh "$@" ;;
   clean)      shift; cmd_clean "$@" ;;
   help|-h|--help) cmd_help ;;

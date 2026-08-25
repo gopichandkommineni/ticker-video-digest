@@ -231,8 +231,9 @@ in `scripts/` have already been run; they're kept for the record.
 **Probe** — a small experiment answering one empirical question. Everything in
 `research/` is a probe plus its saved results.
 
-**Placeholder** — code that exists but isn't finished or wired up.
-`src/ticker_digest/` is a placeholder.
+**Placeholder** — code that exists but isn't finished or wired up. Nothing in
+`src/` is a placeholder any more; `src/ticker_digest/` was the last one, and it
+now runs from the command line (`./run digest RKLB`).
 
 **Canonical** — in this repo, a file that must not be regenerated or
 overwritten without an explicit instruction: `config/themes.yaml` and
