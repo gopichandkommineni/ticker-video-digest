@@ -59,7 +59,7 @@ def _post(
 def _build(mocker, draft: dict, *, claims=None, videos=None):
     client = mocker.MagicMock()
     client.messages.create.return_value = tool_response("report_thread", draft)
-    mocker.patch("ticker_digest.thread.anthropic.Anthropic", return_value=client)
+    mocker.patch("ticker_digest.llm.anthropic.Anthropic", return_value=client)
 
     scored = videos if videos is not None else score_videos([make_metadata("vid001")], now=NOW)
     thread = build_thread(

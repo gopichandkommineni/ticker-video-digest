@@ -175,7 +175,7 @@ def test_unrelated_claim_survives_to_become_a_candidate() -> None:
 
 
 def test_no_history_means_everything_is_new_and_no_call_is_made(mocker) -> None:
-    anthropic_cls = mocker.patch("ticker_digest.novelty.anthropic.Anthropic")
+    anthropic_cls = mocker.patch("ticker_digest.llm.anthropic.Anthropic")
     claims = claims_from_insights("RKLB", [make_insights("vid001", catalysts=["Anything"])])
 
     result = classify_novelty("RKLB", "Rocket Lab", claims, known=[])
@@ -185,7 +185,7 @@ def test_no_history_means_everything_is_new_and_no_call_is_made(mocker) -> None:
 
 
 def test_no_candidates_means_no_call_is_made(mocker) -> None:
-    anthropic_cls = mocker.patch("ticker_digest.novelty.anthropic.Anthropic")
+    anthropic_cls = mocker.patch("ticker_digest.llm.anthropic.Anthropic")
 
     assert classify_novelty("RKLB", "Rocket Lab", [], known=[_known("x")]) == []
     anthropic_cls.assert_not_called()
@@ -210,7 +210,7 @@ def test_classification_is_applied_by_index(mocker) -> None:
     }
     client = mocker.MagicMock()
     client.messages.create.return_value = tool_response("classify_claims", payload)
-    mocker.patch("ticker_digest.novelty.anthropic.Anthropic", return_value=client)
+    mocker.patch("ticker_digest.llm.anthropic.Anthropic", return_value=client)
 
     claims = claims_from_insights(
         "RKLB",
@@ -236,7 +236,7 @@ def test_unclassified_claims_default_to_new(mocker) -> None:
     client.messages.create.return_value = tool_response(
         "classify_claims", {"classifications": []}
     )
-    mocker.patch("ticker_digest.novelty.anthropic.Anthropic", return_value=client)
+    mocker.patch("ticker_digest.llm.anthropic.Anthropic", return_value=client)
 
     claims = claims_from_insights("RKLB", [make_insights("vid001", catalysts=["Something"])])
 
@@ -260,7 +260,7 @@ def test_assess_preserves_order_and_only_judges_the_survivors(mocker) -> None:
             ]
         },
     )
-    mocker.patch("ticker_digest.novelty.anthropic.Anthropic", return_value=client)
+    mocker.patch("ticker_digest.llm.anthropic.Anthropic", return_value=client)
 
     known = [_known("Neutron first launch scheduled for Q4")]
     claims = claims_from_insights(

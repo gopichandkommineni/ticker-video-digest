@@ -31,14 +31,25 @@ APIFY_TOKEN: str = os.environ.get("APIFY_TOKEN", "").strip()
 # Actor id in the API "username~actor-name" form. Override to use a different one.
 APIFY_REDDIT_ACTOR: str = os.environ.get("APIFY_REDDIT_ACTOR", "trudax~reddit-scraper").strip()
 
-if not ANTHROPIC_API_KEY:
-    raise EnvironmentError(
-        "ANTHROPIC_API_KEY is not set. Add it to .env or the environment."
-    )
+# ANTHROPIC_API_KEY is deliberately *not* required at import. Two reasons: the
+# SDK resolves credentials from more places than this variable (an `ant auth
+# login` profile counts), and the YouTube digest can reach Claude through a
+# locally installed Claude Code CLI with no key at all. Features that truly
+# need a key call require_anthropic_key() instead.
 if not YOUTUBE_API_KEY:
     raise EnvironmentError(
         "YOUTUBE_API_KEY is not set. Add it to .env or the environment."
     )
+
+def require_anthropic_key(feature: str) -> str:
+    """Return the API key, or explain what to do when there isn't one."""
+    if ANTHROPIC_API_KEY:
+        return ANTHROPIC_API_KEY
+    raise EnvironmentError(
+        f"{feature} needs Claude, but ANTHROPIC_API_KEY is not set. "
+        "Add it to .env or the environment."
+    )
+
 
 MIN_VIDEO_DURATION_SECONDS: int = 120
 MIN_SUBSCRIBER_COUNT: int = 500
@@ -131,6 +142,16 @@ EXTRACTION_MODEL: str = os.environ.get(
 SYNTHESIS_MODEL: str = os.environ.get(
     "TICKER_DIGEST_SYNTHESIS_MODEL", "claude-opus-4-7"
 ).strip()
+
+# How the digest reaches Claude: "api" (the Anthropic SDK, needs credentials),
+# "cli" (shell out to a logged-in Claude Code CLI, needs none), or "auto" —
+# the API when a key is present, the CLI when it isn't.
+LLM_BACKEND: str = os.environ.get("TICKER_DIGEST_LLM_BACKEND", "auto").strip().lower()
+CLAUDE_CLI_PATH: str = os.environ.get("TICKER_DIGEST_CLAUDE_CLI", "claude").strip()
+# A long transcript through a cold CLI process is not fast.
+CLAUDE_CLI_TIMEOUT_SECONDS: int = int(
+    os.environ.get("TICKER_DIGEST_CLAUDE_CLI_TIMEOUT", "600")
+)
 
 # Transcripts are truncated before they reach the model. A 2-hour video is
 # ~90k characters; this keeps a single extraction call bounded.

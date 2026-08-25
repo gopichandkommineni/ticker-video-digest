@@ -22,13 +22,12 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-from typing import Any
 
-import anthropic
 from pydantic import BaseModel, Field
 
 from core.config import CLAIM_SIMILARITY_THRESHOLD, EXTRACTION_MODEL
 from core.models import Claim, ClaimKind, Novelty, VideoInsights
+from ticker_digest.llm import StructuredCall, ask
 
 log = logging.getLogger(__name__)
 
@@ -206,13 +205,6 @@ def partition(
     return restatements, candidates
 
 
-def _extract_tool_input(response: Any, tool_name: str) -> dict[str, Any]:
-    for block in response.content:
-        if block.type == "tool_use" and block.name == tool_name:
-            return block.input  # type: ignore[return-value]
-    raise ValueError(f"No {tool_name!r} tool_use block in response")
-
-
 def classify_novelty(
     ticker: str,
     company_name: str,
@@ -239,42 +231,25 @@ def classify_novelty(
             for claim in candidates
         ]
 
-    client = anthropic.Anthropic()
-
-    system = [
-        {
-            "type": "text",
-            "text": (
-                "You decide whether claims made about a stock in new YouTube videos "
-                "are actually news, given claims already on record.\n\n"
-                "Classify each numbered claim as exactly one of:\n"
-                "- new: no claim on record covers this. A genuinely new development, "
-                "number, contract, product, risk or event.\n"
-                "- developing: a claim on record covers the same subject, but this "
-                "adds something — a firmer date, a revised figure, a confirmation.\n"
-                "- known: a restatement of something on record, in different words.\n\n"
-                "Rules:\n"
-                "- Judge the substance, not the wording. Two different sentences "
-                "about the same contract award are the same claim.\n"
-                "- A recurring thesis ('they will dominate this market') is 'known' "
-                "unless the video attaches a new fact to it.\n"
-                "- When genuinely unsure between new and developing, choose developing.\n"
-                "- Set related_claim to the on-record claim you matched against, "
-                "verbatim, for 'developing' and 'known'. Leave it null for 'new'.\n"
-                "- Return exactly one classification per claim index.\n\n"
-                "Call the classify_claims tool."
-            ),
-            "cache_control": {"type": "ephemeral"},
-        }
-    ]
-
-    tools = [
-        {
-            "name": "classify_claims",
-            "description": "Report a novelty classification for every claim.",
-            "input_schema": _NoveltyBatch.model_json_schema(),
-        }
-    ]
+    system = (
+        "You decide whether claims made about a stock in new YouTube videos "
+        "are actually news, given claims already on record.\n\n"
+        "Classify each numbered claim as exactly one of:\n"
+        "- new: no claim on record covers this. A genuinely new development, "
+        "number, contract, product, risk or event.\n"
+        "- developing: a claim on record covers the same subject, but this "
+        "adds something — a firmer date, a revised figure, a confirmation.\n"
+        "- known: a restatement of something on record, in different words.\n\n"
+        "Rules:\n"
+        "- Judge the substance, not the wording. Two different sentences "
+        "about the same contract award are the same claim.\n"
+        "- A recurring thesis ('they will dominate this market') is 'known' "
+        "unless the video attaches a new fact to it.\n"
+        "- When genuinely unsure between new and developing, choose developing.\n"
+        "- Set related_claim to the on-record claim you matched against, "
+        "verbatim, for 'developing' and 'known'. Leave it null for 'new'.\n"
+        "- Return exactly one classification per claim index."
+    )
 
     known_lines = "\n".join(
         f"- [{c.kind}] {c.text}" for c in known[:_MAX_KNOWN_IN_PROMPT]
@@ -282,25 +257,25 @@ def classify_novelty(
     new_lines = "\n".join(
         f"{i}. [{c.kind}] {c.text}" for i, c in enumerate(candidates)
     )
-    user_msg = (
+    user = (
         f"Ticker: {ticker} ({company_name})\n\n"
         f"Claims already on record ({len(known)} total, showing "
         f"{min(len(known), _MAX_KNOWN_IN_PROMPT)}):\n{known_lines}\n\n"
         f"Claims from the new videos, to classify:\n{new_lines}"
     )
 
-    response = client.messages.create(
-        model=EXTRACTION_MODEL,
-        max_tokens=4096,
-        system=system,  # type: ignore[arg-type]
-        messages=[{"role": "user", "content": user_msg}],
-        tools=tools,  # type: ignore[arg-type]
-        tool_choice={"type": "tool", "name": "classify_claims"},
+    batch = ask(
+        StructuredCall(
+            system=system,
+            user=user,
+            model=EXTRACTION_MODEL,
+            response_model=_NoveltyBatch,
+            tool_name="classify_claims",
+            tool_description="Report a novelty classification for every claim.",
+            max_tokens=4096,
+        )
     )
 
-    batch = _NoveltyBatch.model_validate(
-        _extract_tool_input(response, "classify_claims")
-    )
     by_index = {c.index: c for c in batch.classifications}
 
     classified: list[Claim] = []

@@ -1,13 +1,15 @@
-"""LLM analysis pipeline: extract_insights (per-video), synthesize_digest (cross-video)."""
+"""LLM analysis: extract_insights (per-video), synthesize_digest (cross-video).
+
+Both go through :mod:`ticker_digest.llm`, so they work the same whether Claude
+is reached through the API or through a locally installed Claude Code CLI.
+"""
 from __future__ import annotations
 
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any
 
-import anthropic
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from core.config import EXTRACTION_MODEL, MAX_TRANSCRIPT_CHARS, SYNTHESIS_MODEL
 from core.models import (
@@ -17,6 +19,7 @@ from core.models import (
     VideoInsights,
     VideoMetadata,
 )
+from ticker_digest.llm import StructuredCall, ask
 
 log = logging.getLogger(__name__)
 
@@ -36,16 +39,7 @@ class _DigestSynthesis(BaseModel):
     synthesis: str
 
 
-def _extract_tool_input(response: Any, tool_name: str) -> dict[str, Any]:
-    for block in response.content:
-        if block.type == "tool_use" and block.name == tool_name:
-            return block.input  # type: ignore[return-value]
-    raise ValueError(f"No {tool_name!r} tool_use block in response")
-
-
 def extract_insights(transcript: Transcript, metadata: VideoMetadata) -> VideoInsights:
-    client = anthropic.Anthropic()
-
     formatted = "\n".join(
         f"[{int(seg.start_seconds)}s] {seg.text}" for seg in transcript.segments
     )
@@ -58,126 +52,70 @@ def extract_insights(transcript: Transcript, metadata: VideoMetadata) -> VideoIn
         )
         formatted = formatted[:MAX_TRANSCRIPT_CHARS] + "\n[transcript truncated]"
 
-    system = [
-        {
-            "type": "text",
-            "text": (
-                "You are a financial analyst reviewing YouTube video transcripts about stocks.\n\n"
-                "Rules:\n"
-                "- Only report claims explicitly stated in the transcript. Do not speculate.\n"
-                "- Every catalyst, red flag, and upcoming event MUST include a citation with the "
-                "exact timestamp_seconds where the claim appears.\n"
-                "- The video_id for every Citation must match the video_id in the user message.\n"
-                "- Stay focused on the ticker/company. Ignore off-topic discussion.\n"
-                "- quote_paraphrase should be a brief paraphrase of the words spoken at that timestamp.\n"
-                "- overall_sentiment reflects the speaker's net view of the stock.\n\n"
-                "Call the report_video_insights tool with your findings."
-            ),
-            "cache_control": {"type": "ephemeral"},
-        }
-    ]
-
-    tools = [
-        {
-            "name": "report_video_insights",
-            "description": "Report structured insights extracted from the video transcript.",
-            "input_schema": VideoInsights.model_json_schema(),
-        }
-    ]
-
-    user_msg = (
+    system = (
+        "You are a financial analyst reviewing YouTube video transcripts about stocks.\n\n"
+        "Rules:\n"
+        "- Only report claims explicitly stated in the transcript. Do not speculate.\n"
+        "- Every catalyst, red flag, and upcoming event MUST include a citation with the "
+        "exact timestamp_seconds where the claim appears.\n"
+        "- The video_id for every Citation must match the video_id in the user message.\n"
+        "- Stay focused on the ticker/company. Ignore off-topic discussion.\n"
+        "- quote_paraphrase should be a brief paraphrase of the words spoken at that timestamp.\n"
+        "- overall_sentiment reflects the speaker's net view of the stock."
+    )
+    user = (
         f"Video ID: {metadata.video_id}\n"
         f"Title: {metadata.title}\n"
         f"Channel: {metadata.channel_title}\n\n"
         f"Transcript:\n{formatted}"
     )
-    messages: list[dict[str, Any]] = [{"role": "user", "content": user_msg}]
 
-    def _call(msgs: list[dict[str, Any]]) -> Any:
-        return client.messages.create(
+    return ask(
+        StructuredCall(
+            system=system,
+            user=user,
             model=EXTRACTION_MODEL,
+            response_model=VideoInsights,
+            tool_name="report_video_insights",
+            tool_description="Report structured insights extracted from the video transcript.",
             max_tokens=4096,
-            system=system,  # type: ignore[arg-type]
-            messages=msgs,  # type: ignore[arg-type]
-            tools=tools,  # type: ignore[arg-type]
-            tool_choice={"type": "tool", "name": "report_video_insights"},
         )
-
-    response = _call(messages)
-
-    try:
-        return VideoInsights.model_validate(_extract_tool_input(response, "report_video_insights"))
-    except ValidationError as exc:
-        log.warning("VideoInsights validation failed on first attempt, retrying: %s", exc)
-        messages.append({"role": "assistant", "content": response.content})
-        messages.append(
-            {
-                "role": "user",
-                "content": (
-                    "The previous response failed schema validation. Please fix these issues "
-                    f"and call report_video_insights again:\n{exc}"
-                ),
-            }
-        )
-        response2 = _call(messages)
-        return VideoInsights.model_validate(
-            _extract_tool_input(response2, "report_video_insights")
-        )
+    )
 
 
 def synthesize_digest(
     ticker: str, company_name: str, insights: list[VideoInsights]
 ) -> DigestReport:
-    client = anthropic.Anthropic()
-
-    system = [
-        {
-            "type": "text",
-            "text": (
-                f"You are a financial analyst synthesizing insights from multiple YouTube video "
-                f"analyses about {ticker} ({company_name}).\n\n"
-                "Rules:\n"
-                "- Deduplicate themes: if multiple videos mention the same catalyst, merge them "
-                "into one point ranked by the number of sources.\n"
-                "- Rank top_catalysts, top_red_flags, and upcoming_events by source count.\n"
-                "- Note disagreements between sources explicitly in the synthesis.\n"
-                "- Report only what the videos discuss — no speculation.\n"
-                "- synthesis should be 2-4 paragraphs summarizing the investment picture.\n\n"
-                "Call the report_digest tool with your synthesis."
-            ),
-            "cache_control": {"type": "ephemeral"},
-        }
-    ]
-
-    tools = [
-        {
-            "name": "report_digest",
-            "description": "Report the synthesized digest across all analyzed videos.",
-            "input_schema": _DigestSynthesis.model_json_schema(),
-        }
-    ]
-
-    insights_json = json.dumps(
-        [ins.model_dump(mode="json") for ins in insights], indent=2
+    system = (
+        f"You are a financial analyst synthesizing insights from multiple YouTube video "
+        f"analyses about {ticker} ({company_name}).\n\n"
+        "Rules:\n"
+        "- Deduplicate themes: if multiple videos mention the same catalyst, merge them "
+        "into one point ranked by the number of sources.\n"
+        "- Rank top_catalysts, top_red_flags, and upcoming_events by source count.\n"
+        "- Note disagreements between sources explicitly in the synthesis.\n"
+        "- Report only what the videos discuss — no speculation.\n"
+        "- synthesis should be 2-4 paragraphs summarizing the investment picture."
     )
-    user_msg = (
+    insights_json = json.dumps([ins.model_dump(mode="json") for ins in insights], indent=2)
+    user = (
         f"Ticker: {ticker}\n"
         f"Company: {company_name}\n"
         f"Videos analyzed: {len(insights)}\n\n"
         f"Per-video insights:\n{insights_json}"
     )
-    messages: list[dict[str, Any]] = [{"role": "user", "content": user_msg}]
 
-    response = client.messages.create(
-        model=SYNTHESIS_MODEL,
-        max_tokens=8192,
-        system=system,  # type: ignore[arg-type]
-        messages=messages,  # type: ignore[arg-type]
-        tools=tools,  # type: ignore[arg-type]
-        tool_choice={"type": "tool", "name": "report_digest"},
+    synth = ask(
+        StructuredCall(
+            system=system,
+            user=user,
+            model=SYNTHESIS_MODEL,
+            response_model=_DigestSynthesis,
+            tool_name="report_digest",
+            tool_description="Report the synthesized digest across all analyzed videos.",
+            max_tokens=8192,
+        )
     )
-
-    synth = _DigestSynthesis.model_validate(_extract_tool_input(response, "report_digest"))
 
     return DigestReport(
         ticker=ticker,

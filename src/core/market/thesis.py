@@ -77,7 +77,13 @@ def generate_thesis(
         if cached is not None:
             return cached
 
-    client = anthropic.Anthropic()
+    try:
+        client = anthropic.Anthropic()
+    except anthropic.AnthropicError as exc:  # no credentials resolvable at all
+        raise EnvironmentError(
+            "The market thesis needs Claude. Set ANTHROPIC_API_KEY in .env, or "
+            "sign in with `ant auth login`."
+        ) from exc
 
     system = [
         {

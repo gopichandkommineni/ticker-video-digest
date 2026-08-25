@@ -16,6 +16,7 @@ import anthropic
 from core.models import Claim, DigestRequest, DigestRun, VideoInsights
 from ticker_digest import store
 from ticker_digest.analyzer import extract_insights
+from ticker_digest.llm import LLMUnavailableError
 from ticker_digest.novelty import assess, claims_from_insights, rank_claims
 from ticker_digest.sources import select_videos
 from ticker_digest.thread import build_thread
@@ -101,6 +102,9 @@ def run_digest(
                 f"{getattr(exc, 'message', str(exc))}\n"
                 "  Check ANTHROPIC_API_KEY in .env is a real key, not a placeholder."
             ) from exc
+        except LLMUnavailableError as exc:
+            # Same reasoning, for the Claude Code CLI path.
+            raise DigestSetupError(str(exc)) from exc
         except Exception as exc:  # noqa: BLE001 — one bad video must not kill the run
             log.warning("Extraction failed for %s: %s", video_id, exc)
             skipped[video_id] = f"extraction failed: {exc}"
