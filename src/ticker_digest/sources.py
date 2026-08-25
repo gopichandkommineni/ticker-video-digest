@@ -34,6 +34,25 @@ class SourceResolutionError(RuntimeError):
     """Raised when the requested source cannot be turned into videos."""
 
 
+def resolve_subject(query: str) -> str | None:
+    """Turn what the user typed into a ticker, or None if it isn't a stock.
+
+    "RKLB" is already one. "Planet Labs" is not, and resolving it beats making
+    someone go and look up that Planet Labs trades as PL.
+    """
+    query = query.strip()
+    if not query:
+        return None
+    try:
+        from core.social_media.reddit.ticker_resolver import resolve_ticker
+
+        return resolve_ticker(query)
+    except Exception as exc:  # noqa: BLE001 — a lookup failure is not a crash
+        log.debug("Ticker resolution failed for %r: %s", query, exc)
+        # A bare symbol still works without the network; a name does not.
+        return query.upper() if " " not in query else None
+
+
 def resolve_company_name(ticker: str) -> str:
     """Best-effort company name for *ticker*, falling back to the symbol.
 
@@ -103,6 +122,7 @@ def _from_channel(request: DigestRequest) -> tuple[list[ScoredVideo], ChannelInf
         days=request.days,
         query=query,
         ticker=request.ticker,
+        company_name=request.company_name,
     )
     if not videos:
         log.info(

@@ -2,7 +2,12 @@
 import pytest
 
 from core.models import ChannelInfo, DigestRequest
-from ticker_digest.sources import SourceResolutionError, resolve_company_name, select_videos
+from ticker_digest.sources import (
+    SourceResolutionError,
+    resolve_company_name,
+    resolve_subject,
+    select_videos,
+)
 
 from .digest_helpers import make_metadata
 
@@ -130,3 +135,45 @@ def test_company_name_uses_the_resolver_when_it_works(mocker) -> None:
         return_value="Rocket Lab USA, Inc.",
     )
     assert resolve_company_name("RKLB") == "Rocket Lab USA, Inc."
+
+
+# ---------------------------------------------------------------------------
+# Turning what was typed into a ticker
+# ---------------------------------------------------------------------------
+
+
+def test_a_bare_ticker_resolves_to_itself(mocker) -> None:
+    mocker.patch(
+        "core.social_media.reddit.ticker_resolver._yf_search", return_value=[]
+    )
+    assert resolve_subject("rklb") == "RKLB"
+
+
+def test_a_company_name_resolves_to_its_ticker(mocker) -> None:
+    mocker.patch(
+        "core.social_media.reddit.ticker_resolver._yf_search",
+        return_value=[{"symbol": "PL", "quoteType": "EQUITY", "longname": "Planet Labs PBC"}],
+    )
+    assert resolve_subject("Planet Labs") == "PL"
+
+
+def test_an_unresolvable_name_is_none_rather_than_a_guess(mocker) -> None:
+    mocker.patch(
+        "core.social_media.reddit.ticker_resolver._yf_search", return_value=[]
+    )
+    assert resolve_subject("not a company at all") is None
+
+
+def test_blank_input_is_none() -> None:
+    assert resolve_subject("   ") is None
+
+
+def test_a_bare_symbol_survives_the_lookup_being_down(mocker) -> None:
+    """No network is a reason to fail a name, not a symbol."""
+    mocker.patch(
+        "core.social_media.reddit.ticker_resolver.resolve_ticker",
+        side_effect=RuntimeError("offline"),
+    )
+
+    assert resolve_subject("RKLB") == "RKLB"
+    assert resolve_subject("Planet Labs") is None

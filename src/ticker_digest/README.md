@@ -122,11 +122,24 @@ number of videos), a stronger one once at the end.
 
 ## Picking sources
 
+**Naming the stock.** Either form works — `digest RKLB` or `digest Planet Labs`
+— because a company name is resolved to its ticker first. Quoting is optional.
+A name that resolves to nothing is an error rather than a guess.
+
+**Short tickers get special handling.** `PL`, `F`, `GM` and `T` are words and
+abbreviations as well as stocks. Searching for one bare returns anything
+containing those letters — a real run for `PL` came back with a family vlog
+whose title happened to contain "pl". So a ticker of three characters or fewer
+leads with the company name in the query, only appears alongside "stock", and
+has to be mentioned in the video's title or channel name to survive the filter.
+Longer tickers are distinctive enough that none of this applies.
+
 **Ticker input.** YouTube search returns whatever it returns, so the results go
 through a filter and then a ranking:
 
-- *dropped* — under 120 seconds, channels under 500 subscribers, or a title
-  that's shouted or stuffed with 🚀🔥 emoji
+- *dropped* — under 120 seconds, channels under 500 subscribers, a title
+  that's shouted or stuffed with 🚀🔥 emoji, or (for short tickers) nothing
+  identifying the company at all
 - *ranked* — subscribers (30%), views (25%), views-per-subscriber (15%),
   duration (15%), recency (15%)
 

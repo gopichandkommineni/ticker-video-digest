@@ -177,6 +177,22 @@ RELIABILITY_VIEW_SATURATION: int = 100_000
 # Depth saturates at 20 minutes; a video this long or longer is "in depth".
 RELIABILITY_DEPTH_SATURATION_SECONDS: int = 1_200
 
+# A ticker this short is a word, an abbreviation and a typo as well as a stock:
+# PL, F, GM, T, BA, KO. Searching for one bare returns noise, so short tickers
+# get a stricter query and have to prove the video is actually about them.
+AMBIGUOUS_TICKER_LENGTH: int = 3
+
+# Words that carry no identifying signal when matching a company name against a
+# video title — every other space company is also "Inc".
+COMPANY_NAME_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "inc", "inc.", "corp", "corp.", "corporation", "co", "co.", "company",
+        "ltd", "ltd.", "limited", "plc", "pbc", "llc", "lp", "sa", "nv", "ag",
+        "holdings", "holding", "group", "technologies", "technology", "tech",
+        "systems", "solutions", "industries", "international", "class",
+    }
+)
+
 # Titles that look like engagement bait are dropped before transcription.
 SPAM_TITLE_EMOJI: tuple[str, ...] = ("🚀", "🔥", "💎", "🌙", "💰")
 # ALL-CAPS detection ignores the ticker itself, so "RKLB stock" is fine but

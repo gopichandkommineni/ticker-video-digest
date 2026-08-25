@@ -19,6 +19,8 @@ import re
 from datetime import datetime, timezone
 
 from core.config import (
+    AMBIGUOUS_TICKER_LENGTH,
+    COMPANY_NAME_STOPWORDS,
     MIN_SUBSCRIBER_COUNT,
     MIN_VIDEO_DURATION_SECONDS,
     RELIABILITY_DEPTH_SATURATION_SECONDS,
@@ -72,8 +74,55 @@ def is_spam_title(title: str, ticker: str | None = None) -> bool:
     )
 
 
+def distinctive_company_words(company_name: str) -> set[str]:
+    """The words in a company name that actually identify it.
+
+    "Planet Labs PBC" -> {planet, labs}. Corporate furniture and short words are
+    dropped: matching on "Inc" or "PBC" would match every other filing entity
+    on YouTube.
+    """
+    words = {
+        word.lower().strip(".,")
+        for word in company_name.split()
+        if len(word.strip(".,")) >= 4
+    }
+    return {word for word in words if word and word not in COMPANY_NAME_STOPWORDS}
+
+
+def mentions_subject(
+    metadata: VideoMetadata, ticker: str, company_name: str = ""
+) -> bool:
+    """Does this video look like it is about *ticker* at all?
+
+    Only asked of short tickers, and for a reason worth stating: searching
+    YouTube for "PL" returns videos whose titles happen to contain the letters
+    p and l. A three-minute family vlog is not commentary on Planet Labs.
+
+    Evidence accepted: a distinctive word from the company name anywhere in the
+    title or channel name, or the ticker written as its own upper-case word —
+    which is how anyone discussing the stock writes it, and how the incidental
+    matches do not.
+    """
+    symbol = ticker.strip().upper()
+    if len(symbol) > AMBIGUOUS_TICKER_LENGTH:
+        return True
+
+    haystack = f"{metadata.title} {metadata.channel_title}"
+    if re.search(rf"\b{re.escape(symbol)}\b", haystack):
+        return True
+
+    words = distinctive_company_words(company_name)
+    if not words:
+        # Nothing to match on. Better to read a doubtful video than to drop
+        # every video for a company whose name is all stopwords.
+        return True
+
+    lowered = haystack.lower()
+    return any(re.search(rf"\b{re.escape(word)}\b", lowered) for word in words)
+
+
 def passes_quality_filters(
-    metadata: VideoMetadata, ticker: str | None = None
+    metadata: VideoMetadata, ticker: str | None = None, company_name: str = ""
 ) -> tuple[bool, str]:
     """Return ``(ok, reason)``. *reason* is empty when the video passes.
 
@@ -91,6 +140,8 @@ def passes_quality_filters(
         )
     if is_spam_title(metadata.title, ticker):
         return False, "title looks like engagement bait"
+    if ticker and not mentions_subject(metadata, ticker, company_name):
+        return False, f"nothing in the title or channel mentions {ticker.upper()}"
     return True, ""
 
 

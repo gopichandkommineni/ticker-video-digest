@@ -145,10 +145,26 @@ def _cmd_ticker(args: argparse.Namespace) -> int:
     from core.models import DigestRequest
     from ticker_digest.llm import LLMUnavailableError
     from ticker_digest.pipeline import DigestSetupError, run_digest
-    from ticker_digest.sources import SourceResolutionError, resolve_company_name
+    from ticker_digest.sources import (
+        SourceResolutionError,
+        resolve_company_name,
+        resolve_subject,
+    )
     from ticker_digest.youtube_client import YouTubeAccessError
 
-    ticker = args.symbol.upper()
+    # nargs="+" so an unquoted company name works: `digest Planet Labs`.
+    query = " ".join(args.symbol).strip()
+    ticker = resolve_subject(query)
+    if ticker is None:
+        print(
+            f"\nCouldn't work out which stock {query!r} is.\n"
+            "  Give a ticker (RKLB), or a company name that resolves to one "
+            '("Rocket Lab").\n',
+            file=sys.stderr,
+        )
+        return 1
+    if ticker != query.upper():
+        print(f"Reading {query} as {ticker}.")
     company_name = args.company or resolve_company_name(ticker)
 
     request = DigestRequest(
@@ -236,7 +252,12 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_ticker = sub.add_parser("ticker", help="YouTube insight thread for a ticker")
-    p_ticker.add_argument("symbol", help="Stock ticker symbol, e.g. RKLB")
+    p_ticker.add_argument(
+        "symbol",
+        nargs="+",
+        metavar="TICKER",
+        help="Stock ticker (RKLB) or company name (Rocket Lab)",
+    )
     p_ticker.add_argument(
         "--channel",
         help="Use this YouTube channel as the source (name, @handle, URL or id) "

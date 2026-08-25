@@ -275,3 +275,53 @@ def test_the_sources_header_counts_skipped_videos_separately(mocker, capsys) -> 
     main(["ticker", "RKLB"])
 
     assert "Sources (2 analysed, 1 skipped)" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# Naming the stock
+# ---------------------------------------------------------------------------
+
+
+def test_an_unquoted_company_name_is_accepted(mocker) -> None:
+    """`./run digest Planet Labs` — two argv entries, one company."""
+    mocker.patch("ticker_digest.sources.resolve_subject", return_value="PL")
+    mocker.patch("ticker_digest.sources.resolve_company_name", return_value="Planet Labs PBC")
+    run_digest = mocker.patch(
+        "ticker_digest.pipeline.run_digest", return_value=_run(_thread())
+    )
+
+    assert main(["ticker", "Planet", "Labs"]) == 0
+
+    assert run_digest.call_args.args[0].ticker == "PL"
+
+
+def test_the_resolution_is_shown_when_it_changed_what_was_asked(mocker, capsys) -> None:
+    mocker.patch("ticker_digest.sources.resolve_subject", return_value="PL")
+    mocker.patch("ticker_digest.sources.resolve_company_name", return_value="Planet Labs PBC")
+    mocker.patch("ticker_digest.pipeline.run_digest", return_value=_run(_thread()))
+
+    main(["ticker", "Planet", "Labs"])
+
+    assert "Reading Planet Labs as PL." in capsys.readouterr().out
+
+
+def test_a_plain_ticker_is_not_narrated_back(mocker, capsys) -> None:
+    mocker.patch("ticker_digest.sources.resolve_subject", return_value="RKLB")
+    mocker.patch("ticker_digest.sources.resolve_company_name", return_value="Rocket Lab")
+    mocker.patch("ticker_digest.pipeline.run_digest", return_value=_run(_thread()))
+
+    main(["ticker", "RKLB"])
+
+    assert "Reading RKLB as" not in capsys.readouterr().out
+
+
+def test_an_unresolvable_subject_exits_nonzero_with_advice(mocker, capsys) -> None:
+    mocker.patch("ticker_digest.sources.resolve_subject", return_value=None)
+    run_digest = mocker.patch("ticker_digest.pipeline.run_digest")
+
+    assert main(["ticker", "not", "a", "company"]) == 1
+
+    err = capsys.readouterr().err
+    assert "Couldn't work out which stock" in err
+    assert "Rocket Lab" in err
+    run_digest.assert_not_called()
