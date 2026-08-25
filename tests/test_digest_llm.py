@@ -3,6 +3,7 @@ import json
 import subprocess
 from typing import Literal
 
+import anthropic
 import pytest
 from pydantic import BaseModel
 
@@ -10,6 +11,7 @@ from ticker_digest.llm import (
     ApiBackend,
     ClaudeCliBackend,
     LLMError,
+    LLMUnavailableError,
     StructuredCall,
     resolve_backend,
 )
@@ -50,16 +52,22 @@ def _completed(stdout: str = "", stderr: str = "", returncode: int = 0):
 # ---------------------------------------------------------------------------
 
 
-def test_auto_prefers_the_api_when_a_key_is_present(mocker) -> None:
+def test_auto_starts_on_the_api_when_a_key_is_present(mocker) -> None:
     mocker.patch("ticker_digest.llm.ANTHROPIC_API_KEY", "sk-real")
-    assert resolve_backend("auto").name == "api"
+
+    backend = resolve_backend("auto")
+
+    assert backend.name == "auto"
+    assert isinstance(backend._backend, ApiBackend)
 
 
-def test_auto_falls_back_to_the_cli_when_there_is_no_key(mocker) -> None:
+def test_auto_starts_on_the_cli_when_there_is_no_key(mocker) -> None:
     mocker.patch("ticker_digest.llm.ANTHROPIC_API_KEY", "")
     mocker.patch("ticker_digest.llm.shutil.which", return_value="/usr/local/bin/claude")
 
-    assert resolve_backend("auto").name == "cli"
+    backend = resolve_backend("auto")
+
+    assert isinstance(backend._backend, ClaudeCliBackend)
 
 
 def test_no_key_and_no_cli_explains_both_ways_out(mocker) -> None:
@@ -343,3 +351,139 @@ def test_the_real_cli_accepts_these_flags_and_returns_the_schema() -> None:
     assert isinstance(answer, Answer)
     assert answer.sentiment == "bullish"
     assert answer.reason
+
+
+# ---------------------------------------------------------------------------
+# auto: a key that is set but not accepted
+# ---------------------------------------------------------------------------
+
+
+def _auth_error() -> anthropic.AuthenticationError:
+    from unittest.mock import MagicMock as _MagicMock
+
+    return anthropic.AuthenticationError(
+        message="invalid x-api-key",
+        response=_MagicMock(status_code=401, headers={}),
+        body=None,
+    )
+
+
+def test_a_rejected_key_demotes_to_the_cli_instead_of_failing(mocker) -> None:
+    """A key being set is not the same as a key working."""
+    mocker.patch("ticker_digest.llm.ANTHROPIC_API_KEY", "sk-placeholder")
+    mocker.patch("ticker_digest.llm.shutil.which", return_value="/usr/local/bin/claude")
+    api_run = mocker.patch.object(ApiBackend, "run", side_effect=_auth_error())
+    cli_run = mocker.patch.object(
+        ClaudeCliBackend, "run", return_value=Answer(sentiment="bullish", reason="x")
+    )
+
+    backend = resolve_backend("auto")
+    assert backend.run(_call()).sentiment == "bullish"
+
+    api_run.assert_called_once()
+    cli_run.assert_called_once()
+
+
+def test_the_demotion_is_remembered_for_the_rest_of_the_run(mocker) -> None:
+    """Otherwise a five-video digest collects five 401s on the way through."""
+    mocker.patch("ticker_digest.llm.ANTHROPIC_API_KEY", "sk-placeholder")
+    mocker.patch("ticker_digest.llm.shutil.which", return_value="/usr/local/bin/claude")
+    api_run = mocker.patch.object(ApiBackend, "run", side_effect=_auth_error())
+    mocker.patch.object(
+        ClaudeCliBackend, "run", return_value=Answer(sentiment="bullish", reason="x")
+    )
+
+    backend = resolve_backend("auto")
+    for _ in range(3):
+        backend.run(_call())
+
+    assert api_run.call_count == 1
+
+
+def test_a_rejected_key_with_no_cli_installed_explains_both_options(mocker) -> None:
+    mocker.patch("ticker_digest.llm.ANTHROPIC_API_KEY", "sk-placeholder")
+    mocker.patch("ticker_digest.llm.shutil.which", return_value=None)
+    mocker.patch.object(ApiBackend, "run", side_effect=_auth_error())
+
+    with pytest.raises(LLMUnavailableError) as caught:
+        resolve_backend("auto").run(_call())
+
+    message = str(caught.value)
+    assert "not a placeholder" in message
+    assert "Claude Code CLI" in message
+
+
+def test_an_explicit_api_choice_is_never_silently_demoted(mocker) -> None:
+    mocker.patch("ticker_digest.llm.ANTHROPIC_API_KEY", "sk-placeholder")
+    mocker.patch("ticker_digest.llm.shutil.which", return_value="/usr/local/bin/claude")
+    mocker.patch.object(ApiBackend, "run", side_effect=_auth_error())
+    cli_run = mocker.patch.object(ClaudeCliBackend, "run")
+
+    with pytest.raises(anthropic.AuthenticationError):
+        resolve_backend("api").run(_call())
+
+    cli_run.assert_not_called()
+
+
+def test_a_non_auth_api_failure_is_not_treated_as_a_bad_key(mocker) -> None:
+    """A 500 means try again, not switch backends."""
+    mocker.patch("ticker_digest.llm.ANTHROPIC_API_KEY", "sk-real")
+    mocker.patch("ticker_digest.llm.shutil.which", return_value="/usr/local/bin/claude")
+    mocker.patch.object(ApiBackend, "run", side_effect=RuntimeError("upstream blew up"))
+    cli_run = mocker.patch.object(ClaudeCliBackend, "run")
+
+    with pytest.raises(RuntimeError, match="upstream blew up"):
+        resolve_backend("auto").run(_call())
+
+    cli_run.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# The process-wide backend cache
+# ---------------------------------------------------------------------------
+
+
+def test_the_backend_is_resolved_once_per_process(mocker) -> None:
+    from ticker_digest import llm
+
+    mocker.patch("ticker_digest.llm.ANTHROPIC_API_KEY", "sk-real")
+
+    assert llm.get_backend() is llm.get_backend()
+
+
+def test_resetting_forgets_the_resolved_backend(mocker) -> None:
+    from ticker_digest import llm
+
+    mocker.patch("ticker_digest.llm.ANTHROPIC_API_KEY", "sk-real")
+
+    first = llm.get_backend()
+    llm.reset_backend()
+    assert llm.get_backend() is not first
+
+
+# ---------------------------------------------------------------------------
+# The CLI must not inherit a key that outranks its own login
+# ---------------------------------------------------------------------------
+
+
+def test_the_cli_subprocess_does_not_inherit_anthropic_credentials(mocker, monkeypatch) -> None:
+    """Claude Code prefers ANTHROPIC_API_KEY over its claude.ai login.
+
+    A placeholder key in .env would therefore break the one backend that
+    exists to work without a key.
+    """
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-placeholder")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "stale-token")
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    run = mocker.patch(
+        "ticker_digest.llm.subprocess.run",
+        return_value=_completed(_envelope({"sentiment": "bullish", "reason": "x"})),
+    )
+
+    ClaudeCliBackend().run(_call())
+
+    env = run.call_args.kwargs["env"]
+    assert "ANTHROPIC_API_KEY" not in env
+    assert "ANTHROPIC_AUTH_TOKEN" not in env
+    # Everything else the CLI needs is still there.
+    assert env["PATH"] == "/usr/bin:/bin"

@@ -14,13 +14,16 @@ locally installed ``claude`` is already logged in as. Slower, and each call
 carries the CLI's own tool definitions as prompt overhead — though a run's
 calls share a prefix, so all but the first are cache reads.
 
-Pick with ``TICKER_DIGEST_LLM_BACKEND=auto|api|cli`` (default ``auto``: the API
-when a key is present, the CLI when it isn't).
+Pick with ``TICKER_DIGEST_LLM_BACKEND=auto|api|cli``. ``api`` and ``cli`` are
+commitments. The default, ``auto``, means "whatever works": the API when a key
+is present *and accepted*, the CLI otherwise — including when a key is set but
+turns out to be a placeholder, which is only discoverable on the first call.
 """
 from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -167,8 +170,21 @@ class ClaudeCliBackend:
 
     name = "cli"
 
+    # Claude Code prefers these over the claude.ai login it already holds, so a
+    # stale or placeholder key in the environment would silently defeat the
+    # whole point of this backend — and `.env` puts one there. Anyone who wants
+    # the key used has TICKER_DIGEST_LLM_BACKEND=api for that.
+    _SHADOWING_AUTH_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+
     def __init__(self, executable: str = CLAUDE_CLI_PATH) -> None:
         self.executable = executable
+
+    def _env(self) -> dict[str, str]:
+        return {
+            key: value
+            for key, value in os.environ.items()
+            if key not in self._SHADOWING_AUTH_VARS
+        }
 
     def _argv(self, call: StructuredCall) -> list[str]:
         return [
@@ -198,6 +214,7 @@ class ClaudeCliBackend:
                 text=True,
                 timeout=CLAUDE_CLI_TIMEOUT_SECONDS,
                 check=False,
+                env=self._env(),
             )
         except FileNotFoundError as exc:
             raise LLMUnavailableError(
@@ -281,12 +298,63 @@ def cli_available(executable: str = CLAUDE_CLI_PATH) -> bool:
     return shutil.which(executable) is not None
 
 
-def resolve_backend(preference: str | None = None) -> Backend:
-    """Return the backend to use, or explain why neither is usable.
+_NO_KEY_AT_ALL = (
+    "No way to reach Claude.\n"
+    "  Either set ANTHROPIC_API_KEY in .env,\n"
+    "  or install the Claude Code CLI and log in by running `claude` once."
+)
 
-    ``auto`` prefers the API when a key is set, because it is faster and its
-    schema enforcement is server-side. Otherwise it falls back to the CLI,
-    which needs no key of its own.
+
+class AutoBackend:
+    """Try the API, fall back to the CLI when the key turns out not to work.
+
+    A key being *set* is not the same as a key being *valid*, and the
+    difference only shows up on the first call. An invalid key is exactly the
+    situation the CLI path exists for, so ``auto`` demotes to it rather than
+    failing the run — once, and permanently for this instance, so a five-video
+    digest doesn't collect five 401s on the way.
+    """
+
+    name = "auto"
+
+    def __init__(self) -> None:
+        self._backend: Backend = ApiBackend() if ANTHROPIC_API_KEY else ClaudeCliBackend()
+        self._may_demote = bool(ANTHROPIC_API_KEY) and cli_available()
+        if not ANTHROPIC_API_KEY:
+            log.info(
+                "No ANTHROPIC_API_KEY — using the Claude Code CLI at %s", CLAUDE_CLI_PATH
+            )
+
+    def run(self, call: StructuredCall) -> BaseModel:
+        try:
+            return self._backend.run(call)
+        except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as exc:
+            if not self._may_demote:
+                raise LLMUnavailableError(
+                    f"Claude rejected the API key: "
+                    f"{getattr(exc, 'message', str(exc))}\n"
+                    "  Check ANTHROPIC_API_KEY in .env is a real key, not a "
+                    "placeholder.\n"
+                    "  Or install the Claude Code CLI and log in — the digest can "
+                    "run on that instead."
+                ) from exc
+
+            log.warning(
+                "ANTHROPIC_API_KEY was rejected (%s). Falling back to the Claude "
+                "Code CLI for the rest of this run.",
+                getattr(exc, "message", exc),
+            )
+            self._backend = ClaudeCliBackend()
+            self._may_demote = False
+            return self._backend.run(call)
+
+
+def resolve_backend(preference: str | None = None) -> Backend:
+    """Return the backend to use, or explain why none is usable.
+
+    ``api`` and ``cli`` are commitments — an explicit choice is not silently
+    overridden. ``auto`` means "whatever works": the API when a key is present
+    and accepted, the CLI otherwise.
     """
     choice = (preference or LLM_BACKEND or "auto").strip().lower()
 
@@ -304,19 +372,30 @@ def resolve_backend(preference: str | None = None) -> Backend:
             f"Unknown TICKER_DIGEST_LLM_BACKEND {choice!r}. Use auto, api or cli."
         )
 
-    if ANTHROPIC_API_KEY:
-        return ApiBackend()
-    if cli_available():
-        log.info("No ANTHROPIC_API_KEY — using the Claude Code CLI at %s", CLAUDE_CLI_PATH)
-        return ClaudeCliBackend()
+    if not ANTHROPIC_API_KEY and not cli_available():
+        raise LLMUnavailableError(_NO_KEY_AT_ALL)
+    return AutoBackend()
 
-    raise LLMUnavailableError(
-        "No way to reach Claude.\n"
-        "  Either set ANTHROPIC_API_KEY in .env,\n"
-        "  or install the Claude Code CLI and log in by running `claude` once."
-    )
+
+# Resolved once per process. The point is not speed: AutoBackend remembers that
+# an API key was rejected, and that memory is worthless if every call rebuilds
+# it from scratch.
+_BACKEND: Backend | None = None
+
+
+def get_backend() -> Backend:
+    global _BACKEND
+    if _BACKEND is None:
+        _BACKEND = resolve_backend()
+    return _BACKEND
+
+
+def reset_backend() -> None:
+    """Forget the resolved backend. For tests, and for changing env mid-process."""
+    global _BACKEND
+    _BACKEND = None
 
 
 def ask(call: StructuredCall, backend: Backend | None = None) -> Any:
     """Run one structured call through the resolved backend."""
-    return (backend or resolve_backend()).run(call)
+    return (backend or get_backend()).run(call)

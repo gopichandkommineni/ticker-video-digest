@@ -77,8 +77,17 @@ Every model call goes through `llm.py`, which can get to Claude two ways:
 | `api` | `ANTHROPIC_API_KEY` (or an `ant auth login` profile) | The SDK, forcing a tool call that carries the schema |
 | `cli` | A logged-in Claude Code CLI. **No API key.** | `claude -p --json-schema …`, the same schema |
 
-The default is `auto`: the API when a key is present, the CLI when it isn't.
-Force one with `TICKER_DIGEST_LLM_BACKEND=api|cli`.
+The default is `auto`, which means *whatever works* rather than *whatever is
+configured*: the API when a key is present **and accepted**, the CLI otherwise.
+A key that is set but invalid only reveals itself on the first call, so `auto`
+demotes to the CLI at that point and remembers the decision for the rest of the
+run. `api` and `cli` are commitments and are never silently overridden.
+
+One consequence worth knowing: the CLI path deliberately **strips
+`ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` from the subprocess
+environment**. Claude Code prefers those over the claude.ai login it already
+holds, so a placeholder key in `.env` would otherwise break the one backend
+that exists to work without a key.
 
 **Why the CLI path exists.** Plenty of people have a Claude Code subscription
 and no API key sitting around. This lets the digest run on that subscription
