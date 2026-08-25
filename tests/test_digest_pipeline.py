@@ -229,3 +229,114 @@ def test_pipeline_hands_the_thread_ranked_claims(mocker, tmp_path) -> None:
 
     assert [c.novelty for c in run.claims] == ["new", "known"]
     assert mocks["build"].call_args.kwargs["claims"][0].novelty == "new"
+
+
+# ---------------------------------------------------------------------------
+# Backfilling past videos with no captions
+# ---------------------------------------------------------------------------
+
+
+def _pool(mocker, ids, *, with_captions, extraction_error_on=()):
+    """Rank `ids`, give captions only to `with_captions`, wire the rest."""
+    scored = score_videos([make_metadata(v) for v in ids], now=NOW)
+    # score_videos sorts; keep the caller's order so "further down the list"
+    # means what the test says it means.
+    order = {v: i for i, v in enumerate(ids)}
+    scored.sort(key=lambda sv: order[sv.metadata.video_id])
+    mocker.patch("ticker_digest.pipeline.select_videos", return_value=(scored, None))
+
+    mocker.patch(
+        "ticker_digest.pipeline.get_transcript",
+        side_effect=lambda vid: mocker.MagicMock() if vid in with_captions else None,
+    )
+
+    def _extract(transcript, metadata):
+        if metadata.video_id in extraction_error_on:
+            raise RuntimeError("model hiccup")
+        return make_insights(metadata.video_id, catalysts=[f"from {metadata.video_id}"])
+
+    mocker.patch("ticker_digest.pipeline.extract_insights", side_effect=_extract)
+    mocker.patch("ticker_digest.pipeline.assess", side_effect=lambda t, c, claims, known: claims)
+    thread = mocker.patch("ticker_digest.pipeline.build_thread")
+    thread.return_value = None
+    return thread
+
+
+def test_a_video_without_captions_is_replaced_from_further_down(mocker, tmp_path) -> None:
+    """The reported failure: 5 slots, 2 caption-less videos, only 3 analysed."""
+    _pool(mocker, ["a", "b", "c", "d", "e"], with_captions={"a", "c", "e"})
+
+    run = run_digest(
+        _request(max_videos=3), db_path=tmp_path / "d.db", persist=False
+    )
+
+    assert [ins.video_id for ins in run.insights] == ["a", "c", "e"]
+    assert set(run.skipped) == {"b", "d"}
+
+
+def test_it_stops_as_soon_as_it_has_enough(mocker, tmp_path) -> None:
+    """Ranked lower means unread, not analysed-anyway."""
+    _pool(mocker, ["a", "b", "c", "d", "e"], with_captions=set("abcde"))
+
+    run = run_digest(_request(max_videos=2), db_path=tmp_path / "d.db", persist=False)
+
+    assert [ins.video_id for ins in run.insights] == ["a", "b"]
+    # c, d and e were never even reached for.
+    assert [sv.metadata.video_id for sv in run.videos] == ["a", "b"]
+
+
+def test_it_gives_up_rather_than_walking_the_whole_list(mocker, tmp_path) -> None:
+    """A ticker whose videos all lack captions must not walk 50 of them."""
+    ids = [f"v{i}" for i in range(30)]
+    _pool(mocker, ids, with_captions=set())
+
+    run = run_digest(_request(max_videos=2), db_path=tmp_path / "d.db", persist=False)
+
+    # max_videos x TRANSCRIPT_ATTEMPT_MULTIPLIER, and no further.
+    assert len(run.videos) == 6
+    assert run.insights == []
+    assert run.thread is None
+
+
+def test_a_paid_extraction_failure_is_not_backfilled(mocker, tmp_path) -> None:
+    """Captions are free to check; an extraction is already paid for.
+
+    Replacing a video that failed after the model call would spend twice to
+    fill a quota, so the run reports one fewer instead.
+    """
+    _pool(mocker, ["a", "b", "c"], with_captions=set("abc"), extraction_error_on={"a"})
+
+    run = run_digest(_request(max_videos=2), db_path=tmp_path / "d.db", persist=False)
+
+    assert [ins.video_id for ins in run.insights] == ["b"]
+    assert "extraction failed" in run.skipped["a"]
+    assert [sv.metadata.video_id for sv in run.videos] == ["a", "b"]
+
+
+def test_the_thread_only_sees_videos_that_were_actually_read(mocker, tmp_path) -> None:
+    thread = _pool(mocker, ["a", "b", "c"], with_captions={"b", "c"})
+
+    run_digest(_request(max_videos=2), db_path=tmp_path / "d.db", persist=False)
+
+    analysed = thread.call_args.kwargs["videos"]
+    assert [sv.metadata.video_id for sv in analysed] == ["b", "c"]
+
+
+def test_a_run_never_makes_more_extraction_calls_than_it_was_asked_for(
+    mocker, tmp_path
+) -> None:
+    """The one spend guarantee available until budget metering lands."""
+    _pool(
+        mocker,
+        ["a", "b", "c", "d", "e", "f"],
+        with_captions={"b", "d", "e", "f"},
+        extraction_error_on={"b", "d"},
+    )
+    extract = mocker.patch(
+        "ticker_digest.pipeline.extract_insights",
+        side_effect=RuntimeError("model hiccup"),
+    )
+
+    run_digest(_request(max_videos=3), db_path=tmp_path / "d.db", persist=False)
+
+    assert extract.call_count == 3

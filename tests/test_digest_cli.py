@@ -108,7 +108,7 @@ def test_ticker_command_prints_the_thread(mocker, capsys) -> None:
     assert main(["ticker", "rklb"]) == 0
 
     out = capsys.readouterr().out
-    assert "Sources (1 selected)" in out
+    assert "Sources (1 analysed)" in out
     assert "[NEW] New defence contract" in out
     request = run_digest.call_args.args[0]
     assert request.ticker == "RKLB"
@@ -259,3 +259,19 @@ def test_ticker_command_prints_the_claim_summary(mocker, capsys) -> None:
     main(["ticker", "RKLB"])
 
     assert "Claims: 1 new" in capsys.readouterr().out
+
+
+def test_the_sources_header_counts_skipped_videos_separately(mocker, capsys) -> None:
+    mocker.patch("ticker_digest.sources.resolve_company_name", return_value="Rocket Lab")
+    mocker.patch(
+        "ticker_digest.pipeline.run_digest",
+        return_value=_run(
+            _thread(),
+            videos=("vid001", "vid002", "vid003"),
+            skipped={"vid002": "no captions available"},
+        ),
+    )
+
+    main(["ticker", "RKLB"])
+
+    assert "Sources (2 analysed, 1 skipped)" in capsys.readouterr().out

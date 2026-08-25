@@ -186,6 +186,13 @@ SPAM_TITLE_CAPS_RATIO: float = 0.7
 # More than this many spam emoji anywhere in the title is also bait.
 SPAM_TITLE_MAX_EMOJI: int = 1
 
+# Videos are ranked, then walked in order until enough of them yield a
+# transcript. Plenty of otherwise-good videos have captions disabled, and
+# finding that out is free — so a run backfills from the ranked remainder
+# rather than analysing fewer videos than asked for. This bounds how far down
+# the list it will walk: max_videos x this, so a request for 5 tries at most 15.
+TRANSCRIPT_ATTEMPT_MULTIPLIER: int = 3
+
 # Novelty detection. Claims from a new run are compared against claims stored
 # from earlier runs for the same ticker within this window.
 NOVELTY_LOOKBACK_DAYS: int = 90

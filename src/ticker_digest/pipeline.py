@@ -13,7 +13,8 @@ from pathlib import Path
 
 import anthropic
 
-from core.models import Claim, DigestRequest, DigestRun, VideoInsights
+from core.config import TRANSCRIPT_ATTEMPT_MULTIPLIER
+from core.models import Claim, DigestRequest, DigestRun, ScoredVideo, VideoInsights
 from ticker_digest import store
 from ticker_digest.analyzer import extract_insights
 from ticker_digest.llm import LLMUnavailableError
@@ -79,19 +80,42 @@ def run_digest(
     generated_at = datetime.now(timezone.utc)
     ticker = request.ticker.upper()
 
-    videos, channel = select_videos(request)
+    ranked, channel = select_videos(request)
     source_label = channel.title if channel else ticker
     run_id = _run_id(ticker, generated_at, source_label)
 
     skipped: dict[str, str] = {}
     insights: list[VideoInsights] = []
+    # Videos we actually reached for, in rank order. Not the same as the top N:
+    # a video with captions disabled costs nothing to discover and is replaced
+    # from further down the list rather than eating one of the run's slots.
+    considered: list[ScoredVideo] = []
+    attempt_cap = max(request.max_videos * TRANSCRIPT_ATTEMPT_MULTIPLIER, request.max_videos)
+    # Counts calls made, not calls that worked. A run therefore never makes
+    # more than max_videos extraction calls, whatever goes wrong — the one
+    # spend guarantee available until the budget work in unit 3 lands.
+    extractions = 0
 
-    for scored in videos:
+    for scored in ranked:
+        if extractions >= request.max_videos:
+            break
+        if len(considered) >= attempt_cap:
+            log.info(
+                "Stopping after %d attempts for %s: %d of %d videos had a transcript",
+                len(considered),
+                ticker,
+                len(insights),
+                request.max_videos,
+            )
+            break
+
+        considered.append(scored)
         video_id = scored.metadata.video_id
         transcript = get_transcript(video_id)
         if transcript is None:
             skipped[video_id] = "no captions available"
             continue
+        extractions += 1
         try:
             insights.append(extract_insights(transcript, scored.metadata))
         except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as exc:
@@ -109,7 +133,14 @@ def run_digest(
             log.warning("Extraction failed for %s: %s", video_id, exc)
             skipped[video_id] = f"extraction failed: {exc}"
 
-    analysed = [sv for sv in videos if sv.metadata.video_id not in skipped]
+    analysed = [sv for sv in considered if sv.metadata.video_id not in skipped]
+    log.info(
+        "%s: analysed %d of %d requested, from %d ranked candidates",
+        ticker,
+        len(analysed),
+        request.max_videos,
+        len(ranked),
+    )
 
     claims = claims_from_insights(ticker, insights)
     # Both reads must happen before this run is saved, or it would be judged
@@ -119,7 +150,7 @@ def run_digest(
 
     judged = assess(ticker, request.company_name, claims, known)
     channel_by_video = {
-        scored.metadata.video_id: scored.metadata.channel_id for scored in videos
+        scored.metadata.video_id: scored.metadata.channel_id for scored in considered
     }
     judged = rank_claims(mark_corroboration(judged, known_channels, channel_by_video))
     for claim in judged:
@@ -145,7 +176,7 @@ def run_digest(
         request=request,
         generated_at=generated_at,
         channel=channel,
-        videos=videos,
+        videos=considered,
         insights=insights,
         claims=judged,
         thread=thread,
