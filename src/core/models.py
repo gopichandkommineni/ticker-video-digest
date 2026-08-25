@@ -174,6 +174,21 @@ class ScoredVideo(BaseModel):
     score_components: dict[str, float] = Field(default_factory=dict)
 
 
+class SourceSelection(BaseModel):
+    """What looking for videos turned up, including what it threw away.
+
+    ``filtered`` counts the reasons candidates were rejected before any
+    transcript was fetched. A run that finds nothing is otherwise silent about
+    why, which is the difference between "no coverage" and "your filter is
+    too strict".
+    """
+
+    videos: list[ScoredVideo] = Field(default_factory=list)
+    channel: ChannelInfo | None = None
+    considered: int = 0
+    filtered: dict[str, int] = Field(default_factory=dict)
+
+
 class Claim(BaseModel):
     """One extracted claim, tracked across runs so novelty can be judged.
 
@@ -249,6 +264,9 @@ class DigestRun(BaseModel):
     generated_at: datetime
     channel: ChannelInfo | None = None
     videos: list[ScoredVideo] = Field(default_factory=list)
+    # Reason -> count for candidates rejected before transcription.
+    filtered: dict[str, int] = Field(default_factory=dict)
+    considered_candidates: int = 0
     insights: list[VideoInsights] = Field(default_factory=list)
     claims: list[Claim] = Field(default_factory=list)
     thread: InsightThread | None = None

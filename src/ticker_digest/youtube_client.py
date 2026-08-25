@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 
 from googleapiclient.discovery import build
@@ -173,15 +174,32 @@ def _hydrate_videos(youtube, video_ids: list[str]) -> list[VideoMetadata]:
 
 def _apply_quality_filter(
     videos: list[VideoMetadata], ticker: str | None, company_name: str = ""
-) -> list[VideoMetadata]:
+) -> tuple[list[VideoMetadata], dict[str, int]]:
+    """Filter, and report the tally of why things were dropped.
+
+    Logged at INFO rather than DEBUG on purpose: "0 videos" is the one result
+    where the reader most needs to know which rule fired, and that is exactly
+    when nothing else is printed.
+    """
     kept: list[VideoMetadata] = []
+    dropped: Counter[str] = Counter()
     for video in videos:
-        ok, reason = passes_quality_filters(video, ticker, company_name)
-        if ok:
+        verdict = passes_quality_filters(video, ticker, company_name)
+        if verdict.ok:
             kept.append(video)
         else:
-            log.debug("Skipping %s (%s): %s", video.video_id, video.title, reason)
-    return kept
+            dropped[verdict.category] += 1
+            log.debug("Skipping %s (%s): %s", video.video_id, video.title, verdict.detail)
+
+    if dropped:
+        tally = ", ".join(f"{count} {reason}" for reason, count in dropped.most_common())
+        log.info(
+            "Quality filter: kept %d of %d candidates — dropped %s",
+            len(kept),
+            len(videos),
+            tally,
+        )
+    return kept, dict(dropped)
 
 
 def search_recent_videos(
@@ -189,8 +207,8 @@ def search_recent_videos(
     company_name: str,
     days: int = 7,
     max_results: int = 50,
-) -> list[VideoMetadata]:
-    """Return quality-filtered videos about *ticker* published in the last *days*.
+) -> tuple[list[VideoMetadata], dict[str, int]]:
+    """Videos about *ticker* from the last *days*, plus why others were dropped.
 
     Results are sorted by view count descending. Reliability ranking is a
     separate step — see :func:`ticker_digest.sources.select_videos`.
@@ -217,15 +235,15 @@ def search_recent_videos(
 
     video_ids = [item["id"]["videoId"] for item in search_resp.get("items", [])]
     if not video_ids:
-        log.info("No videos found for %r", query)
-        return []
+        log.info("YouTube returned no results at all for %r", query)
+        return [], {}
 
-    results = _apply_quality_filter(
+    results, dropped = _apply_quality_filter(
         _hydrate_videos(youtube, video_ids), ticker, company_name
     )
     results.sort(key=lambda v: v.view_count, reverse=True)
     log.info("Returning %d videos after quality filter", len(results))
-    return results
+    return results, dropped
 
 
 def _channel_info_by_id(youtube, channel_id: str) -> ChannelInfo | None:
@@ -314,7 +332,7 @@ def list_channel_videos(
     max_results: int = 50,
     ticker: str | None = None,
     company_name: str = "",
-) -> list[VideoMetadata]:
+) -> tuple[list[VideoMetadata], dict[str, int]]:
     """Return quality-filtered recent videos from one channel, newest first.
 
     *query* narrows the channel's uploads to a topic (usually the ticker or
@@ -342,11 +360,11 @@ def list_channel_videos(
     ]
     if not video_ids:
         log.info("Channel %s has no matching videos in the last %d days", channel_id, days)
-        return []
+        return [], {}
 
-    results = _apply_quality_filter(
+    results, dropped = _apply_quality_filter(
         _hydrate_videos(youtube, video_ids), ticker, company_name
     )
     results.sort(key=lambda v: v.published_at, reverse=True)
     log.info("Channel %s: %d videos after quality filter", channel_id, len(results))
-    return results
+    return results, dropped

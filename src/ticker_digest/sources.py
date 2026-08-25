@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 
-from core.models import ChannelInfo, DigestRequest, ScoredVideo
+from core.models import ChannelInfo, DigestRequest, SourceSelection
 from ticker_digest.quality import score_videos
 from ticker_digest.youtube_client import (
     list_channel_videos,
@@ -69,34 +69,34 @@ def resolve_company_name(ticker: str) -> str:
     return name or ticker.upper()
 
 
-def select_videos(
-    request: DigestRequest,
-) -> tuple[list[ScoredVideo], ChannelInfo | None]:
-    """Resolve *request* into a ranked shortlist and the channel, if any."""
+def select_videos(request: DigestRequest) -> SourceSelection:
+    """Resolve *request* into ranked candidates, plus what was rejected."""
     if request.source_kind == "channel":
         return _from_channel(request)
-    return _from_ticker_search(request), None
+    return _from_ticker_search(request)
 
 
-def _from_ticker_search(request: DigestRequest) -> list[ScoredVideo]:
-    videos = search_recent_videos(
+def _from_ticker_search(request: DigestRequest) -> SourceSelection:
+    videos, filtered = search_recent_videos(
         ticker=request.ticker,
         company_name=request.company_name,
         days=request.days,
     )
+    considered = len(videos) + sum(filtered.values())
     if not videos:
         log.info("Search for %s returned no usable videos", request.ticker)
-        return []
+        return SourceSelection(considered=considered, filtered=filtered)
+
     ranked = score_videos(videos)
     log.info(
         "Search for %s: %d usable videos, ranked by reliability",
         request.ticker,
         len(ranked),
     )
-    return ranked
+    return SourceSelection(videos=ranked, considered=considered, filtered=filtered)
 
 
-def _from_channel(request: DigestRequest) -> tuple[list[ScoredVideo], ChannelInfo]:
+def _from_channel(request: DigestRequest) -> SourceSelection:
     if not request.channel_query:
         raise SourceResolutionError("source_kind is 'channel' but no channel was given")
 
@@ -117,13 +117,14 @@ def _from_channel(request: DigestRequest) -> tuple[list[ScoredVideo], ChannelInf
     # usually covers more than one name, and a digest about RKLB shouldn't
     # ingest their Bitcoin video.
     query = f"{request.ticker} OR {request.company_name}"
-    videos = list_channel_videos(
+    videos, filtered = list_channel_videos(
         channel_id=channel.channel_id,
         days=request.days,
         query=query,
         ticker=request.ticker,
         company_name=request.company_name,
     )
+    considered = len(videos) + sum(filtered.values())
     if not videos:
         log.info(
             "%s published nothing about %s in the last %d days",
@@ -131,6 +132,11 @@ def _from_channel(request: DigestRequest) -> tuple[list[ScoredVideo], ChannelInf
             request.ticker,
             request.days,
         )
-        return [], channel
+        return SourceSelection(channel=channel, considered=considered, filtered=filtered)
 
-    return score_videos(videos), channel
+    return SourceSelection(
+        videos=score_videos(videos),
+        channel=channel,
+        considered=considered,
+        filtered=filtered,
+    )

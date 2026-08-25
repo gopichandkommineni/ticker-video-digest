@@ -139,7 +139,10 @@ through a filter and then a ranking:
 
 - *dropped* — under 120 seconds, channels under 500 subscribers, a title
   that's shouted or stuffed with 🚀🔥 emoji, or (for short tickers) nothing
-  identifying the company at all
+  identifying the company at all. **The tally is always reported**: a run that
+  finds nothing says how many candidates it saw and which rule rejected them,
+  because "0 videos" on its own can't tell you whether the stock has no
+  coverage or the filter is too strict.
 - *ranked* — subscribers (30%), views (25%), views-per-subscriber (15%),
   duration (15%), recency (15%)
 

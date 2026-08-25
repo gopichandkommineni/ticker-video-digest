@@ -1,5 +1,12 @@
 """End-to-end pipeline — every external call (YouTube, captions, Claude) is mocked."""
-from core.models import ChannelInfo, Citation, Claim, DigestRequest, InsightThread
+from core.models import (
+    ChannelInfo,
+    Citation,
+    Claim,
+    DigestRequest,
+    InsightThread,
+    SourceSelection,
+)
 from ticker_digest import store
 from ticker_digest.pipeline import mark_corroboration, run_digest
 from ticker_digest.quality import score_videos
@@ -22,7 +29,10 @@ def _wire(
 ):
     """Patch the pipeline's four external dependencies and return the mocks."""
     scored = score_videos([make_metadata(v) for v in videos], now=NOW)
-    mocker.patch("ticker_digest.pipeline.select_videos", return_value=(scored, channel))
+    mocker.patch(
+        "ticker_digest.pipeline.select_videos",
+        return_value=SourceSelection(videos=scored, channel=channel, considered=len(scored)),
+    )
 
     if transcripts is None:
         transcripts = {v: mocker.MagicMock() for v in videos}
@@ -97,7 +107,9 @@ def test_one_failed_extraction_does_not_kill_the_run(mocker, tmp_path) -> None:
 
 
 def test_no_usable_videos_yields_a_run_with_no_thread(mocker, tmp_path) -> None:
-    mocker.patch("ticker_digest.pipeline.select_videos", return_value=([], None))
+    mocker.patch(
+        "ticker_digest.pipeline.select_videos", return_value=SourceSelection()
+    )
     mocker.patch("ticker_digest.pipeline.get_transcript", return_value=None)
     build = mocker.patch("ticker_digest.pipeline.build_thread")
 
@@ -243,7 +255,10 @@ def _pool(mocker, ids, *, with_captions, extraction_error_on=()):
     # means what the test says it means.
     order = {v: i for i, v in enumerate(ids)}
     scored.sort(key=lambda sv: order[sv.metadata.video_id])
-    mocker.patch("ticker_digest.pipeline.select_videos", return_value=(scored, None))
+    mocker.patch(
+        "ticker_digest.pipeline.select_videos",
+        return_value=SourceSelection(videos=scored, considered=len(scored)),
+    )
 
     mocker.patch(
         "ticker_digest.pipeline.get_transcript",

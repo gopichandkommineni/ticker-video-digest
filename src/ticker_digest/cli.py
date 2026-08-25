@@ -106,6 +106,36 @@ def render_thread(thread: InsightThread) -> str:
     return "\n".join(lines)
 
 
+def describe_empty_run(run: DigestRun) -> str:
+    """Say why a run found nothing, using the tally the filter kept.
+
+    "No videos" is the one outcome where the reader most needs to know which
+    rule fired — and the one where nothing else gets printed.
+    """
+    ticker = run.request.ticker
+    where = f"on {run.channel.title}" if run.channel else "in search results"
+    window = f"the last {run.request.days} days"
+
+    if not run.considered_candidates:
+        return (
+            f"YouTube returned nothing at all for {ticker} {where} in {window}.\n"
+            f"  Try a longer window: --days 30"
+        )
+
+    tally = ", ".join(
+        f"{count} {reason}" for reason, count in sorted(
+            run.filtered.items(), key=lambda kv: -kv[1]
+        )
+    )
+    return (
+        f"Found {run.considered_candidates} videos about {ticker} {where} in "
+        f"{window}, but none passed the quality filters:\n"
+        f"  {tally}\n"
+        f"  Try a longer window (--days 30), or a channel you trust "
+        f"(--channel @handle)."
+    )
+
+
 def claim_summary(run: DigestRun) -> str:
     """One line on what the run's claims turned out to be."""
     counts = Counter(claim.novelty for claim in run.claims)
@@ -193,11 +223,7 @@ def _cmd_ticker(args: argparse.Namespace) -> int:
         return 0
 
     if not run.videos:
-        where = f"on {args.channel}" if args.channel else "in search results"
-        print(
-            f"No videos about {ticker} {where} in the last {args.days} days "
-            f"that pass the quality filters."
-        )
+        print(f"\n{describe_empty_run(run)}")
         return 0
 
     _print_run_sources(run)

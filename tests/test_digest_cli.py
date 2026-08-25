@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import pytest
 
 from core.models import (
+    ChannelInfo,
     Citation,
     Claim,
     DigestRequest,
@@ -11,7 +12,12 @@ from core.models import (
     InsightThread,
     ThreadPost,
 )
-from ticker_digest.cli import claim_summary, main, render_thread
+from ticker_digest.cli import (
+    claim_summary,
+    describe_empty_run,
+    main,
+    render_thread,
+)
 from ticker_digest.quality import score_videos
 from ticker_digest.sources import SourceResolutionError
 
@@ -157,7 +163,9 @@ def test_no_videos_says_so_without_failing(mocker, capsys) -> None:
     mocker.patch("ticker_digest.pipeline.run_digest", return_value=_run(videos=()))
 
     assert main(["ticker", "RKLB"]) == 0
-    assert "No videos about RKLB" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "YouTube returned nothing at all for RKLB" in out
+    assert "--days 30" in out
 
 
 def test_transcript_failures_are_reported_when_there_is_no_thread(mocker, capsys) -> None:
@@ -325,3 +333,57 @@ def test_an_unresolvable_subject_exits_nonzero_with_advice(mocker, capsys) -> No
     assert "Couldn't work out which stock" in err
     assert "Rocket Lab" in err
     run_digest.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Explaining an empty run
+# ---------------------------------------------------------------------------
+
+
+def _empty_run(considered=0, filtered=None, channel=None) -> DigestRun:
+    return DigestRun(
+        run_id="run001",
+        request=DigestRequest(ticker="PL", company_name="Planet Labs PBC", days=7),
+        generated_at=NOW,
+        videos=[],
+        channel=channel,
+        considered_candidates=considered,
+        filtered=filtered or {},
+    )
+
+
+def test_an_empty_run_names_the_rule_that_dropped_everything() -> None:
+    """The reported case: 0 videos, and no way to tell which filter fired."""
+    text = describe_empty_run(
+        _empty_run(considered=14, filtered={"too short": 9, "no mention of PL": 5})
+    )
+
+    assert "Found 14 videos about PL" in text
+    assert "9 too short" in text
+    assert "5 no mention of PL" in text
+    assert "--days 30" in text
+
+
+def test_the_tally_leads_with_the_commonest_reason() -> None:
+    text = describe_empty_run(
+        _empty_run(considered=10, filtered={"bait title": 2, "too short": 8})
+    )
+
+    assert text.index("8 too short") < text.index("2 bait title")
+
+
+def test_nothing_returned_at_all_is_distinguished_from_everything_filtered() -> None:
+    """"YouTube has nothing" and "your filter ate it" need different answers."""
+    text = describe_empty_run(_empty_run(considered=0))
+
+    assert "returned nothing at all" in text
+    assert "quality filters" not in text
+
+
+def test_an_empty_channel_run_names_the_channel() -> None:
+    channel = ChannelInfo(channel_id="UC" + "a" * 22, title="Space Investing")
+    text = describe_empty_run(
+        _empty_run(considered=3, filtered={"too short": 3}, channel=channel)
+    )
+
+    assert "on Space Investing" in text
