@@ -150,7 +150,7 @@ def test_channel_listing_filters_bait_and_sorts_newest_first(mocker) -> None:
         channels=CHANNEL_STATS_RESPONSE,
     )
 
-    videos = list_channel_videos(CHANNEL_ID, days=30, query="RKLB", ticker="RKLB")
+    videos, _ = list_channel_videos(CHANNEL_ID, days=30, query="RKLB", ticker="RKLB")
 
     # vid002 has more views but an all-caps, emoji-stuffed title.
     assert [v.video_id for v in videos] == ["vid001"]
@@ -163,6 +163,6 @@ def test_channel_listing_filters_bait_and_sorts_newest_first(mocker) -> None:
 def test_channel_listing_omits_the_query_when_none_is_given(mocker) -> None:
     yt = _youtube(mocker, search={"items": []})
 
-    assert list_channel_videos(CHANNEL_ID) == []
+    assert list_channel_videos(CHANNEL_ID) == ([], {})
     assert "q" not in yt.search.return_value.list.call_args.kwargs
     yt.videos.assert_not_called()

@@ -53,33 +53,34 @@ def test_one_emoji_is_tolerated_but_two_is_not() -> None:
 
 
 def test_good_video_passes() -> None:
-    ok, reason = passes_quality_filters(make_metadata(), "RKLB")
-    assert ok is True
-    assert reason == ""
+    verdict = passes_quality_filters(make_metadata(), "RKLB")
+    assert verdict.ok is True
+    assert verdict.category == ""
 
 
 def test_short_video_is_rejected_with_a_reason() -> None:
-    ok, reason = passes_quality_filters(
+    verdict = passes_quality_filters(
         make_metadata(duration=MIN_VIDEO_DURATION_SECONDS - 1), "RKLB"
     )
-    assert ok is False
-    assert "too short" in reason
+    assert verdict.ok is False
+    assert verdict.category == "too short"
+    assert "119s" in verdict.detail
 
 
 def test_small_channel_is_rejected_with_a_reason() -> None:
-    ok, reason = passes_quality_filters(
+    verdict = passes_quality_filters(
         make_metadata(subscribers=MIN_SUBSCRIBER_COUNT - 1), "RKLB"
     )
-    assert ok is False
-    assert "channel too small" in reason
+    assert verdict.ok is False
+    assert verdict.category == "channel too small"
 
 
 def test_bait_title_is_rejected() -> None:
-    ok, reason = passes_quality_filters(
+    verdict = passes_quality_filters(
         make_metadata(title="RKLB IS GOING PARABOLIC RIGHT NOW"), "RKLB"
     )
-    assert ok is False
-    assert "engagement bait" in reason
+    assert verdict.ok is False
+    assert verdict.category == "bait title"
 
 
 # ---------------------------------------------------------------------------
@@ -184,9 +185,10 @@ def test_the_reported_false_positive_is_rejected() -> None:
 
     assert mentions_subject(vlog, "PL", "Planet Labs PBC") is False
 
-    ok, reason = passes_quality_filters(vlog, "PL", "Planet Labs PBC")
-    assert ok is False
-    assert "mentions PL" in reason
+    verdict = passes_quality_filters(vlog, "PL", "Planet Labs PBC")
+    assert verdict.ok is False
+    assert verdict.category == "no mention of PL"
+    assert "mentions PL" in verdict.detail
 
 
 def test_an_upper_case_ticker_in_the_title_is_evidence_enough() -> None:

@@ -80,7 +80,8 @@ def run_digest(
     generated_at = datetime.now(timezone.utc)
     ticker = request.ticker.upper()
 
-    ranked, channel = select_videos(request)
+    selection = select_videos(request)
+    ranked, channel = selection.videos, selection.channel
     source_label = channel.title if channel else ticker
     run_id = _run_id(ticker, generated_at, source_label)
 
@@ -177,6 +178,8 @@ def run_digest(
         generated_at=generated_at,
         channel=channel,
         videos=considered,
+        filtered=selection.filtered,
+        considered_candidates=selection.considered,
         insights=insights,
         claims=judged,
         thread=thread,

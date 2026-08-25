@@ -39,14 +39,18 @@ def test_search_path_ranks_every_candidate_without_rationing(mocker) -> None:
     """
     search = mocker.patch(
         "ticker_digest.sources.search_recent_videos",
-        return_value=[
-            make_metadata("weak", subscribers=600, views=300, duration=180, age_days=25),
-            make_metadata("strong", subscribers=300_000, views=90_000, duration=1_500),
-            make_metadata("middle", subscribers=20_000, views=9_000, duration=700),
-        ],
+        return_value=(
+            [
+                make_metadata("weak", subscribers=600, views=300, duration=180, age_days=25),
+                make_metadata("strong", subscribers=300_000, views=90_000, duration=1_500),
+                make_metadata("middle", subscribers=20_000, views=9_000, duration=700),
+            ],
+            {},
+        ),
     )
 
-    videos, channel = select_videos(_request(days=14))
+    selection = select_videos(_request(days=14))
+    videos, channel = selection.videos, selection.channel
 
     assert channel is None
     # max_videos is 2, but all three come back, best first.
@@ -56,12 +60,18 @@ def test_search_path_ranks_every_candidate_without_rationing(mocker) -> None:
 
 
 def test_search_path_with_no_results_returns_empty(mocker) -> None:
-    mocker.patch("ticker_digest.sources.search_recent_videos", return_value=[])
+    mocker.patch(
+        "ticker_digest.sources.search_recent_videos",
+        return_value=([], {"too short": 4}),
+    )
 
-    videos, channel = select_videos(_request())
+    selection = select_videos(_request())
 
-    assert videos == []
-    assert channel is None
+    assert selection.videos == []
+    assert selection.channel is None
+    # The tally survives an empty result — it is the only explanation there is.
+    assert selection.filtered == {"too short": 4}
+    assert selection.considered == 4
 
 
 # ---------------------------------------------------------------------------
@@ -73,12 +83,13 @@ def test_channel_path_resolves_the_channel_and_narrows_to_the_ticker(mocker) -> 
     mocker.patch("ticker_digest.sources.resolve_channel", return_value=_channel())
     listing = mocker.patch(
         "ticker_digest.sources.list_channel_videos",
-        return_value=[make_metadata("vid001"), make_metadata("vid002", views=40_000)],
+        return_value=([make_metadata("vid001"), make_metadata("vid002", views=40_000)], {}),
     )
 
-    videos, channel = select_videos(
+    selection = select_videos(
         _request(source_kind="channel", channel_query="Space Investing", days=30)
     )
+    videos, channel = selection.videos, selection.channel
 
     assert channel is not None
     assert channel.title == "Space Investing"
@@ -106,14 +117,17 @@ def test_channel_with_nothing_about_the_ticker_returns_the_channel_and_no_videos
     mocker,
 ) -> None:
     mocker.patch("ticker_digest.sources.resolve_channel", return_value=_channel())
-    mocker.patch("ticker_digest.sources.list_channel_videos", return_value=[])
+    mocker.patch(
+        "ticker_digest.sources.list_channel_videos", return_value=([], {"bait title": 2})
+    )
 
-    videos, channel = select_videos(
+    selection = select_videos(
         _request(source_kind="channel", channel_query="Space Investing")
     )
 
-    assert videos == []
-    assert channel is not None
+    assert selection.videos == []
+    assert selection.channel is not None
+    assert selection.filtered == {"bait title": 2}
 
 
 # ---------------------------------------------------------------------------

@@ -5,7 +5,9 @@ Nothing here talks to the network or to an LLM. Given a ``VideoMetadata`` it
 answers two questions:
 
 - ``passes_quality_filters`` — should we spend a transcript + LLM call on this
-  video at all? (duration, channel size, engagement-bait titles)
+  video at all? (duration, channel size, engagement-bait titles, relevance).
+  Returns a categorised verdict, because a run that filters everything out has
+  to be able to say which rule did it.
 - ``reliability_score`` — how much should we trust it relative to the others?
 
 Keeping this pure is deliberate: the ranking that decides what the user reads
@@ -17,6 +19,7 @@ import logging
 import math
 import re
 from datetime import datetime, timezone
+from typing import NamedTuple
 
 from core.config import (
     AMBIGUOUS_TICKER_LENGTH,
@@ -121,28 +124,49 @@ def mentions_subject(
     return any(re.search(rf"\b{re.escape(word)}\b", lowered) for word in words)
 
 
+class Verdict(NamedTuple):
+    """Why a video was kept or dropped.
+
+    *category* aggregates ("too short"); *detail* explains this one video
+    ("too short (95s < 120s)"). A run that drops everything needs the first to
+    say what happened and the second to prove it.
+    """
+
+    ok: bool
+    category: str
+    detail: str
+
+
+PASSED = Verdict(True, "", "")
+
+
 def passes_quality_filters(
     metadata: VideoMetadata, ticker: str | None = None, company_name: str = ""
-) -> tuple[bool, str]:
-    """Return ``(ok, reason)``. *reason* is empty when the video passes.
-
-    The reason string is kept so the caller can report *why* a video was
-    dropped rather than silently returning a shorter list.
-    """
+) -> Verdict:
+    """Should we spend a transcript and a model call on this video?"""
     if metadata.duration_seconds < MIN_VIDEO_DURATION_SECONDS:
-        return False, (
-            f"too short ({metadata.duration_seconds}s < {MIN_VIDEO_DURATION_SECONDS}s)"
+        return Verdict(
+            False,
+            "too short",
+            f"too short ({metadata.duration_seconds}s < {MIN_VIDEO_DURATION_SECONDS}s)",
         )
     if metadata.channel_subscriber_count < MIN_SUBSCRIBER_COUNT:
-        return False, (
+        return Verdict(
+            False,
+            "channel too small",
             f"channel too small ({metadata.channel_subscriber_count} subs "
-            f"< {MIN_SUBSCRIBER_COUNT})"
+            f"< {MIN_SUBSCRIBER_COUNT})",
         )
     if is_spam_title(metadata.title, ticker):
-        return False, "title looks like engagement bait"
+        return Verdict(False, "bait title", "title looks like engagement bait")
     if ticker and not mentions_subject(metadata, ticker, company_name):
-        return False, f"nothing in the title or channel mentions {ticker.upper()}"
-    return True, ""
+        symbol = ticker.upper()
+        return Verdict(
+            False,
+            f"no mention of {symbol}",
+            f"nothing in the title or channel mentions {symbol}",
+        )
+    return PASSED
 
 
 def _log_share(value: float, saturation: float) -> float:

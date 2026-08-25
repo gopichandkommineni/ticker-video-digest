@@ -5,7 +5,7 @@ import anthropic
 import pytest
 from googleapiclient.errors import HttpError
 
-from core.models import DigestRequest
+from core.models import DigestRequest, SourceSelection
 from ticker_digest.cli import main
 from ticker_digest.pipeline import DigestSetupError, run_digest
 from ticker_digest.quality import score_videos
@@ -91,7 +91,10 @@ def test_a_rejected_claude_key_stops_the_run_instead_of_retrying_per_video(
     mocker, tmp_path
 ) -> None:
     scored = score_videos([make_metadata("vid001"), make_metadata("vid002")], now=NOW)
-    mocker.patch("ticker_digest.pipeline.select_videos", return_value=(scored, None))
+    mocker.patch(
+        "ticker_digest.pipeline.select_videos",
+        return_value=SourceSelection(videos=scored, considered=len(scored)),
+    )
     mocker.patch("ticker_digest.pipeline.get_transcript", return_value=mocker.MagicMock())
 
     auth_error = anthropic.AuthenticationError(
@@ -118,7 +121,10 @@ def test_an_ordinary_extraction_failure_still_only_skips_that_video(
     mocker, tmp_path
 ) -> None:
     scored = score_videos([make_metadata("vid001"), make_metadata("vid002")], now=NOW)
-    mocker.patch("ticker_digest.pipeline.select_videos", return_value=(scored, None))
+    mocker.patch(
+        "ticker_digest.pipeline.select_videos",
+        return_value=SourceSelection(videos=scored, considered=len(scored)),
+    )
     mocker.patch("ticker_digest.pipeline.get_transcript", return_value=mocker.MagicMock())
     mocker.patch(
         "ticker_digest.pipeline.extract_insights",

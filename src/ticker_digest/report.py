@@ -73,14 +73,27 @@ def thread_to_markdown(run: DigestRun) -> str:
     lines = [f"## {ticker} — {company}", ""]
 
     if not run.videos:
-        lines += [
-            (
-                f"No videos about **{ticker}** from {source} in the last "
-                f"{run.request.days} days passed the quality filters."
-            ),
-            "",
-            "Nothing was transcribed and no model calls were made.",
-        ]
+        if not run.considered_candidates:
+            lines.append(
+                f"YouTube returned nothing at all for **{ticker}** from {source} "
+                f"in the last {run.request.days} days."
+            )
+        else:
+            lines += [
+                (
+                    f"Found {run.considered_candidates} videos about **{ticker}** "
+                    f"from {source} in the last {run.request.days} days, but none "
+                    "passed the quality filters:"
+                ),
+                "",
+                *(
+                    f"- {count} {reason}"
+                    for reason, count in sorted(
+                        run.filtered.items(), key=lambda kv: -kv[1]
+                    )
+                ),
+            ]
+        lines += ["", "Nothing was transcribed and no model calls were made."]
         return "\n".join(lines)
 
     thread = run.thread

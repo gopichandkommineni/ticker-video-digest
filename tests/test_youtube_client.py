@@ -94,7 +94,7 @@ def test_happy_path_returns_sorted_by_view_count(mocker) -> None:
         CHANNELS_RESPONSE_CHAN_A,
     )
 
-    results = search_recent_videos("RKLB", "Rocket Lab")
+    results, _ = search_recent_videos("RKLB", "Rocket Lab")
 
     assert len(results) == 2
     # sorted descending by view_count
@@ -139,7 +139,7 @@ def test_short_video_is_excluded(mocker) -> None:
     }
     _make_youtube_mock(mocker, SEARCH_RESPONSE_2_VIDEOS, videos_resp, CHANNELS_RESPONSE_CHAN_A)
 
-    results = search_recent_videos("RKLB", "Rocket Lab")
+    results, _ = search_recent_videos("RKLB", "Rocket Lab")
 
     assert len(results) == 1
     assert results[0].video_id == "vid002"
@@ -184,7 +184,7 @@ def test_low_sub_channel_is_excluded(mocker) -> None:
     }
     _make_youtube_mock(mocker, SEARCH_RESPONSE_2_VIDEOS, videos_resp, channels_resp)
 
-    results = search_recent_videos("RKLB", "Rocket Lab")
+    results, _ = search_recent_videos("RKLB", "Rocket Lab")
 
     assert len(results) == 1
     assert results[0].video_id == "vid001"
@@ -200,7 +200,7 @@ def test_empty_search_returns_empty_list(mocker) -> None:
     yt = mock_build.return_value
     yt.search.return_value.list.return_value.execute.return_value = {"items": []}
 
-    results = search_recent_videos("RKLB", "Rocket Lab")
+    results, _ = search_recent_videos("RKLB", "Rocket Lab")
 
     assert results == []
     # videos.list and channels.list should NOT be called when search is empty

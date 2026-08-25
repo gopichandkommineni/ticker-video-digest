@@ -103,7 +103,7 @@ def test_no_corroboration_means_no_dangling_footnote() -> None:
 def test_a_run_with_no_videos_explains_that_nothing_was_spent() -> None:
     md = thread_to_markdown(_run(videos=()))
 
-    assert "No videos about **RKLB**" in md
+    assert "**RKLB**" in md
     assert "no model calls were made" in md
     assert "### Sources" not in md
 
@@ -146,3 +146,22 @@ def test_cli_entry_reads_stdin(monkeypatch, capsys) -> None:
 def test_cli_entry_rejects_wrong_arguments(capsys) -> None:
     assert main([]) == 2
     assert "usage:" in capsys.readouterr().err
+
+
+def test_an_empty_run_reports_the_filter_tally() -> None:
+    run = _run(videos=())
+    run.considered_candidates = 14
+    run.filtered = {"too short": 9, "no mention of PL": 5}
+
+    md = thread_to_markdown(run)
+
+    assert "Found 14 videos" in md
+    assert "- 9 too short" in md
+    assert "- 5 no mention of PL" in md
+
+
+def test_a_search_that_returned_nothing_says_exactly_that() -> None:
+    md = thread_to_markdown(_run(videos=()))
+
+    assert "returned nothing at all" in md
+    assert "quality filters" not in md
