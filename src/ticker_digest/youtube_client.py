@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from core.config import YOUTUBE_API_KEY
+from core.config import AMBIGUOUS_TICKER_LENGTH, YOUTUBE_API_KEY
 from core.models import ChannelInfo, VideoMetadata
 from ticker_digest.quality import passes_quality_filters
 
@@ -82,6 +82,23 @@ def _parse_iso8601_duration(duration: str) -> int:
         return 0
     hours, minutes, seconds = (int(g or 0) for g in match.groups())
     return hours * 3600 + minutes * 60 + seconds
+
+
+def build_search_query(ticker: str, company_name: str = "") -> str:
+    """The YouTube query for a ticker, hedged against short symbols.
+
+    A long symbol like RKLB is distinctive enough to search for bare. A short
+    one is not: searching "PL" returns anything containing those letters, so it
+    only appears paired with "stock", and the company name leads.
+    """
+    symbol = ticker.strip().upper()
+    company = company_name.strip()
+
+    if not company or company.upper() == symbol:
+        return f'"{symbol}" stock'
+    if len(symbol) <= AMBIGUOUS_TICKER_LENGTH:
+        return f'"{company}" stock OR "{symbol} stock"'
+    return f'"{symbol}" OR "{company}" stock'
 
 
 def _chunks(items: list[str], size: int = _MAX_IDS_PER_CALL):
@@ -155,11 +172,11 @@ def _hydrate_videos(youtube, video_ids: list[str]) -> list[VideoMetadata]:
 
 
 def _apply_quality_filter(
-    videos: list[VideoMetadata], ticker: str | None
+    videos: list[VideoMetadata], ticker: str | None, company_name: str = ""
 ) -> list[VideoMetadata]:
     kept: list[VideoMetadata] = []
     for video in videos:
-        ok, reason = passes_quality_filters(video, ticker)
+        ok, reason = passes_quality_filters(video, ticker, company_name)
         if ok:
             kept.append(video)
         else:
@@ -181,7 +198,7 @@ def search_recent_videos(
     youtube = _client()
 
     published_after = _published_after(days)
-    query = f'"{ticker}" OR "{company_name}" stock'
+    query = build_search_query(ticker, company_name)
     log.info("YouTube search: %r published after %s", query, published_after)
 
     search_resp = _execute(
@@ -203,7 +220,9 @@ def search_recent_videos(
         log.info("No videos found for %r", query)
         return []
 
-    results = _apply_quality_filter(_hydrate_videos(youtube, video_ids), ticker)
+    results = _apply_quality_filter(
+        _hydrate_videos(youtube, video_ids), ticker, company_name
+    )
     results.sort(key=lambda v: v.view_count, reverse=True)
     log.info("Returning %d videos after quality filter", len(results))
     return results
@@ -294,6 +313,7 @@ def list_channel_videos(
     query: str | None = None,
     max_results: int = 50,
     ticker: str | None = None,
+    company_name: str = "",
 ) -> list[VideoMetadata]:
     """Return quality-filtered recent videos from one channel, newest first.
 
@@ -324,7 +344,9 @@ def list_channel_videos(
         log.info("Channel %s has no matching videos in the last %d days", channel_id, days)
         return []
 
-    results = _apply_quality_filter(_hydrate_videos(youtube, video_ids), ticker)
+    results = _apply_quality_filter(
+        _hydrate_videos(youtube, video_ids), ticker, company_name
+    )
     results.sort(key=lambda v: v.published_at, reverse=True)
     log.info("Channel %s: %d videos after quality filter", channel_id, len(results))
     return results

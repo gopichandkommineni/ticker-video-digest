@@ -57,6 +57,27 @@ search — digesting the wrong creator is worse than digesting nobody.
 A ticker is required in both cases. It is the key everything is stored under,
 and the thing novelty is judged against.
 
+### Short tickers
+
+*Added 2026-08-25, from a real run: `PL` returned one video, a three-minute
+family vlog whose title contained the letters "pl".*
+
+A ticker of three characters or fewer is a word and an abbreviation as well as
+a stock. Two changes follow from that, and neither applies to longer symbols:
+
+- **The query leads with the company name**, and the symbol only ever appears
+  as the phrase `"PL stock"` — never bare.
+- **The video must mention the subject** to survive the filter: a distinctive
+  word from the company name anywhere in the title or channel, or the ticker
+  written as its own upper-case word. Incidental matches are lower-case and
+  incidental; people discussing a stock write the symbol in caps.
+
+A company name made entirely of stopwords ("Corp Inc Ltd") yields nothing to
+match on, so the check passes rather than dropping every video.
+
+The user may also name the company instead of the ticker; it is resolved to a
+symbol before anything else happens.
+
 ### Quality filter (before spending a transcript call)
 
 Drop the video if it is under 120 seconds, if the channel has under 500

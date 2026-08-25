@@ -3,8 +3,10 @@ import pytest
 
 from core.config import MIN_SUBSCRIBER_COUNT, MIN_VIDEO_DURATION_SECONDS
 from ticker_digest.quality import (
+    distinctive_company_words,
     is_all_caps_title,
     is_spam_title,
+    mentions_subject,
     passes_quality_filters,
     reliability_score,
     score_videos,
@@ -147,3 +149,55 @@ def test_score_videos_returns_most_reliable_first() -> None:
     assert [sv.metadata.video_id for sv in ranked] == ["strong", "middle", "weak"]
     assert ranked[0].reliability_score > ranked[-1].reliability_score
     assert ranked[0].score_components["depth"] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# Short tickers have to prove the video is about them
+# ---------------------------------------------------------------------------
+
+
+def test_distinctive_company_words_drops_corporate_furniture() -> None:
+    assert distinctive_company_words("Planet Labs PBC") == {"planet", "labs"}
+    assert distinctive_company_words("Rocket Lab Corporation") == {"rocket"}
+    assert distinctive_company_words("Inc Corp Ltd") == set()
+
+
+def test_a_long_ticker_is_distinctive_enough_on_its_own() -> None:
+    """RKLB matches nothing by accident, so nothing extra is asked of it."""
+    unrelated = make_metadata(title="A video about gardening", channel_title="Garden Time")
+
+    assert mentions_subject(unrelated, "RKLB", "Rocket Lab") is True
+
+
+def test_a_short_ticker_needs_the_company_named() -> None:
+    good = make_metadata(title="Planet Labs Q2 breakdown", channel_title="Space Desk")
+
+    assert mentions_subject(good, "PL", "Planet Labs PBC") is True
+
+
+def test_the_reported_false_positive_is_rejected() -> None:
+    """The real one: 'pl' inside an unrelated vlog title matched ticker PL."""
+    vlog = make_metadata(
+        title="Maa n jhia kemiti birthday palana kalu pl watch like share",
+        channel_title="Sujata Roy Daily Vlogs",
+    )
+
+    assert mentions_subject(vlog, "PL", "Planet Labs PBC") is False
+
+    ok, reason = passes_quality_filters(vlog, "PL", "Planet Labs PBC")
+    assert ok is False
+    assert "mentions PL" in reason
+
+
+def test_an_upper_case_ticker_in_the_title_is_evidence_enough() -> None:
+    """How someone discussing the stock writes it — and the noise does not."""
+    titled = make_metadata(title="PL stock: is it cheap?", channel_title="Value Hunt")
+
+    assert mentions_subject(titled, "PL", "Planet Labs PBC") is True
+
+
+def test_a_company_name_of_pure_stopwords_blocks_nothing() -> None:
+    """Better to read a doubtful video than to drop every one."""
+    anything = make_metadata(title="Completely unrelated", channel_title="Nothing")
+
+    assert mentions_subject(anything, "GM", "Corp Inc Ltd") is True

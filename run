@@ -84,7 +84,7 @@ cmd_digest() {
   if [ $# -eq 0 ]; then
     die "Which stock? Try:  ./run digest RKLB"
   fi
-  bold "Reading what YouTube said about $1…"
+  bold "Reading what YouTube said about $*…"
   echo "This makes AI calls, so it costs a little money and takes a minute."
   echo
   "$PY" -m ticker_digest ticker "$@"

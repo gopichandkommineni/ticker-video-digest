@@ -1,8 +1,11 @@
 """Unit tests for youtube_client — all API calls are mocked, no network."""
 import pytest
 
-from ticker_digest.youtube_client import _parse_iso8601_duration, search_recent_videos
-
+from ticker_digest.youtube_client import (
+    _parse_iso8601_duration,
+    build_search_query,
+    search_recent_videos,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures — realistic but minimal API response shapes
@@ -203,3 +206,34 @@ def test_empty_search_returns_empty_list(mocker) -> None:
     # videos.list and channels.list should NOT be called when search is empty
     yt.videos.assert_not_called()
     yt.channels.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Query building
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "ticker, company, expected",
+    [
+        # Long symbols are distinctive; search for them bare.
+        ("RKLB", "Rocket Lab", '"RKLB" OR "Rocket Lab" stock'),
+        # Short ones are words too — lead with the company, and never let the
+        # symbol appear without financial context.
+        ("PL", "Planet Labs PBC", '"Planet Labs PBC" stock OR "PL stock"'),
+        ("F", "Ford Motor Company", '"Ford Motor Company" stock OR "F stock"'),
+        # No usable company name to lean on.
+        ("RKLB", "RKLB", '"RKLB" stock'),
+        ("RKLB", "", '"RKLB" stock'),
+    ],
+)
+def test_build_search_query(ticker: str, company: str, expected: str) -> None:
+    assert build_search_query(ticker, company) == expected
+
+
+def test_the_search_uses_the_hedged_query(mocker) -> None:
+    mock_build = _make_youtube_mock(mocker, {"items": []}, {"items": []}, {"items": []})
+
+    search_recent_videos("PL", "Planet Labs PBC")
+
+    query = mock_build.return_value.search.return_value.list.call_args.kwargs["q"]
+    assert query == '"Planet Labs PBC" stock OR "PL stock"'
