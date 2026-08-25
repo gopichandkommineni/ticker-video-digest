@@ -22,7 +22,8 @@ setting is wrong, which is the second-best outcome.
 
 No keys to hand? The same run works from GitHub: **Actions → YouTube Digest →
 Run workflow**, which uses the repository secrets and prints the thread in the
-run's Summary tab.
+run's Summary tab. Or read on — an `ANTHROPIC_API_KEY` is optional if you have
+Claude Code installed.
 
 ---
 
@@ -63,8 +64,34 @@ Channels, not videos — one commentator posting three times is one source.
 | `thread.py` | Writes the thread |
 | `store.py` | SQLite: runs, claims, threads |
 | `pipeline.py` | Wires the above together |
+| `llm.py` | The one way to ask Claude for structured data — over the API or the CLI |
 | `report.py` | Renders a stored run as Markdown, for GitHub or anywhere else |
 | `cli.py` | The command-line entry point |
+
+## Two ways to reach Claude
+
+Every model call goes through `llm.py`, which can get to Claude two ways:
+
+| Backend | Needs | How it asks for structured data |
+|---|---|---|
+| `api` | `ANTHROPIC_API_KEY` (or an `ant auth login` profile) | The SDK, forcing a tool call that carries the schema |
+| `cli` | A logged-in Claude Code CLI. **No API key.** | `claude -p --json-schema …`, the same schema |
+
+The default is `auto`: the API when a key is present, the CLI when it isn't.
+Force one with `TICKER_DIGEST_LLM_BACKEND=api|cli`.
+
+**Why the CLI path exists.** Plenty of people have a Claude Code subscription
+and no API key sitting around. This lets the digest run on that subscription
+instead — nothing to sign up for, nothing to paste into `.env`.
+
+**What it costs you.** The CLI carries its own tool definitions into every
+request — about 25k tokens of prompt overhead. That is a cache *write* on the
+first call of a run and a cache *read* on the rest, so a five-video digest pays
+it roughly once. It also spawns a process per call, so expect it to be slower
+than the API. It draws on your Claude subscription's usage, not on API billing.
+
+Both paths validate against the same pydantic models and retry once on a
+malformed answer, so the rest of the pipeline cannot tell them apart.
 
 ## The flow
 

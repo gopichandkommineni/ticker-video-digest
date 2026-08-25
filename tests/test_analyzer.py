@@ -87,7 +87,7 @@ def test_extract_insights_happy_path(mocker) -> None:
     mock_client = MagicMock()
     mock_client.messages.create.return_value = _make_tool_response("report_video_insights", valid_input)
 
-    mocker.patch("ticker_digest.analyzer.anthropic.Anthropic", return_value=mock_client)
+    mocker.patch("ticker_digest.llm.anthropic.Anthropic", return_value=mock_client)
 
     result = extract_insights(_make_transcript("vid001"), _make_metadata("vid001"))
 
@@ -131,7 +131,7 @@ def test_extract_insights_retries_on_validation_error(mocker) -> None:
         _make_tool_response("report_video_insights", valid_input),
     ]
 
-    mocker.patch("ticker_digest.analyzer.anthropic.Anthropic", return_value=mock_client)
+    mocker.patch("ticker_digest.llm.anthropic.Anthropic", return_value=mock_client)
 
     result = extract_insights(_make_transcript("vid001"), _make_metadata("vid001"))
 
@@ -168,7 +168,7 @@ def test_synthesize_digest_with_three_insights(mocker) -> None:
     mock_client = MagicMock()
     mock_client.messages.create.return_value = _make_tool_response("report_digest", synthesis_input)
 
-    mocker.patch("ticker_digest.analyzer.anthropic.Anthropic", return_value=mock_client)
+    mocker.patch("ticker_digest.llm.anthropic.Anthropic", return_value=mock_client)
 
     result = synthesize_digest("RKLB", "Rocket Lab Holdings", insights)
 
@@ -199,7 +199,7 @@ def test_synthesize_digest_empty_insights(mocker) -> None:
     mock_client = MagicMock()
     mock_client.messages.create.return_value = _make_tool_response("report_digest", synthesis_input)
 
-    mocker.patch("ticker_digest.analyzer.anthropic.Anthropic", return_value=mock_client)
+    mocker.patch("ticker_digest.llm.anthropic.Anthropic", return_value=mock_client)
 
     result = synthesize_digest("RKLB", "Rocket Lab Holdings", [])
 

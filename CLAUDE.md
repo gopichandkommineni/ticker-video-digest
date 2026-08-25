@@ -72,7 +72,9 @@ Non-package trees: **`research/`** (one-off probes + committed run outputs),
 - pandas, yfinance — market data
 - google-api-python-client — YouTube Data API v3 (ticker_digest)
 - youtube-transcript-api — caption extraction (ticker_digest)
-- anthropic SDK — Claude API calls (thesis, per-video extraction)
+- anthropic SDK — Claude API calls (thesis, per-video extraction);
+  the digest falls back to the local Claude Code CLI (`claude -p
+  --json-schema`) when no ANTHROPIC_API_KEY is set — see `ticker_digest/llm.py`
 - pydantic v2 — structured LLM output schemas
 - SQLite (stdlib sqlite3) — `data/snapshots.db` (dashboard),
   `data/fintwit.db` (FinTwit), `data/digests.db` (YouTube threads,

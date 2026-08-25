@@ -14,9 +14,7 @@ import hashlib
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Any
 
-import anthropic
 from pydantic import BaseModel, Field
 
 from core.config import SYNTHESIS_MODEL
@@ -31,6 +29,7 @@ from core.models import (
     ThreadPost,
     VideoInsights,
 )
+from ticker_digest.llm import StructuredCall, ask
 
 log = logging.getLogger(__name__)
 
@@ -55,13 +54,6 @@ class _ThreadDraft(BaseModel):
 def _thread_id(ticker: str, generated_at: datetime, source_label: str) -> str:
     seed = f"{ticker.upper()}|{generated_at.isoformat()}|{source_label}"
     return hashlib.sha1(seed.encode()).hexdigest()[:12]
-
-
-def _extract_tool_input(response: Any, tool_name: str) -> dict[str, Any]:
-    for block in response.content:
-        if block.type == "tool_use" and block.name == tool_name:
-            return block.input  # type: ignore[return-value]
-    raise ValueError(f"No {tool_name!r} tool_use block in response")
 
 
 def _valid_citations(
@@ -96,54 +88,37 @@ def build_thread(
     source_label = source_label or ticker.upper()
     allowed_video_ids = {sv.metadata.video_id for sv in videos}
 
-    client = anthropic.Anthropic()
-
-    system = [
-        {
-            "type": "text",
-            "text": (
-                "You write short, factual threads summarising what stock commentators "
-                "said on YouTube about one company.\n\n"
-                "Each claim you are given has already been judged for novelty:\n"
-                "- new: nothing on record covered this before\n"
-                "- developing: an update to something already tracked\n"
-                "- known: a restatement of an existing claim\n\n"
-                "Each claim also carries source_count (how many of this run's videos "
-                "made it) and newly_corroborated (an old claim that a channel which "
-                "had never said it before just repeated).\n\n"
-                "Rules:\n"
-                f"- At most {_MAX_POSTS} posts. Lead with the 'new' claims, then "
-                "'developing'. Only include a 'known' claim when it is needed as "
-                "context for a new one, or when several sources newly agreed on it.\n"
-                "- If nothing is new, say so plainly in the first post. Do not "
-                "manufacture significance.\n"
-                "- A newly_corroborated claim earns a post even though it isn't new. "
-                "Say plainly that the claim is old and the agreement is what changed.\n"
-                "- Say how many sources made a claim when it is more than one. "
-                "Weight agreement between independent commentators over a single "
-                "confident one.\n"
-                "- The claims arrive in priority order. Keep that order unless a post "
-                "genuinely needs an earlier one as context.\n"
-                "- One idea per post. Never merge an unrelated catalyst and red flag.\n"
-                "- Every post carries the citations for the claims it covers, copied "
-                "verbatim from the input. Never invent a video_id or a timestamp.\n"
-                "- Report what commentators said, attributing it to them — not as "
-                "your own view of the company. No price targets, no recommendations.\n"
-                "- Note disagreement between sources explicitly.\n"
-                "- overall_sentiment is the net view across the videos, not yours.\n\n"
-                "Call the report_thread tool."
-            ),
-            "cache_control": {"type": "ephemeral"},
-        }
-    ]
-
-    tools = [
-        {
-            "name": "report_thread",
-            "description": "Report the finished insight thread.",
-            "input_schema": _ThreadDraft.model_json_schema(),
-        }
-    ]
+    system = (
+        "You write short, factual threads summarising what stock commentators "
+        "said on YouTube about one company.\n\n"
+        "Each claim you are given has already been judged for novelty:\n"
+        "- new: nothing on record covered this before\n"
+        "- developing: an update to something already tracked\n"
+        "- known: a restatement of an existing claim\n\n"
+        "Each claim also carries source_count (how many of this run's videos "
+        "made it) and newly_corroborated (an old claim that a channel which "
+        "had never said it before just repeated).\n\n"
+        "Rules:\n"
+        f"- At most {_MAX_POSTS} posts. Lead with the 'new' claims, then "
+        "'developing'. Only include a 'known' claim when it is needed as "
+        "context for a new one, or when several sources newly agreed on it.\n"
+        "- If nothing is new, say so plainly in the first post. Do not "
+        "manufacture significance.\n"
+        "- A newly_corroborated claim earns a post even though it isn't new. "
+        "Say plainly that the claim is old and the agreement is what changed.\n"
+        "- Say how many sources made a claim when it is more than one. "
+        "Weight agreement between independent commentators over a single "
+        "confident one.\n"
+        "- The claims arrive in priority order. Keep that order unless a post "
+        "genuinely needs an earlier one as context.\n"
+        "- One idea per post. Never merge an unrelated catalyst and red flag.\n"
+        "- Every post carries the citations for the claims it covers, copied "
+        "verbatim from the input. Never invent a video_id or a timestamp.\n"
+        "- Report what commentators said, attributing it to them — not as "
+        "your own view of the company. No price targets, no recommendations.\n"
+        "- Note disagreement between sources explicitly.\n"
+        "- overall_sentiment is the net view across the videos, not yours."
+    )
 
     claims_payload = json.dumps(
         [
@@ -198,16 +173,17 @@ def build_thread(
         f"Judged claims:\n{claims_payload}"
     )
 
-    response = client.messages.create(
-        model=SYNTHESIS_MODEL,
-        max_tokens=8192,
-        system=system,  # type: ignore[arg-type]
-        messages=[{"role": "user", "content": user_msg}],
-        tools=tools,  # type: ignore[arg-type]
-        tool_choice={"type": "tool", "name": "report_thread"},
+    draft = ask(
+        StructuredCall(
+            system=system,
+            user=user_msg,
+            model=SYNTHESIS_MODEL,
+            response_model=_ThreadDraft,
+            tool_name="report_thread",
+            tool_description="Report the finished insight thread.",
+            max_tokens=8192,
+        )
     )
-
-    draft = _ThreadDraft.model_validate(_extract_tool_input(response, "report_thread"))
 
     posts = [
         ThreadPost(
