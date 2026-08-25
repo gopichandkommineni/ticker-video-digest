@@ -64,6 +64,20 @@ subscribers, or if the title is shouted or carries more than one hype emoji.
 The ticker symbol is excluded from the ALL-CAPS test — every ticker is
 upper-case by definition.
 
+### Backfilling the shortlist
+
+*Added 2026-08-25, from a real run: five videos selected, two had captions
+disabled, three analysed — while twelve ranked candidates sat unused.*
+
+Selection ranks every candidate and returns all of them; the pipeline decides
+how many it can afford. It walks the ranked list until it has `max_videos`
+transcripts, bounded at `max_videos × 3` attempts.
+
+Only *free* failures are backfilled. A missing transcript costs nothing to
+discover, so it is replaced. A failed extraction has already been paid for, so
+it is not — which keeps the number of model calls per run at or below
+`max_videos` no matter what fails.
+
 ### Reliability ranking
 
 Each surviving video scores 0–1 on five log-scaled components:

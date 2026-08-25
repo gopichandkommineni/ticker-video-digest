@@ -10,7 +10,10 @@ Two input shapes, one output shape:
   channel. We resolve the name/handle/URL to a channel, list its recent
   uploads (optionally narrowed to the ticker), and rank those.
 
-Either way the caller gets ``list[ScoredVideo]``, most trustworthy first.
+Either way the caller gets ``list[ScoredVideo]``, most trustworthy first — the
+*whole* ranked list, not a shortlist. How many a run can afford to analyse is
+the pipeline's decision, and it needs the rest of the list to fall back on when
+a video turns out to have no captions.
 """
 from __future__ import annotations
 
@@ -67,12 +70,11 @@ def _from_ticker_search(request: DigestRequest) -> list[ScoredVideo]:
         return []
     ranked = score_videos(videos)
     log.info(
-        "Search for %s: %d usable videos, taking the top %d by reliability",
+        "Search for %s: %d usable videos, ranked by reliability",
         request.ticker,
         len(ranked),
-        min(request.max_videos, len(ranked)),
     )
-    return ranked[: request.max_videos]
+    return ranked
 
 
 def _from_channel(request: DigestRequest) -> tuple[list[ScoredVideo], ChannelInfo]:
@@ -111,5 +113,4 @@ def _from_channel(request: DigestRequest) -> tuple[list[ScoredVideo], ChannelInf
         )
         return [], channel
 
-    ranked = score_videos(videos)
-    return ranked[: request.max_videos], channel
+    return score_videos(videos), channel

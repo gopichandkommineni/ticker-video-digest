@@ -135,6 +135,18 @@ Views-per-subscriber is in there deliberately: a 2k-subscriber channel with a
 `core/config.py`; the scoring itself is in `quality.py` and is unit-tested
 without an API key.
 
+**Backfilling.** Ranking produces the whole list, not a shortlist of five.
+Plenty of otherwise-good videos have captions disabled — often the
+non-English ones — and finding that out costs nothing, so a run walks down the
+ranked list until it has as many transcripts as you asked for. It stops at
+three times `--limit` attempts, so a ticker whose videos all lack captions
+doesn't turn into a long walk.
+
+An **extraction** failure is different: that call was already paid for, so it
+is not replaced. A run therefore makes at most `--limit` model calls for
+videos, whatever goes wrong — the only spend guarantee there is until the
+budget work lands.
+
 **Channel input.** When you already trust a commentator, `--channel` takes a
 name, an `@handle`, a channel URL or a raw channel id. Their uploads are
 narrowed to the ticker first, so a digest about RKLB doesn't ingest their

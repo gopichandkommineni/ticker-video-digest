@@ -26,7 +26,12 @@ def _request(**overrides) -> DigestRequest:
 # ---------------------------------------------------------------------------
 
 
-def test_search_path_ranks_by_reliability_and_applies_the_limit(mocker) -> None:
+def test_search_path_ranks_every_candidate_without_rationing(mocker) -> None:
+    """Selection ranks; the pipeline decides how many it can afford.
+
+    The whole list comes back so a video with no captions can be replaced from
+    further down instead of costing the run a slot.
+    """
     search = mocker.patch(
         "ticker_digest.sources.search_recent_videos",
         return_value=[
@@ -39,7 +44,8 @@ def test_search_path_ranks_by_reliability_and_applies_the_limit(mocker) -> None:
     videos, channel = select_videos(_request(days=14))
 
     assert channel is None
-    assert [sv.metadata.video_id for sv in videos] == ["strong", "middle"]
+    # max_videos is 2, but all three come back, best first.
+    assert [sv.metadata.video_id for sv in videos] == ["strong", "middle", "weak"]
     assert search.call_args.kwargs["days"] == 14
     assert search.call_args.kwargs["company_name"] == "Rocket Lab"
 

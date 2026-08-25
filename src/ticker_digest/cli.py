@@ -124,7 +124,11 @@ def claim_summary(run: DigestRun) -> str:
 
 
 def _print_run_sources(run: DigestRun) -> None:
-    print(f"\nSources ({len(run.videos)} selected):")
+    analysed = len(run.videos) - len(run.skipped)
+    header = f"Sources ({analysed} analysed"
+    if run.skipped:
+        header += f", {len(run.skipped)} skipped"
+    print(f"\n{header}):")
     for scored in run.videos:
         meta = scored.metadata
         status = run.skipped.get(meta.video_id, "analysed")
