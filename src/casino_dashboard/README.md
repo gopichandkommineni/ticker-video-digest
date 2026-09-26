@@ -70,6 +70,7 @@ the easiest part of the codebase to test.
 | `subreddit_match_run.py` | Matches subreddits to companies by name |
 | `subreddit_catalog_run.py` | Sweeps the archive for finance subreddits |
 | `subreddit_metrics.py` | Size and activity stats for named subreddits |
+| `reddit_scrape.py` | `reddit_scrape.yml` or by hand: read whole subreddits, or search Reddit by keyword |
 
 `daily_refresh.py` runs thirteen stages, each individually error-handled so one
 dead source can't kill the run. The stage list is in
