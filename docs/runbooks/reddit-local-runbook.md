@@ -207,6 +207,56 @@ Tuning:
 REDDIT_POSTS_PER_TICKER=50 python -m casino_dashboard.jobs.reddit_refresh RKLB
 ```
 
+## 5b. Scrape a subreddit, or search Reddit by keyword
+
+`reddit_scrape` reads posts on demand. It uses Arctic Shift, needs no keys, and
+works from a laptop or from the **Reddit Scrape** workflow in the Actions tab.
+
+**Read whole subreddits:** every post in the window, with no text filter. Use
+this for a stock's own community, where a post like "BlueBird launch news" is
+about the stock even though it never says "ASTS".
+
+```bash
+python -m casino_dashboard.jobs.reddit_scrape subreddit ASTSpaceMobile RKLB
+python -m casino_dashboard.jobs.reddit_scrape subreddit wallstreetbets --days 1 --sort comments
+```
+
+**Search by keyword:** posts that mention any of the keywords. It searches all
+of Reddit, or only the subreddits you name with `--subreddits`. Each result is
+re-checked as a whole word: an all-capitals keyword like `PATH` has to appear
+in capitals (`PATH` or `$PATH`), so "career path" and "Paired-Path" don't count.
+Other keywords, like `rocket lab`, match in any case.
+
+```bash
+python -m casino_dashboard.jobs.reddit_scrape search "rocket lab" RKLB Neutron
+python -m casino_dashboard.jobs.reddit_scrape search '$ASTS' --subreddits wallstreetbets,stocks
+```
+
+If the archive refuses a Reddit-wide search, the report says so and searches
+wallstreetbets, stocks, investing, options and StockMarket instead.
+
+Options for both modes:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--days N` | 7 | How far back to look |
+| `--limit N` | 25 | Posts returned after ranking |
+| `--sort` | `top` | `top` (score), `new` (date) or `comments` (comment count) |
+| `--comments N` | 0 | Also pull each post's top N comments. This is where a daily discussion thread's content is. |
+| `--json PATH` | — | Save the full result (whole post bodies and comments) as JSON |
+| `--save --ticker T` | — | Store the posts in `data/snapshots.db` under ticker T. Don't commit that file (see below). |
+
+The command prints a table (score, comments, age, subreddit, title) and then
+each post's opening text and top comments. For example:
+
+```
+## Reddit scrape — r/ASTSpaceMobile
+Last 7d · sorted by top · 25 posts
+| # | Score | Comments | Age | Subreddit | Title |
+| 1 | 112 | 521 | 2d | r/ASTSpaceMobile | AST SpaceMobile - $ASTS - Daily Discussion Thread |
+…
+```
+
 ## 6. Verify what landed
 
 ```bash
@@ -252,3 +302,5 @@ authenticated PRAW; otherwise it uses the public JSON API.
 | `python -m casino_dashboard.jobs.subreddit_catalog_run --fetch-only --out DIR` | Phase 1: dump every subreddit + subscriber count | `DIR/` |
 | `python -m casino_dashboard.jobs.subreddit_catalog_run --from-catalog CSV [--save]` | Phase 2: filter that dump → stock subs → per-stock subs (no network) | `config/ticker_subreddits.yaml` (with `--save`), `DIR/` (with `--out`) |
 | `python -m casino_dashboard.jobs.reddit_refresh [TICKERS…]` | Pull posts into the DB (Reddit only) | `data/snapshots.db` |
+| `python -m casino_dashboard.jobs.reddit_scrape subreddit SUBS… [--comments N]` | Every post in whole subreddits, ranked | nothing (`--json PATH`, `--save --ticker T` optional) |
+| `python -m casino_dashboard.jobs.reddit_scrape search KEYWORDS… [--subreddits A,B]` | Keyword search, whole-word matched, ranked | nothing (`--json PATH`, `--save --ticker T` optional) |

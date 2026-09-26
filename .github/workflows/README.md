@@ -1,6 +1,6 @@
 # `.github/workflows/` — the robots
 
-Eleven automated jobs that GitHub runs for this project. They're why the dashboard
+Twelve automated jobs that GitHub runs for this project. They're why the dashboard
 has fresh data without anyone pressing anything.
 
 Watch them in the **Actions** tab on GitHub. Anything with "manual" below is
@@ -30,6 +30,7 @@ close.
 | `subreddit_discovery.yml` | Which subreddits discuss a given stock? |
 | `subreddit_catalog.yml` | Sweep the archive for finance subreddits above a subscriber floor. |
 | `subreddit_metrics.yml` | Size and activity stats for named subreddits. |
+| `reddit_scrape.yml` | Read every post in named subreddits, or search Reddit by keyword. Full results are uploaded as a JSON file on the run page. Read-only. |
 | `reddit_smoke_test.yml` | "Is Reddit data still reachable?" Read-only. Run this first when Reddit numbers look wrong. |
 | `cleanup_corrupt_news.yml` | Delete news rows corrupted by an old parser bug. |
 

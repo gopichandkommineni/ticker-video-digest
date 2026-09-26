@@ -50,6 +50,7 @@ the page costs nothing until the underlying numbers change.
 | `reddit/apewisdom_client.py` | Mention counts per stock. Free, no key. The main source. |
 | `reddit/arctic_shift_client.py` | Community archive of actual posts. Free, no key. **Default backend.** |
 | `reddit/apify_client.py` | Paid managed scraper. Alternative backend. |
+| `reddit/scrape.py` | Read every post in a subreddit, or search by keyword (whole-word matched), ranked, optionally with top comments |
 | `reddit/client.py` | Direct Reddit API via `praw`. Mostly historical — see below. |
 | `reddit/subreddit_discovery.py` | Which subreddits discuss a given stock? |
 | `reddit/subreddit_match.py` | Match subreddits to companies by name |
