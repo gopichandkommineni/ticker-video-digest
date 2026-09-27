@@ -1,6 +1,6 @@
 # `.github/workflows/` — the robots
 
-Twelve automated jobs that GitHub runs for this project. They're why the dashboard
+Thirteen automated jobs that GitHub runs for this project. They're why the dashboard
 has fresh data without anyone pressing anything.
 
 Watch them in the **Actions** tab on GitHub. Anything with "manual" below is
@@ -14,6 +14,7 @@ started there: pick the workflow → **Run workflow**.
 |---|---|---|
 | `daily_refresh.yml` | 2am, 9am, 1pm, 5pm ET (weekdays; 2am at weekends) | **The important one.** Downloads prices, social mentions, metadata, ETF flows and congress trades; recomputes every signal; commits `data/snapshots.db` back to `main`. |
 | `fintwit-daily.yml` | 2am ET daily | Fetches yesterday's tweets for every tracked handle into `data/fintwit.db`. |
+| `reddit_ingest.yml` | 3am ET daily | Collects Reddit posts and the top comments on busy ones, for every stock, into `data/reddit.db`. |
 
 The four daily-refresh times track the US trading day: overnight (market
 closed), pre-market (before the 9:30am open), mid-session, and after the 4pm

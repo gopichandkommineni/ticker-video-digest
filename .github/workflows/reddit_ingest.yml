@@ -1,0 +1,73 @@
+name: Reddit — Daily Ingest
+
+# Collects Reddit posts (and the top comments on busy ones) for every stock
+# into data/reddit.db, then commits that file. For each stock it reads the
+# subreddits in config/ticker_subreddits.yaml and searches the general list for
+# the ticker and company name. See docs/specs/reddit-ingestion-v1.md.
+#
+# Source: Arctic Shift, a free public Reddit archive (~1–2 day lag), reachable
+# from the runner. No credentials needed.
+#
+# Each run re-reads the last few days so posts and scores the archive filled
+# in late are picked up; the first run reads a week.
+
+on:
+  schedule:
+    - cron: "0 7 * * *"   # 3am ET (EDT) — after the 2am refresh + FinTwit, same queue
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: "Only these stocks, comma-separated (blank = whole universe)"
+        required: false
+        default: ""
+
+# Only one DB-writing job runs at a time (see Daily Refresh for the full note):
+# queue behind the other writers instead of racing them.
+concurrency:
+  group: db-writer
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      # Placeholders keep core.config importable; ingestion never calls them.
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+      REDDIT_INGEST_TICKERS: ${{ github.event.inputs.tickers }}
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install project
+        run: pip install -e ".[dev]"
+
+      - name: Ingest Reddit & write run report
+        run: python -m casino_dashboard.jobs.reddit_ingest
+
+      # Commit even if ingestion failed part-way (if: always) so progress is
+      # never lost — stage only the DB file, never `git add -A`.
+      - name: Commit updated reddit.db to main
+        if: always()
+        run: |
+          test -f data/reddit.db || { echo "data/reddit.db not present — nothing to commit"; exit 0; }
+          git config user.name  "reddit-ingest-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -- data/reddit.db
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "Reddit ingest: $(date -u +%Y-%m-%dT%H:%M)Z"
+          git pull --rebase origin main
+          git push origin HEAD:main

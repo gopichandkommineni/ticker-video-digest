@@ -80,13 +80,14 @@ often.**
 
 ### `data/` — the results
 
-Two SQLite database files. SQLite is a whole database that lives in a single
+Three SQLite database files. SQLite is a whole database that lives in a single
 file; nothing to install or run.
 
 | File | Holds |
 |---|---|
 | `snapshots.db` | The dashboard's data: prices, signals, social mentions, congress trades. ~20 MB. |
 | `fintwit.db` | The separate tweet archive. ~36 MB. |
+| `reddit.db` | Reddit posts and top comments per stock, collected daily. Kept small. |
 
 Both are **committed into git**, which is unusual for data but deliberate: it's
 how the automated job hands fresh results to the deployed dashboard. Both are

@@ -48,6 +48,9 @@ class RedditComment(BaseModel):
     score: int = 0
     published_at: datetime
     url: str
+    # What it replies to: "t3_<post id>" for a top-level comment, "t1_<comment
+    # id>" for a reply — enough to rebuild the thread's shape.
+    parent_id: str | None = None
 
 
 class ScrapedPost(BaseModel):
@@ -130,6 +133,7 @@ def _to_comment(item: dict) -> RedditComment | None:
         score=int(item.get("score") or 0),
         published_at=published,
         url=f"https://reddit.com{permalink}" if permalink else "",
+        parent_id=str(item["parent_id"]) if item.get("parent_id") else None,
     )
 
 

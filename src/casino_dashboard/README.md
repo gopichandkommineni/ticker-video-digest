@@ -70,6 +70,7 @@ the easiest part of the codebase to test.
 | `subreddit_catalog_run.py` | Sweeps the archive for finance subreddits |
 | `subreddit_metrics.py` | Size and activity stats for named subreddits |
 | `reddit_scrape.py` | `reddit_scrape.yml` or by hand: read whole subreddits, or search Reddit by keyword |
+| `reddit_ingest.py` | `reddit_ingest.yml`, daily — Reddit posts and comments into `data/reddit.db` |
 | `subreddit_resolve.py` | By hand: find subreddits from a company name, or add one by name (same as the Subreddits page) |
 
 `daily_refresh.py` runs thirteen stages, each individually error-handled so one

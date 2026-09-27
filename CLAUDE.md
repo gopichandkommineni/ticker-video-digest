@@ -77,7 +77,8 @@ Non-package trees: **`research/`** (one-off probes + committed run outputs),
   --json-schema`) when no ANTHROPIC_API_KEY is set — see `ticker_digest/llm.py`
 - pydantic v2 — structured LLM output schemas
 - SQLite (stdlib sqlite3) — `data/snapshots.db` (dashboard),
-  `data/fintwit.db` (FinTwit), `data/digests.db` (YouTube threads,
+  `data/fintwit.db` (FinTwit), `data/reddit.db` (Reddit posts + comments),
+  `data/digests.db` (YouTube threads,
   git-ignored), plus transcript/metadata caching
 - praw / tweepy — social scrapers
 - pytest — tests
@@ -91,7 +92,7 @@ src/fintwit/            # tweet ingestion: orchestration/ storage/ tweet_sources
 app.py                  # Streamlit dashboard entrypoint (root)
 pages/                  # Streamlit dashboard pages 00–07
 config/                 # themes.yaml (canonical universe), etf_mapping, star_traders, ...
-data/                   # snapshots.db + fintwit.db (version-controlled prod data)
+data/                   # snapshots.db + fintwit.db + reddit.db (version-controlled prod data)
 scripts/                # operational + one-time migration scripts
 research/               # one-off probes + committed run outputs
 docs/                   # start-here/ runbooks/ specs/ research/ archive/
@@ -157,7 +158,7 @@ must surface this clearly.
 - `data/snapshots.db` is the production database and is version-controlled.
 - The Action commits `data/snapshots.db` back to `main` automatically after each run.
 - Local runs of the refresh job are for testing only — **DO NOT commit
-  `data/snapshots.db` or `data/fintwit.db` from a local sandbox run** (it will
+  `data/snapshots.db`, `data/fintwit.db` or `data/reddit.db` from a local sandbox run** (it will
   overwrite production data with incomplete/test results).
 
 ## v6 canonical-files policy

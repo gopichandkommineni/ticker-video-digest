@@ -280,6 +280,23 @@ Last 7d · sorted by top · 25 posts
 …
 ```
 
+## 5c. Daily ingestion into `reddit.db`
+
+The scheduled way to collect Reddit: **`reddit_ingest.yml`** runs daily. For every
+stock it reads the subreddits in the map, searches the general list for the
+ticker and company name, saves the top comments on busy posts, and commits
+`data/reddit.db`. Design and limits: [reddit-ingestion-v1](../specs/reddit-ingestion-v1.md).
+
+Run it by hand against a scratch file (never commit a local `reddit.db`):
+
+```bash
+REDDIT_DB_PATH=/tmp/reddit.db python -m casino_dashboard.jobs.reddit_ingest RKLB ASTS
+```
+
+It prints a report: posts new vs re-seen, comments saved, rows pruned, file
+size, a per-stock table, and a "Problems" list (e.g. `archive unreachable`).
+A run that stored nothing exits with code 1.
+
 ## 6. Verify what landed
 
 ```bash
@@ -326,6 +343,7 @@ authenticated PRAW; otherwise it uses the public JSON API.
 | `python -m casino_dashboard.jobs.subreddit_catalog_run --from-catalog CSV [--save]` | Phase 2: filter that dump → stock subs → per-stock subs (no network) | `config/ticker_subreddits.yaml` (with `--save`), `DIR/` (with `--out`) |
 | `python -m casino_dashboard.jobs.subreddit_resolve company "NAME" [--save \| --pick A,B]` | Find a company's subreddits; save the confident ones or your picks | `config/ticker_subreddits.yaml` (with `--save`/`--pick`) |
 | `python -m casino_dashboard.jobs.subreddit_resolve add NAME [--ticker T]` | Add a subreddit directly (general list without `--ticker`) | `config/ticker_subreddits.yaml` |
+| `python -m casino_dashboard.jobs.reddit_ingest [TICKERS…]` | Daily ingestion: posts + top comments per stock | `data/reddit.db` (or `REDDIT_DB_PATH`) |
 | `python -m casino_dashboard.jobs.reddit_refresh [TICKERS…]` | Pull posts into the DB (Reddit only) | `data/snapshots.db` |
 | `python -m casino_dashboard.jobs.reddit_scrape subreddit SUBS… [--comments N]` | Every post in whole subreddits, ranked | nothing (`--json PATH`, `--save --ticker T` optional) |
 | `python -m casino_dashboard.jobs.reddit_scrape search KEYWORDS… [--subreddits A,B]` | Keyword search, whole-word matched, ranked | nothing (`--json PATH`, `--save --ticker T` optional) |
