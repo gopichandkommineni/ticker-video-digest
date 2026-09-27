@@ -150,6 +150,10 @@ there is no digest yet.
   Claude digest on the owner's local Claude Code login (hourly check, runs once
   per GitHub collection, merges only digest rows into `main`'s reddit.db).
   Runbook §5e.
+- **On demand, locally:** `./run reddit-brief RKLB [--days N]` — fetches the
+  stock's last N days (default 7) with `reddit_ingest --days`, digests **all**
+  of them (`DigestConfig.window_days`, not only posts unread since the last
+  digest), prints the insights, and publishes the digest rows.
 - **By hand:** `python -m casino_dashboard.jobs.reddit_digest RKLB` with
   `REDDIT_DB_PATH` pointing at a scratch copy, and either Claude Code signed
   in or `GEMINI_API_KEY` set.

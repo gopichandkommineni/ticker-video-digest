@@ -8,6 +8,7 @@ docs/specs/reddit-ingestion-v1.md.
 Usage:
     python -m casino_dashboard.jobs.reddit_ingest                 # whole universe
     python -m casino_dashboard.jobs.reddit_ingest RKLB ASTS       # these stocks only
+    python -m casino_dashboard.jobs.reddit_ingest --days 7 RKLB   # exactly the last 7 days
     REDDIT_DB_PATH=/tmp/reddit.db python -m casino_dashboard.jobs.reddit_ingest RKLB
 
 Writes data/reddit.db (or REDDIT_DB_PATH). That file is production data,
@@ -16,11 +17,12 @@ committed by the workflow — don't commit a copy from a local run.
 In GitHub Actions the report is also appended to $GITHUB_STEP_SUMMARY.
 Exit code 1 only when the run got nothing done at all.
 """
+import argparse
 import logging
 import os
 import sys
 
-from core.social_media.reddit.ingest import IngestReport, run_ingest
+from core.social_media.reddit.ingest import IngestConfig, IngestReport, run_ingest
 from core.social_media.reddit.resolver import load_general_subreddits, load_subreddit_map
 from casino_dashboard.jobs.subreddit_catalog_run import load_company_names
 
@@ -67,10 +69,16 @@ def render(report: IngestReport, mapped: set[str]) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    tickers = _tickers(sys.argv[1:] if argv is None else argv)
+    ap = argparse.ArgumentParser(prog="reddit_ingest", description="Reddit ingestion.")
+    ap.add_argument("tickers", nargs="*", help="stocks to ingest (default: whole universe)")
+    ap.add_argument("--days", type=int, default=None,
+                    help="read exactly the last N days (default: since the last run)")
+    args = ap.parse_args(sys.argv[1:] if argv is None else argv)
+    tickers = _tickers(args.tickers)
     subreddit_map = load_subreddit_map()
     report = run_ingest(
         tickers, subreddit_map, load_general_subreddits(), load_company_names(),
+        cfg=IngestConfig(window_days=args.days) if args.days else None,
     )
     text = "\n".join(render(report, set(subreddit_map)))
     print(text)

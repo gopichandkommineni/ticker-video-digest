@@ -3,6 +3,9 @@
 # reddit_brief_local.sh — write the daily Reddit brief on your own computer,
 # with Claude Code on your Claude subscription (no API key, no API bill).
 #
+#   ./run reddit-brief RKLB [ASTS…] On demand: fetch these stocks' last 7 days of Reddit
+#                                  posts, have Claude analyse them, publish the insights.
+#                                  (--days N for a different window.)
 #   ./run reddit-brief check       Check the prerequisites; walks you through any that are missing.
 #   ./run reddit-brief install     Check, then schedule the job. The one command you need.
 #   ./run reddit-brief status      Is it scheduled? When did it last run?
@@ -206,6 +209,44 @@ fetch_main() {
   git -C "$CLONE" fetch -q --depth 1 --filter=blob:none origin "$REF"
 }
 
+# Publish only the new digest rows from $1 (a scratch reddit.db), merged onto the
+# newest data/reddit.db on main; commit with message $2 and push. If main moved
+# meanwhile, merge again (up to 4 tries). Returns 1 if it never got through.
+publish_digests() {
+  local work="$1" message="$2" db="$CLONE/data/reddit.db" attempt
+  for attempt in 1 2 3 4; do
+    fetch_main
+    git -C "$CLONE" reset -q --hard "origin/$REF"
+    (cd "$CLONE" && py_env .venv/bin/python -m casino_dashboard.jobs.reddit_digest_merge "$work" "$db")
+    git -C "$CLONE" add -- data/reddit.db
+    if git -C "$CLONE" diff --cached --quiet; then
+      log "No new digests to publish."
+      return 0
+    fi
+    git -C "$CLONE" commit -q -m "$message: $(date -u +%Y-%m-%dT%H:%M)Z"
+    if git -C "$CLONE" push -q origin "HEAD:$REF"; then
+      log "Published to $REF."
+      return 0
+    fi
+    log "Push was rejected (main moved on) — merging again (attempt $attempt)…"
+    sleep $((attempt * 10))
+  done
+  return 1
+}
+
+take_lock() {
+  if ! mkdir "$LOCK" 2>/dev/null; then
+    # A run that died without cleaning up leaves the lock; ignore it after 3 hours.
+    if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +180 2>/dev/null)" ]; then
+      rmdir "$LOCK" 2>/dev/null || true
+      mkdir "$LOCK" || return 1
+    else
+      return 1                            # another run is going
+    fi
+  fi
+  trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
+}
+
 # Keep the private copy small: drop what older fetches left behind.
 compact_clone() {
   git -C "$CLONE" reflog expire --expire=now --all 2>/dev/null || true
@@ -238,16 +279,7 @@ cmd_run() {
   load_conf
   [ -d "$CLONE/.git" ] || die "Not set up yet. Run:  ./run reddit-brief install"
   mkdir -p "$LOGS"
-  if ! mkdir "$LOCK" 2>/dev/null; then
-    # A run that died without cleaning up leaves the lock; ignore it after 3 hours.
-    if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +180 2>/dev/null)" ]; then
-      rmdir "$LOCK" 2>/dev/null || true
-      mkdir "$LOCK" || exit 0
-    else
-      exit 0                              # another run is going
-    fi
-  fi
-  trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
+  take_lock || exit 0                     # another run is going
   local logfile="$LOGS/$(date -u +%Y-%m-%d).log"
   find "$LOGS" -name '*.log' -mtime +30 -delete 2>/dev/null || true
   exec >>"$logfile" 2>&1
@@ -282,28 +314,8 @@ cmd_run() {
   (cd "$CLONE" && py_env REDDIT_DB_PATH="$work" \
      .venv/bin/python -m casino_dashboard.jobs.reddit_digest $TICKERS) | tee "$out" || true
 
-  # Publish: only the new digest rows, on top of the newest reddit.db on main.
-  local attempt published=""
-  for attempt in 1 2 3 4; do
-    fetch_main
-    git -C "$CLONE" reset -q --hard "origin/$REF"
-    (cd "$CLONE" && py_env .venv/bin/python -m casino_dashboard.jobs.reddit_digest_merge "$work" "$db")
-    git -C "$CLONE" add -- data/reddit.db
-    if git -C "$CLONE" diff --cached --quiet; then
-      log "No new digests to publish."
-      published=1
-      break
-    fi
-    git -C "$CLONE" commit -q -m "Reddit digest (local, Claude subscription): $(date -u +%Y-%m-%dT%H:%M)Z"
-    if git -C "$CLONE" push -q origin "HEAD:$REF"; then
-      log "Published to $REF."
-      published=1
-      break
-    fi
-    log "Push was rejected (main moved on) — merging again (attempt $attempt)…"
-    sleep $((attempt * 10))
-  done
-  [ -n "$published" ] || { log "Couldn't publish after 4 attempts; the next run will try again."; return 1; }
+  publish_digests "$work" "Reddit digest (local, Claude subscription)" ||
+    { log "Couldn't publish after 4 attempts; the next run will try again."; return 1; }
 
   if grep -q "Stopped early" "$out"; then
     # e.g. the plan's usage limit: try again at the next hourly check.
@@ -314,6 +326,59 @@ cmd_run() {
     log "Done."
   fi
   compact_clone
+}
+
+# --- on demand ----------------------------------------------------------------------
+
+cmd_now() {
+  local days=7 tickers=() arg
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --days) days="${2:?--days needs a number}"; shift 2 ;;
+      --days=*) days="${1#--days=}"; shift ;;
+      -*) die "Unknown option: $1" ;;
+      *) tickers+=("$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"); shift ;;
+    esac
+  done
+  [ ${#tickers[@]} -gt 0 ] || die "Which stock? For example:  ./run reddit-brief RKLB"
+  [[ "$days" =~ ^[0-9]+$ ]] && [ "$days" -ge 1 ] || die "--days must be a whole number of days"
+  load_conf
+  if ! has_clone; then
+    warn "First time here — checking what this needs first."
+    cmd_check
+  fi
+  mkdir -p "$LOGS"
+  take_lock || die "Another Reddit brief run is going. Try again in a few minutes."
+  local logfile="$LOGS/$(date -u +%Y-%m-%d).log"
+  bold "Reddit brief for ${tickers[*]} — last $days days"
+
+  log "Updating the private copy…"
+  fetch_main
+  git -C "$CLONE" reset -q --hard "origin/$REF"
+  install_deps
+  local work="$HOME_DIR/on-demand.db" out="$HOME_DIR/last_report.md"
+  rm -f "$work"
+  [ -f "$CLONE/data/reddit.db" ] && cp "$CLONE/data/reddit.db" "$work"
+
+  log "Fetching the last $days days of Reddit posts for ${tickers[*]}…"
+  if ! (cd "$CLONE" && py_env REDDIT_DB_PATH="$work" \
+        .venv/bin/python -m casino_dashboard.jobs.reddit_ingest --days "$days" "${tickers[@]}") \
+        2>&1 | tee -a "$logfile" | { grep -vE '^[0-9-]+ [0-9:,]+ (INFO|DEBUG)' || true; }; then
+    die "Couldn't fetch Reddit posts (is the Reddit archive reachable?). Details: $logfile"
+  fi
+
+  log "Asking Claude to analyse them (about a minute per stock)…"
+  (cd "$CLONE" && py_env REDDIT_DB_PATH="$work" \
+     .venv/bin/python -m casino_dashboard.jobs.reddit_digest --days "$days" --show "${tickers[@]}") \
+     2>>"$logfile" | tee "$out" || true
+  grep -q "Stopped early" "$out" && warn "Claude stopped early (see above) — publishing what was done."
+
+  log "Publishing to the dashboard's database on $REF…"
+  publish_digests "$work" "Reddit brief on demand (${tickers[*]}, ${days}d, Claude subscription)" \
+    2>&1 | tee -a "$logfile" ||
+    die "Couldn't publish (git push kept failing). Your insights are in $work; try again."
+  compact_clone
+  ok "Done. They show on each stock's Ticker Detail page under \"What Reddit is saying\" once the dashboard picks up main."
 }
 
 # --- scheduling ------------------------------------------------------------------------
@@ -464,10 +529,12 @@ cmd_status() {
 }
 
 case "${1:-help}" in
+  now) shift; cmd_now "$@" ;;
   check) cmd_check ;;
   install) cmd_install ;;
   run) shift; cmd_run "$@" ;;
   status) cmd_status ;;
   uninstall) cmd_uninstall ;;
-  *) sed -n '3,10p' "$0" | sed 's/^# \{0,1\}//' ;;
+  help|-h|--help) sed -n '3,13p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) cmd_now "$@" ;;                      # ./run reddit-brief RKLB …
 esac

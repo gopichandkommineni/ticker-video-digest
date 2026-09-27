@@ -359,10 +359,15 @@ sqlite3 /tmp/reddit.db "SELECT ticker, kind, stance, headline FROM insights;"
 
 `scripts/reddit_brief_local.sh` (via `./run reddit-brief …`) writes the digest
 locally, on the owner's computer, with the Claude Code login already there, so there's no
-token in GitHub and no API key. GitHub Actions keeps doing the ingest.
+token in GitHub and no API key. GitHub Actions keeps doing the daily ingest;
+the on-demand command also fetches from Reddit itself (Arctic Shift, reachable
+from a home connection) for the stocks you name. It publishes only the digest
+rows — the posts it fetched stay in a scratch file (`on-demand.db`), and each
+insight carries copies of its source posts, so the links on the page work.
 
 | Command | Does |
 |---|---|
+| `./run reddit-brief RKLB [ASTS…] [--days N]` | **On demand.** Fetches exactly the last N days (default 7) of Reddit posts for those stocks on this computer (`reddit_ingest --days`), has Claude analyse **all** of them (`reddit_digest --days --show`, not only unread posts), prints the insights, and publishes the digest rows like the scheduled run. First use runs `check` |
 | `./run reddit-brief check` | Checks the prerequisites, prompting until each is fixed: macOS/Linux, git, uv (offers to install it) or Python 3.11+, `claude`, a working subscription login (one tiny `claude -p` call with API-key variables removed), `main` having the Claude digest code, and push access (`git push --dry-run`) |
 | `./run reddit-brief install` | `check`, then sets up a private clone, its Python packages, and the schedule: **launchd** agent on macOS (at log-in + hourly), **systemd user timer** on Linux (3 min after log-in + hourly), else **cron** (`@reboot` + hourly). Offers a first run |
 | `./run reddit-brief run [--force]` | What the scheduler runs (see below). `--force` digests even if the latest collection was already done |

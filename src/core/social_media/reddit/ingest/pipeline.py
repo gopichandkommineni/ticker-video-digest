@@ -34,6 +34,7 @@ class IngestConfig(BaseModel):
     to commit daily (see docs/specs/reddit-ingestion-v1.md)."""
 
     first_run_days: int = 7
+    window_days: int | None = None  # fixed window: exactly the last N days (on-demand runs)
     overlap_days: int = 3
     max_window_days: int = 14
     feed_scan: int = 300            # posts read per mapped subreddit per run
@@ -128,6 +129,8 @@ def _search_hit_is_real(post: ScrapedPost, ticker: str, company: str | None) -> 
 # --- the run --------------------------------------------------------------------
 
 def _window(conn, now: datetime, cfg: IngestConfig) -> datetime:
+    if cfg.window_days:
+        return now - timedelta(days=cfg.window_days)
     last = db.last_good_run_start(conn)
     if last is None:
         return now - timedelta(days=cfg.first_run_days)
