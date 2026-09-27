@@ -72,6 +72,7 @@ the easiest part of the codebase to test.
 | `reddit_scrape.py` | `reddit_scrape.yml` or by hand: read whole subreddits, or search Reddit by keyword |
 | `reddit_ingest.py` | `reddit_ingest.yml`, daily — Reddit posts and comments into `data/reddit.db` |
 | `reddit_digest.py` | `reddit_ingest.yml`, daily after ingestion — the LLM brief + linked insights per stock |
+| `subreddit_find.py` | By hand (`./run subreddits RKLB`): which subreddits discuss a stock, ranked by the share of posts that mention it, compared with the map. Read-only |
 | `subreddit_resolve.py` | By hand: find subreddits from a company name, or add one by name and have it filed under its stock (same as the Subreddits page) |
 
 `daily_refresh.py` runs thirteen stages, each individually error-handled so one

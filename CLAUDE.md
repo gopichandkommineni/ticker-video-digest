@@ -29,7 +29,7 @@ Read `docs/README.md` first — it indexes everything. The structure is:
 
 `./run` at the repo root wraps the common commands (`setup`, `dashboard`,
 `test`, `check`, `market`, `digest`, `threads`, `refresh`, `clean`,
-`reddit-brief`). Prefer
+`subreddits`, `reddit-brief`). Prefer
 teaching it over raw commands in user-facing docs.
 
 ## Subsystems
@@ -101,7 +101,7 @@ scripts/                # operational + one-time migration scripts
 research/               # one-off probes + committed run outputs
 docs/                   # start-here/ runbooks/ specs/ research/ archive/
 tests/                  # pytest suite (mirrors the packages above)
-run                     # task runner: ./run setup|dashboard|test|check|market|digest|threads|refresh|clean|reddit-brief
+run                     # task runner: ./run setup|dashboard|test|check|market|digest|threads|refresh|clean|subreddits|reddit-brief
 .env.example            # every supported env var, documented
 pyproject.toml
 README.md

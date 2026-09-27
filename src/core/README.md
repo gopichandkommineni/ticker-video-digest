@@ -59,6 +59,7 @@ the page costs nothing until the underlying numbers change.
 | `reddit/subreddit_discovery.py` | Which subreddits discuss a given stock? |
 | `reddit/subreddit_match.py` | Match subreddits to companies by name |
 | `reddit/subreddit_catalog.py` | Sweep the archive for finance subreddits |
+| `reddit/mention_discovery.py` | **Which subreddits discuss a stock, by evidence**: follows the people who mention it to the subreddits where they do, then ranks those by the share of posts that mention it. No text search, no credentials, read-only |
 | `reddit/ticker_resolver.py` | Ticker ↔ company name |
 | `x/client.py` | X/Twitter client |
 

@@ -138,10 +138,13 @@ def _post_params(
     before: datetime | None,
     limit: int,
     sort: str,
+    author: str | None = None,
 ) -> dict:
     params: dict = {"limit": min(max(limit, 1), 100), "sort": sort}
     if subreddit:
         params["subreddit"] = subreddit
+    if author:
+        params["author"] = author
     if query:
         params["query"] = query
     if after:
@@ -171,6 +174,7 @@ def search_posts_paged(
     page_size: int = 100,
     sleep: float = 0.5,
     before: datetime | None = None,
+    author: str | None = None,
 ) -> tuple[int, list[dict]]:
     """Post search that pages past the archive's 100-per-request cap.
 
@@ -178,14 +182,15 @@ def search_posts_paged(
     created_utc seen so far) until the window is exhausted or *max_items* posts
     are collected. Returns (http_status_of_first_page, posts) so a caller can
     tell "the archive rejected this query shape" (e.g. a full-text search with
-    no subreddit) from "nothing matched".
+    no subreddit) from "nothing matched". *author* filters to one person's
+    posts; like *subreddit* it is a plain filter, not a text search.
     """
     out: list[dict] = []
     seen: set[str] = set()
     first_status: int | None = None
     while len(out) < max_items:
         status, items = request(
-            _POSTS_URL, _post_params(subreddit, query, after, before, page_size, "desc")
+            _POSTS_URL, _post_params(subreddit, query, after, before, page_size, "desc", author)
         )
         if first_status is None:
             first_status = status
