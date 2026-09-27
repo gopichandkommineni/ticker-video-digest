@@ -61,6 +61,51 @@ Its price history appears after the next automated refresh (within a few hours).
 
 ---
 
+## Choose which subreddits are read for a stock *(a click)*
+
+The dashboard reads Reddit posts from each stock's own communities (for
+example r/ASTSpaceMobile for ASTS). You decide which ones on the
+**Subreddits** page in the sidebar. It has two boxes.
+
+**Find by company name** — when you don't know the subreddit:
+
+1. Type the company name, e.g. `Rocket Lab` (a ticker like `RKLB` works too).
+2. Press **Search**. It takes up to a minute while it asks the Reddit archive.
+3. You get a table of communities it found: how many members each has, how
+   busy it was this week, and a ✅ or ✖ with the reason. The ✅ ones start
+   ticked.
+4. Untick anything that looks wrong, then press **Save ticked subreddits**.
+
+If it can't work out the ticker from the name, a box appears asking for it.
+
+**Add a subreddit** — when you already know the community:
+
+1. Type its name: `wallstreetbets`, `r/wallstreetbets` or a pasted
+   reddit.com link all work.
+2. Pick the stock it belongs to, or leave **none (general list)** for a
+   community that covers many stocks.
+3. Press **Add subreddit**. You'll see "Added r/… to …".
+
+Everything is saved to `config/ticker_subreddits.yaml`. The table at the
+bottom of the page shows what's saved, and **Remove a subreddit** takes one off.
+
+To make the change permanent, commit that file (changes made on the hosted
+dashboard are lost when it redeploys):
+
+```bash
+git add config/ticker_subreddits.yaml
+git commit -m "Add r/RKLB for RKLB"
+```
+
+The same actions work from a terminal (after `./run setup`):
+
+```bash
+.venv/bin/python -m casino_dashboard.jobs.subreddit_resolve company "Rocket Lab"
+.venv/bin/python -m casino_dashboard.jobs.subreddit_resolve add wallstreetbets
+```
+
+---
+
 ## Add a note, catalyst, or red flag for a stock *(an edit)*
 
 Open [`config/manual_notes.yaml`](../../config/manual_notes.yaml):

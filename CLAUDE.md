@@ -89,7 +89,7 @@ src/core/               # shared: models.py config.py cache.py market/ social_me
 src/ticker_digest/      # YouTube insight threads: sources quality novelty thread store pipeline cli
 src/fintwit/            # tweet ingestion: orchestration/ storage/ tweet_sources/
 app.py                  # Streamlit dashboard entrypoint (root)
-pages/                  # Streamlit dashboard pages 00–06
+pages/                  # Streamlit dashboard pages 00–07
 config/                 # themes.yaml (canonical universe), etf_mapping, star_traders, ...
 data/                   # snapshots.db + fintwit.db (version-controlled prod data)
 scripts/                # operational + one-time migration scripts

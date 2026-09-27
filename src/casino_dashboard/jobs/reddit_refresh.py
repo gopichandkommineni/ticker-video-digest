@@ -23,7 +23,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from casino_dashboard.data.subreddit_map_loader import load_subreddit_map
+from core.social_media.reddit.resolver.store import load_subreddit_map
 from casino_dashboard.jobs.reddit_pull import pull_reddit_for_tickers
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

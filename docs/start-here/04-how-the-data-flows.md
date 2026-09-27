@@ -124,8 +124,10 @@ that day's row rather than adding a duplicate. So a re-run is always safe.
 
 A page in `pages/` calls a loader in `src/casino_dashboard/ui/loaders.py`, which
 queries the database and hands back a table. The page formats it and draws it.
-No page fetches from the internet — with one exception: the Add Stocks page,
-which has to check a brand-new ticker exists before accepting it.
+No page fetches from the internet — with two exceptions: the Add Stocks page,
+which has to check a brand-new ticker exists before accepting it, and the
+Subreddits page, whose company search asks the Reddit archive (it saves to
+`config/ticker_subreddits.yaml`, not the database).
 
 ---
 

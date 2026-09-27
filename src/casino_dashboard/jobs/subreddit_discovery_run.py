@@ -20,7 +20,7 @@ import sys
 
 from core.social_media.reddit.subreddit_discovery import DiscoveryResult, discover
 from core.social_media.reddit.ticker_resolver import company_name_for, resolve_ticker
-from casino_dashboard.data.subreddit_map_loader import save_subreddit_map
+from core.social_media.reddit.resolver.store import save_subreddit_map
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)

@@ -52,6 +52,7 @@ by its number prefix.
 | `pages/03_Market_Reality_Check.py` | Market Reality Check |
 | `pages/05_Congress.py` | Congress |
 | `pages/06_Add_Stocks.py` | Add Stocks |
+| `pages/07_Subreddits.py` | Subreddits |
 
 (There's no `04_`. A page was removed and the others were never renumbered.
 Harmless.)

@@ -79,6 +79,7 @@ Six pages, listed in the sidebar:
 | **Market Reality Check** | Zoom out: is the *whole* stock market priced above what the real economy supports? |
 | **Congress** | What US politicians have been buying and selling. |
 | **Add Stocks** | A form to add a new stock to the list being watched. |
+| **Subreddits** | Choose which Reddit communities are read for each stock — find them from a company name, or add one you know. |
 
 ## What it deliberately does **not** do
 

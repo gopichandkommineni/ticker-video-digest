@@ -94,6 +94,29 @@ Expect a table with **non-zero** post counts. If everything is `0` with
 
 ## 4. Discover subreddits and save the map
 
+**Start with the resolver.** It is the front door to the map, with two inputs:
+
+```bash
+# A company name (or ticker): shows ranked candidates; saves nothing on its own
+python -m casino_dashboard.jobs.subreddit_resolve company "Rocket Lab"
+python -m casino_dashboard.jobs.subreddit_resolve company "Rocket Lab" --save          # the confident ones
+python -m casino_dashboard.jobs.subreddit_resolve company "Rocket Lab" --pick RocketLab # exactly these
+
+# A subreddit you already know: added directly, no lookup
+python -m casino_dashboard.jobs.subreddit_resolve add wallstreetbets              # general list
+python -m casino_dashboard.jobs.subreddit_resolve add r/RKLB --ticker RKLB
+
+python -m casino_dashboard.jobs.subreddit_resolve list
+python -m casino_dashboard.jobs.subreddit_resolve remove r/RKLB --ticker RKLB
+```
+
+The **Subreddits** page in the dashboard does the same with two input fields.
+The company search uses the same prefix matcher as `subreddit_match_run`. The
+sections that follow are the older bulk tools, still useful for sweeping the
+whole universe; their `--save` keeps any subreddit you added by hand.
+
+### 4a. Discovery runner
+
 ```bash
 # Prints a ranked report AND writes config/ticker_subreddits.yaml
 python -m casino_dashboard.jobs.subreddit_discovery_run RKLB ASTS "Rocket Lab" IONQ OKLO --save
@@ -301,6 +324,8 @@ authenticated PRAW; otherwise it uses the public JSON API.
 | `python -m casino_dashboard.jobs.subreddit_discovery_run [QUERIES…] [--save]` | Discover + rank subreddits; `--save` writes the map | `config/ticker_subreddits.yaml` (with `--save`) |
 | `python -m casino_dashboard.jobs.subreddit_catalog_run --fetch-only --out DIR` | Phase 1: dump every subreddit + subscriber count | `DIR/` |
 | `python -m casino_dashboard.jobs.subreddit_catalog_run --from-catalog CSV [--save]` | Phase 2: filter that dump → stock subs → per-stock subs (no network) | `config/ticker_subreddits.yaml` (with `--save`), `DIR/` (with `--out`) |
+| `python -m casino_dashboard.jobs.subreddit_resolve company "NAME" [--save \| --pick A,B]` | Find a company's subreddits; save the confident ones or your picks | `config/ticker_subreddits.yaml` (with `--save`/`--pick`) |
+| `python -m casino_dashboard.jobs.subreddit_resolve add NAME [--ticker T]` | Add a subreddit directly (general list without `--ticker`) | `config/ticker_subreddits.yaml` |
 | `python -m casino_dashboard.jobs.reddit_refresh [TICKERS…]` | Pull posts into the DB (Reddit only) | `data/snapshots.db` |
 | `python -m casino_dashboard.jobs.reddit_scrape subreddit SUBS… [--comments N]` | Every post in whole subreddits, ranked | nothing (`--json PATH`, `--save --ticker T` optional) |
 | `python -m casino_dashboard.jobs.reddit_scrape search KEYWORDS… [--subreddits A,B]` | Keyword search, whole-word matched, ranked | nothing (`--json PATH`, `--save --ticker T` optional) |
