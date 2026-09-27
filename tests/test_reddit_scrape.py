@@ -278,9 +278,11 @@ def fresh_log():
     from core.social_media.reddit import error_log
     error_log.clear()
     scrape._listing_cache.clear()
+    scrape._text_search_paused_until = 0.0
     yield error_log
     error_log.clear()
     scrape._listing_cache.clear()
+    scrape._text_search_paused_until = 0.0
 
 
 def _refuse(message="Timeout. Maybe slow down a bit"):
@@ -294,14 +296,14 @@ def test_refused_search_retries_day_by_day(fresh_log):
     def fake_get(url, params, **_):
         span = params.get("before", 0) - params.get("after", 0) if "before" in params else None
         if params.get("query") and (span is None or span > 86_400):
-            return _refuse()                           # a week at once: too expensive
+            return _refuse("query too expensive")      # a week at once: too expensive
         return _resp(payload=hit if params.get("query") else {"data": []})
 
     with patch(_GET, side_effect=fake_get), patch.object(arctic.time, "sleep"):
         res = search_reddit(["RKLB"], subreddits=["stocks"], days_back=3)
     assert [sp.post.post_id for sp in res.posts] == ["d1"] and res.warnings == []
     rec = fresh_log.recent("arctic_shift")[0]          # the refusal is still on record
-    assert rec.status == 422 and rec.reason == "Timeout. Maybe slow down a bit"
+    assert rec.status == 422 and rec.reason == "query too expensive"
     assert rec.context["subreddit"] == "stocks" and rec.context["query"] == "RKLB"
 
 
@@ -339,3 +341,42 @@ def test_network_errors_are_not_retried_the_slow_way(fresh_log):
     assert g.call_count == 1
     assert res.warnings == ["'RKLB' in r/stocks: archive unreachable (network error)"]
     assert fresh_log.recent()[0].reason == "connection reset"
+
+
+def test_a_timeout_pauses_text_search_for_the_rest_of_the_run(fresh_log):
+    """The archive's text search overloaded: one timeout, then straight to listings."""
+    listing = {"data": [_item("a", sub="stocks", title="CrowdStrike beats"),
+                        _item("b", sub="stocks", title="Zscaler guidance")]}
+
+    def fake_get(url, params, **_):
+        return _refuse() if params.get("query") else _resp(payload=listing)
+
+    with patch(_GET, side_effect=fake_get) as g, patch.object(arctic.time, "sleep"):
+        res = search_reddit(["CrowdStrike", "Zscaler", "Fortinet"],
+                            subreddits=["stocks", "investing"])
+    text_searches = [c for c in g.call_args_list if c.kwargs["params"].get("query")]
+    assert len(text_searches) == 1                       # asked once, then stopped asking
+    assert scrape.text_search_paused()
+    assert sorted(sp.post.post_id for sp in res.posts) == ["a", "b"] and res.warnings == []
+    listings = [c for c in g.call_args_list if not c.kwargs["params"].get("query")]
+    assert len(listings) == 2                            # each subreddit read once
+
+
+def test_reddit_wide_search_is_skipped_while_paused(fresh_log):
+    scrape._pause_text_search()
+    with patch(_GET, return_value=_resp(payload={"data": []})) as g, \
+            patch.object(arctic.time, "sleep"):
+        res = search_reddit(["cybersecurity"])
+    assert all(c.kwargs["params"].get("query") is None for c in g.call_args_list)
+    assert "archive text search is timing out" in res.warnings[0]
+    assert res.subreddits == DEFAULT_SEARCH_SUBREDDITS
+
+
+def test_text_search_is_tried_again_after_the_pause(fresh_log, monkeypatch):
+    scrape._pause_text_search()
+    assert scrape.text_search_paused()
+    monkeypatch.setattr(scrape, "_text_search_paused_until", 0.0)
+    hit = {"data": [_item("q", sub="stocks", title="RKLB news")]}
+    with patch(_GET, return_value=_resp(payload=hit)) as g:
+        res = search_reddit(["RKLB"], subreddits=["stocks"])
+    assert g.call_args.kwargs["params"]["query"] == "RKLB" and len(res.posts) == 1

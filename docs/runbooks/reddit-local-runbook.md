@@ -417,7 +417,8 @@ own failures at the end. Common reasons:
 
 | Reason | Meaning |
 |---|---|
-| `arctic_shift [422] Timeout…` (or similar) | The archive found a keyword search too expensive. Already retried day by day, then by reading the subreddit's posts — only a problem if the report's **Problems** list still has it |
+| `arctic_shift [422] Timeout. Maybe slow down a bit` | The archive's text search is overloaded (it happens even for tiny searches). After the first one, a run stops using text search for 30 minutes and reads subreddits' posts instead, matching keywords itself — only a problem if the report's **Problems** list still has entries. Check the archive yourself: `curl -s "https://arctic-shift.photon-reddit.com/api/posts/search?subreddit=cybersecurity&query=cybersecurity&limit=5&after=$(( $(date +%s) - 86400 ))"` |
+| `arctic_shift [422]` with another reason | The archive found that one search too expensive. Retried day by day, then by reading the subreddit's posts |
 | `arctic_shift [no response] …` | Network error reaching the archive |
 | `digest_llm … usage limit` | The Claude plan's allowance is spent; the next run retries |
 
