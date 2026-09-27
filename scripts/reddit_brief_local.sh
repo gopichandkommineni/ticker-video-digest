@@ -284,7 +284,7 @@ cmd_run() {
   find "$LOGS" -name '*.log' -mtime +30 -delete 2>/dev/null || true
   exec >>"$logfile" 2>&1
 
-  log "Checking for new Reddit data on $REF…"
+  log "Checking for new Reddit data on ${REF}…"
   fetch_main
   local blob
   blob="$(git -C "$CLONE" rev-parse -q --verify "origin/$REF:data/reddit.db" 2>/dev/null || true)"
@@ -373,7 +373,7 @@ cmd_now() {
      2>>"$logfile" | tee "$out" || true
   grep -q "Stopped early" "$out" && warn "Claude stopped early (see above) — publishing what was done."
 
-  log "Publishing to the dashboard's database on $REF…"
+  log "Publishing to the dashboard's database on ${REF}…"
   publish_digests "$work" "Reddit brief on demand (${tickers[*]}, ${days}d, Claude subscription)" \
     2>&1 | tee -a "$logfile" ||
     die "Couldn't publish (git push kept failing). Your insights are in $work; try again."

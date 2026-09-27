@@ -39,6 +39,7 @@ The layout mirrors the packages under `src/`:
 |---|---|
 | `test_casino_*.py` | `src/casino_dashboard/` — the dashboard |
 | `market/test_*.py` | `src/core/market/` — indicators and the Reality Score |
+| `test_shell_scripts.py` | `run`, `scripts/*.sh` (portability: macOS bash 3.2) |
 | `test_reddit_*`, `test_subreddit_*`, `test_social_media_*`, `test_apewisdom_*`, `test_arctic_shift*`, `test_apify_*` | `src/core/social_media/` |
 | `test_storage_*`, `test_worker_pool_*`, `test_orchestration*`, `test_fintwit_*`, `test_rate_limiter*`, `test_reconciler*` | `src/fintwit/` |
 | `test_digest_*`, `test_youtube_client`, `test_youtube_channels`, `test_transcripts`, `test_analyzer` | `src/ticker_digest/` — the YouTube insight threads |
