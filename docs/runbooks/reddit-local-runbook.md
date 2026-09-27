@@ -305,14 +305,33 @@ A run that stored nothing exits with code 1.
 ## 5d. The daily digest (LLM brief per stock)
 
 Right after ingestion, the same workflow writes each stock's digest — a short
-brief and linked insights shown on Ticker Detail. It uses Gemini's free tier
-and needs `GEMINI_API_KEY` (repository secret; in `.env` locally). Design:
+brief and linked insights shown on Ticker Detail. Design:
 [reddit-digest-v1](../specs/reddit-digest-v1.md).
 
+Which model writes it is set by `REDDIT_DIGEST_LLM`:
+
+| Value | Model | Needs |
+|---|---|---|
+| `auto` (default) | Claude if the Claude Code CLI is installed, else Gemini | — |
+| `claude` | Claude Code CLI (`claude -p`) on a Claude subscription. Counts against the plan's usage limits, never API billing. Model: `REDDIT_DIGEST_CLAUDE_MODEL` (default `haiku`) | Locally: `claude` installed and signed in. In Actions: secret `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`); the workflow installs the CLI only when it's set |
+| `gemini` | Gemini free tier. Model: `REDDIT_DIGEST_MODEL` (default `gemini-flash-lite-latest`) | `GEMINI_API_KEY` |
+
+The Claude client removes `ANTHROPIC_API_KEY` from the CLI's environment, so a
+key in `.env` or the workflow can never switch it to API billing. It also runs
+the CLI with no tools (`--tools ""`): Reddit text is untrusted, and the model
+can only answer.
+
 ```bash
-GEMINI_API_KEY=... REDDIT_DB_PATH=/tmp/reddit.db \
+# On your laptop, with Claude Code signed in:
+REDDIT_DB_PATH=/tmp/reddit.db REDDIT_DIGEST_LLM=claude \
+  python -m casino_dashboard.jobs.reddit_digest RKLB ASTS
+
+# Or on Gemini:
+GEMINI_API_KEY=... REDDIT_DB_PATH=/tmp/reddit.db REDDIT_DIGEST_LLM=gemini \
   python -m casino_dashboard.jobs.reddit_digest RKLB ASTS
 ```
+
+On Claude, each stock with new posts takes about 30–60 seconds.
 
 Run it after an ingest into the same scratch file. Expect
 `## Reddit digest — ✅ ok`, an insight count per stock, and "Quiet" for stocks
@@ -332,6 +351,9 @@ sqlite3 /tmp/reddit.db "SELECT ticker, kind, stance, headline FROM insights;"
 | `HTTP 400 … API key not valid` | The secret is wrong | Re-copy the key from AI Studio |
 | `HTTP 402 … prepayment credits are depleted` | The key belongs to a *billed* project with no credit | Use a key from a project without billing (free tier), or top it up |
 | `HTTP 404 … no longer available` | The pinned model was retired | Clear `REDDIT_DIGEST_MODEL`, or set a current model |
+| `Claude plan usage limit reached` | The Claude plan's 5-hour or weekly allowance is spent (shared with your own Claude use) | Wait for it to reset; the next run covers the skipped stocks |
+| `Claude CLI isn't signed in to a subscription` | `CLAUDE_CODE_OAUTH_TOKEN` is wrong or expired (locally: not signed in) | Run `claude setup-token` again and replace the secret (locally: run `claude` and sign in) |
+| `Claude CLI exited …` | The CLI crashed or didn't install | Check the "Install Claude Code CLI" step's log |
 
 ## 6. Verify what landed
 
@@ -379,7 +401,7 @@ authenticated PRAW; otherwise it uses the public JSON API.
 | `python -m casino_dashboard.jobs.subreddit_catalog_run --from-catalog CSV [--save]` | Phase 2: filter that dump → stock subs → per-stock subs (no network) | `config/ticker_subreddits.yaml` (with `--save`), `DIR/` (with `--out`) |
 | `python -m casino_dashboard.jobs.subreddit_resolve company "NAME" [--save \| --pick A,B]` | Find a company's subreddits; save the confident ones or your picks | `config/ticker_subreddits.yaml` (with `--save`/`--pick`) |
 | `python -m casino_dashboard.jobs.subreddit_resolve add NAME [--ticker T \| --general]` | Add a subreddit: filed under the stock its name/description match, else the general list; `--ticker`/`--general` decide it yourself | `config/ticker_subreddits.yaml` |
-| `python -m casino_dashboard.jobs.reddit_digest [TICKERS…]` | Daily LLM brief + linked insights per stock (needs `GEMINI_API_KEY`) | `digests`, `insights` in `data/reddit.db` |
+| `python -m casino_dashboard.jobs.reddit_digest [TICKERS…]` | Daily LLM brief + linked insights per stock (Claude Code CLI on a subscription, or `GEMINI_API_KEY`) | `digests`, `insights` in `data/reddit.db` |
 | `python -m casino_dashboard.jobs.reddit_ingest [TICKERS…]` | Daily ingestion: posts + top comments per stock | `data/reddit.db` (or `REDDIT_DB_PATH`) |
 | `python -m casino_dashboard.jobs.reddit_refresh [TICKERS…]` | Pull posts into the DB (Reddit only) | `data/snapshots.db` |
 | `python -m casino_dashboard.jobs.reddit_scrape subreddit SUBS… [--comments N]` | Every post in whole subreddits, ranked | nothing (`--json PATH`, `--save --ticker T` optional) |

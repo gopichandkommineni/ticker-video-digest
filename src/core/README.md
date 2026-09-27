@@ -52,7 +52,7 @@ the page costs nothing until the underlying numbers change.
 | `reddit/apify_client.py` | Paid managed scraper. Alternative backend. |
 | `reddit/resolver/` | **Which subreddits belong to which stock.** Two inputs: a company name (searched with `subreddit_match`, you pick the results) or a subreddit name (filed under the stock it belongs to, else the general list). Owns `config/ticker_subreddits.yaml`. |
 | `reddit/ingest/` | **Daily collection into `data/reddit.db`.** For each stock: its subreddits' posts plus a ticker/company search, top comments on busy posts, score history, automatic trimming. |
-| `reddit/digest/` | **Daily per-stock brief** of what Reddit is saying, with insights linked to their posts. Gemini free tier (`gemini.py`); writes `digests`/`insights` into `reddit.db`. |
+| `reddit/digest/` | **Daily per-stock brief** of what Reddit is saying, with insights linked to their posts. Claude Code CLI on a Claude subscription (`claude_cli.py`) or Gemini free tier (`gemini.py`); writes `digests`/`insights` into `reddit.db`. |
 | `reddit/scrape.py` | Read every post in a subreddit, or search by keyword (whole-word matched), ranked, optionally with top comments |
 | `reddit/client.py` | Direct Reddit API via `praw`. Mostly historical — see below. |
 | `reddit/subreddit_discovery.py` | Which subreddits discuss a given stock? |

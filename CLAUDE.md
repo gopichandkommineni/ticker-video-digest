@@ -72,7 +72,8 @@ Non-package trees: **`research/`** (one-off probes + committed run outputs),
 - pandas, yfinance — market data
 - google-api-python-client — YouTube Data API v3 (ticker_digest)
 - youtube-transcript-api — caption extraction (ticker_digest)
-- Gemini free tier (plain HTTPS) — the daily Reddit digest
+- Claude Code CLI on a Claude subscription, or Gemini free tier — the daily
+  Reddit digest
   (`core/social_media/reddit/digest/`, see `docs/specs/reddit-digest-v1.md`)
 - anthropic SDK — Claude API calls (thesis, per-video extraction);
   the digest falls back to the local Claude Code CLI (`claude -p

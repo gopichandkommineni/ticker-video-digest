@@ -2,9 +2,15 @@
 posts ingestion stored in data/reddit.db. Run by `reddit_ingest.yml` right
 after ingestion; safe to run by hand.
 
-Uses Gemini's free tier (GEMINI_API_KEY; model: REDDIT_DIGEST_MODEL, default
-gemini-flash-lite-latest, Google's alias for the current Flash-Lite model). Without a key
-it does nothing and says so.
+Which model writes it (REDDIT_DIGEST_LLM = auto | claude | gemini):
+- claude — the Claude Code CLI (`claude -p`) on a Claude subscription: your own
+  login on a laptop, or CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) in
+  GitHub Actions. Counts against the plan's usage limits, not API billing.
+  Model: REDDIT_DIGEST_CLAUDE_MODEL, default haiku.
+- gemini — Gemini's free tier (GEMINI_API_KEY; model: REDDIT_DIGEST_MODEL,
+  default gemini-flash-lite-latest).
+- auto (default) — Claude when the CLI is installed, else Gemini.
+With neither available it does nothing and says so.
 
 Usage:
     python -m casino_dashboard.jobs.reddit_digest                 # whole universe
@@ -15,13 +21,21 @@ Writes to data/reddit.db (or REDDIT_DB_PATH) — production data, committed by t
 workflow; don't commit a copy from a local run.
 
 In GitHub Actions the report is also appended to $GITHUB_STEP_SUMMARY.
-Exit code 1 only when every stock that needed the LLM failed.
+Exit code 1 only when every stock that needed the LLM failed, or
+REDDIT_DIGEST_LLM is not a known choice.
 """
 import logging
 import os
 import sys
 
-from core.social_media.reddit.digest import DigestReport, GeminiClient, MissingKey, run_digest
+from core.social_media.reddit.digest import (
+    ClaudeCliClient,
+    DigestConfig,
+    DigestReport,
+    GeminiClient,
+    MissingKey,
+    run_digest,
+)
 from casino_dashboard.jobs.reddit_ingest import _tickers
 from casino_dashboard.jobs.subreddit_catalog_run import load_company_names
 
@@ -61,15 +75,44 @@ def _emit(text: str) -> None:
             fh.write(text + "\n")
 
 
+_SKIPPED = {
+    "claude": "The Claude Code CLI isn't installed, so no digest was written. In GitHub "
+              "Actions, add the CLAUDE_CODE_OAUTH_TOKEN repository secret (run "
+              "`claude setup-token` on your computer to get it).",
+    "gemini": "GEMINI_API_KEY is not set, so no digest was written. Add it as a "
+              "repository secret to turn the digest on.",
+    "auto": "Neither the Claude Code CLI nor GEMINI_API_KEY is available, so no digest "
+            "was written. Add the CLAUDE_CODE_OAUTH_TOKEN repository secret (from "
+            "`claude setup-token`) or the GEMINI_API_KEY secret to turn it on.",
+}
+
+
+def make_llm(choice: str) -> ClaudeCliClient | GeminiClient | None:
+    """The client REDDIT_DIGEST_LLM asks for, or None when it can't be set up."""
+    makers = {"claude": [ClaudeCliClient], "gemini": [GeminiClient],
+              "auto": [ClaudeCliClient, GeminiClient]}[choice]
+    for make in makers:
+        try:
+            return make()
+        except MissingKey as exc:
+            logger.info("Digest: %s", exc)
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
-    try:
-        llm = GeminiClient()
-    except MissingKey:
-        _emit("## Reddit digest — skipped\n\nGEMINI_API_KEY is not set, so no digest was "
-              "written. Add it as a repository secret to turn the digest on.")
+    choice = os.environ.get("REDDIT_DIGEST_LLM", "").strip().lower() or "auto"
+    if choice not in _SKIPPED:
+        _emit(f"## Reddit digest — ❌ failed\n\nREDDIT_DIGEST_LLM={choice!r} is not one of "
+              "auto, claude, gemini.")
+        return 1
+    llm = make_llm(choice)
+    if llm is None:
+        _emit(f"## Reddit digest — skipped\n\n{_SKIPPED[choice]}")
         return 0
+    logger.info("Digest model: %s", llm.model)
     report = run_digest(_tickers(sys.argv[1:] if argv is None else argv), llm,
-                        company_names=load_company_names())
+                        company_names=load_company_names(),
+                        cfg=DigestConfig(call_delay=llm.call_delay))
     _emit("\n".join(render(report)))
     return 1 if report.status == "failed" else 0
 

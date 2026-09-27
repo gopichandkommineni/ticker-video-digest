@@ -48,6 +48,7 @@ def _seed(path: Path, ticker="RKLB", posts=(), seen=NOW - timedelta(hours=1)):
 
 class FakeLLM:
     model = "fake-flash"
+    call_delay = 0.5
 
     def __init__(self, answers=None, error=None):
         self.answers = answers or {}
@@ -302,23 +303,61 @@ def test_gemini_unusable_body():
 
 # --- the job -------------------------------------------------------------------------
 
-def test_job_without_key_skips_cleanly(monkeypatch, capsys):
+def _unavailable(*_a, **_k):
+    raise MissingKey("not here")
+
+
+def test_job_without_any_model_skips_cleanly(monkeypatch, capsys):
+    monkeypatch.delenv("REDDIT_DIGEST_LLM", raising=False)
+    monkeypatch.setattr(job, "ClaudeCliClient", _unavailable)
+    monkeypatch.setattr(job, "GeminiClient", _unavailable)
+    assert job.main(["RKLB"]) == 0
+    out = capsys.readouterr().out
+    assert "skipped" in out and "CLAUDE_CODE_OAUTH_TOKEN" in out and "GEMINI_API_KEY" in out
+
+
+def test_job_gemini_choice_without_key_names_the_key(monkeypatch, capsys):
+    monkeypatch.setenv("REDDIT_DIGEST_LLM", "gemini")
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     assert job.main(["RKLB"]) == 0
     assert "GEMINI_API_KEY is not set" in capsys.readouterr().out
+
+
+def test_job_auto_prefers_claude_then_falls_back_to_gemini(monkeypatch):
+    claude, gemini = FakeLLM(), FakeLLM()
+    monkeypatch.setattr(job, "ClaudeCliClient", lambda: claude)
+    monkeypatch.setattr(job, "GeminiClient", lambda: gemini)
+    assert job.make_llm("auto") is claude
+    assert job.make_llm("gemini") is gemini
+    monkeypatch.setattr(job, "ClaudeCliClient", _unavailable)
+    assert job.make_llm("auto") is gemini
+    assert job.make_llm("claude") is None
+
+
+def test_job_rejects_an_unknown_choice(monkeypatch, capsys):
+    monkeypatch.setenv("REDDIT_DIGEST_LLM", "gpt")
+    assert job.main(["RKLB"]) == 1
+    assert "not one of auto, claude, gemini" in capsys.readouterr().out
 
 
 def test_job_runs_and_reports(tmp_path, monkeypatch, capsys):
     path = tmp_path / "r.db"
     _seed(path, posts=[("p1", "t", 10, 1, 2)])
     monkeypatch.setenv("REDDIT_DB_PATH", str(path))
+    monkeypatch.setenv("REDDIT_DIGEST_LLM", "gemini")
     monkeypatch.setattr(job, "GeminiClient", lambda: FakeLLM())
     monkeypatch.setattr(job, "load_company_names", lambda: {})
     real = job.run_digest
-    monkeypatch.setattr(job, "run_digest", lambda *a, **k: real(*a, cfg=CFG, **k))
+    seen = {}
+
+    def run(*a, cfg, **k):
+        seen["delay"] = cfg.call_delay
+        return real(*a, cfg=CFG, **k)
+    monkeypatch.setattr(job, "run_digest", run)
     assert job.main(["RKLB", "ASTS"]) == 0
     out = capsys.readouterr().out
     assert "## Reddit digest — ✅ ok" in out and "| RKLB | 0 |" in out and "Quiet (no new posts): 1" in out
+    assert seen["delay"] == FakeLLM.call_delay           # the client decides the pacing
 
 
 # --- the page component ------------------------------------------------------------

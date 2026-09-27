@@ -25,7 +25,7 @@ from typing import Literal, Protocol
 from pydantic import BaseModel, Field, ValidationError
 
 from core.social_media.reddit.digest import store
-from core.social_media.reddit.digest.gemini import GeminiError, GeminiFatal
+from core.social_media.reddit.digest.errors import LLMError, LLMFatal
 from core.social_media.reddit.digest.store import Digest, Insight, SourcePost
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ class DigestConfig(BaseModel):
     comment_chars: int = 300
     max_insights: int = 6
     keep_days: int = 90            # digest retention
-    call_delay: float = 7.0        # seconds between LLM calls (free tier ≈ 10/min)
+    call_delay: float = 7.0        # seconds between LLM calls (Gemini free tier ≈ 10/min)
 
 
 class LLM(Protocol):
@@ -269,15 +269,15 @@ def run_digest(
                     RESPONSE_SCHEMA,
                 )
                 digest = to_digest(raw, ticker, posts, cfg, digest_date, created_at, llm.model)
-            except GeminiFatal as exc:
-                # Quota used up, bad key, no credit, retired model: every
+            except LLMFatal as exc:
+                # Quota or plan limit used up, bad key or login, no credit, retired model: every
                 # further call would fail the same way. Stop; the skipped
                 # stocks' posts stay unread and tomorrow's window covers them.
                 logger.warning("Stopping the digest at %s: %s", ticker, exc)
                 report.stopped = str(exc)[:300]
                 report.skipped = [t.upper() for t in tickers[n:]]
                 break
-            except (GeminiError, ValidationError, ValueError) as exc:
+            except (LLMError, ValidationError, ValueError) as exc:
                 logger.warning("Digest failed for %s (continuing): %s", ticker, exc)
                 # Recorded, but not as a read: the next run retries these posts.
                 # A good digest already written today is kept, not overwritten.

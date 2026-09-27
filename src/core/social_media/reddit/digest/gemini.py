@@ -21,6 +21,13 @@ import time
 
 import requests
 
+from core.social_media.reddit.digest.errors import (
+    LLMError,
+    LLMFatal,
+    MissingKey,
+    QuotaExhausted,
+)
+
 logger = logging.getLogger(__name__)
 
 # Google's moving alias for the current Flash-Lite model. Flash-Lite, because
@@ -31,21 +38,9 @@ DEFAULT_MODEL = "gemini-flash-lite-latest"
 _URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 
-class GeminiError(RuntimeError):
-    """The call failed (bad response, server error after retries, bad JSON)."""
-
-
-class GeminiFatal(GeminiError):
-    """A failure every further call would repeat — bad key, billing, retired
-    model, rejected request. Stop the run rather than fail 64 times."""
-
-
-class QuotaExhausted(GeminiFatal):
-    """The free tier's daily allowance is used up — stop for today."""
-
-
-class MissingKey(GeminiError):
-    """GEMINI_API_KEY is not set."""
+# The shared digest errors, under the names this module has always used.
+GeminiError = LLMError
+GeminiFatal = LLMFatal
 
 
 def _retry_delay(body: dict) -> float | None:
@@ -67,6 +62,9 @@ def _is_daily_quota(body: dict) -> bool:
 
 class GeminiClient:
     """generate_json(system, prompt, schema) → parsed dict."""
+
+    # Free tier ≈ 10 requests a minute: the runner waits this long between calls.
+    call_delay = 7.0
 
     def __init__(
         self,
