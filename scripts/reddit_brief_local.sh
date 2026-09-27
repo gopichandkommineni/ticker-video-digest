@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# reddit_brief_laptop.sh — write the daily Reddit brief on your own computer,
+# reddit_brief_local.sh — write the daily Reddit brief on your own computer,
 # with Claude Code on your Claude subscription (no API key, no API bill).
 #
 #   ./run reddit-brief check       Check the prerequisites; walks you through any that are missing.
@@ -163,7 +163,7 @@ prepare_clone() {
     log "Making a private copy of the repository in $CLONE (your own folder is never touched)…"
     git clone -q --branch "$REF" "$ORIGIN_URL" "$CLONE" || git clone -q "$ORIGIN_URL" "$CLONE"
   fi
-  git -C "$CLONE" config user.name "reddit-brief-laptop"
+  git -C "$CLONE" config user.name "reddit-brief-local"
   git -C "$CLONE" config user.email "bot@users.noreply.github.com"
   ok "Private copy of the repository: $CLONE"
 }
@@ -260,7 +260,7 @@ cmd_run() {
       published=1
       break
     fi
-    git -C "$CLONE" commit -q -m "Reddit digest (laptop, Claude subscription): $(date -u +%Y-%m-%dT%H:%M)Z"
+    git -C "$CLONE" commit -q -m "Reddit digest (local, Claude subscription): $(date -u +%Y-%m-%dT%H:%M)Z"
     if git -C "$CLONE" push -q origin "HEAD:$REF"; then
       log "Published to $REF."
       published=1

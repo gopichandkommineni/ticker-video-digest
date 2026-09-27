@@ -164,8 +164,8 @@ must surface this clearly.
 - Local runs of the refresh job are for testing only — **DO NOT commit
   `data/snapshots.db`, `data/fintwit.db` or `data/reddit.db` from a local sandbox run** (it will
   overwrite production data with incomplete/test results).
-- One sanctioned exception: the owner's laptop Reddit digest
-  (`./run reddit-brief`, `scripts/reddit_brief_laptop.sh`) pushes
+- One sanctioned exception: the owner's local Reddit digest
+  (`./run reddit-brief`, `scripts/reddit_brief_local.sh`) pushes
   `data/reddit.db`, but only as new digest rows merged onto the latest `main`
   copy — never a whole local file.
 

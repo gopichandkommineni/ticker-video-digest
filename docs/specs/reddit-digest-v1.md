@@ -29,7 +29,7 @@ interface (`generate_json(system, prompt, schema)`), picked by
 
 The owner already pays for Claude Pro. `claude -p` (print mode) is the same
 Claude Code CLI, answering once and exiting, and it runs on the account it is
-signed in as: a laptop's own login, or in GitHub Actions the
+signed in as: the owner's own local login, or in GitHub Actions the
 `CLAUDE_CODE_OAUTH_TOKEN` that `claude setup-token` prints. Calls count
 against the plan's usage limits (5-hour and weekly, shared with the owner's
 own Claude use), **not** per-token API billing.
@@ -147,7 +147,7 @@ there is no digest yet.
   **`GEMINI_API_KEY`** (free key from Google AI Studio). Without either, the
   step prints "skipped" and the page says there is no digest yet.
 - **Or on the owner's computer:** `./run reddit-brief install` schedules the
-  Claude digest on a laptop's own Claude Code login (hourly check, runs once
+  Claude digest on the owner's local Claude Code login (hourly check, runs once
   per GitHub collection, merges only digest rows into `main`'s reddit.db).
   Runbook §5e.
 - **By hand:** `python -m casino_dashboard.jobs.reddit_digest RKLB` with

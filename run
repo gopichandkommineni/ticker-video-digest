@@ -154,7 +154,7 @@ case "${1:-help}" in
   threads)    shift; cmd_threads "$@" ;;
   refresh)    shift; cmd_refresh "$@" ;;
   clean)      shift; cmd_clean "$@" ;;
-  reddit-brief) shift; exec bash scripts/reddit_brief_laptop.sh "$@" ;;
+  reddit-brief) shift; exec bash scripts/reddit_brief_local.sh "$@" ;;
   help|-h|--help) cmd_help ;;
   *) printf '\033[31mUnknown command: %s\033[0m\n' "$1"; cmd_help; exit 1 ;;
 esac

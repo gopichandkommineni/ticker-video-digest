@@ -391,7 +391,7 @@ def test_md_escape_neutralises_links():
     assert md_escape("[click](http://x)") == "\\[click\\]\\(http://x\\)"
 
 
-# --- merging a digest written elsewhere (the laptop job) ------------------------------
+# --- merging a digest written elsewhere (the local job) ------------------------------
 
 def _digest(ticker, status, created, headline="h"):
     from core.social_media.reddit.digest import Digest, Insight, SourcePost

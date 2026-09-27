@@ -322,7 +322,7 @@ the CLI with no tools (`--tools ""`): Reddit text is untrusted, and the model
 can only answer.
 
 ```bash
-# On your laptop, with Claude Code signed in:
+# On your own computer, with Claude Code signed in:
 REDDIT_DB_PATH=/tmp/reddit.db REDDIT_DIGEST_LLM=claude \
   python -m casino_dashboard.jobs.reddit_digest RKLB ASTS
 
@@ -357,8 +357,8 @@ sqlite3 /tmp/reddit.db "SELECT ticker, kind, stance, headline FROM insights;"
 
 ## 5e. The digest on your own computer (Claude subscription, scheduled)
 
-`scripts/reddit_brief_laptop.sh` (via `./run reddit-brief …`) writes the digest
-on the owner's laptop with the Claude Code login already there, so there's no
+`scripts/reddit_brief_local.sh` (via `./run reddit-brief …`) writes the digest
+locally, on the owner's computer, with the Claude Code login already there, so there's no
 token in GitHub and no API key. GitHub Actions keeps doing the ingest.
 
 | Command | Does |
@@ -385,7 +385,7 @@ it mid-run; re-run `install` to pick up a newer script).
 3. Runs the digest (`REDDIT_DIGEST_LLM=claude`) on a scratch copy.
 4. Publishes: fetches `main` again, merges **only the digest rows** into the
    newest `data/reddit.db` (`reddit_digest_merge`: newer replaces older, never a
-   good digest with a quiet/failed one), commits as `reddit-brief-laptop`,
+   good digest with a quiet/failed one), commits as `reddit-brief-local`,
    pushes. A rejected push (main moved) → merge again, up to 4 tries.
 5. Records the ingest it digested — unless the run stopped early (e.g. the
    plan's usage limit), in which case the next hourly check retries.

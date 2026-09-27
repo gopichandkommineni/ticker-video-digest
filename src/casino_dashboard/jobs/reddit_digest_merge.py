@@ -1,6 +1,6 @@
 """Copy recent digests from one reddit.db into another.
 
-Used by the laptop digest job (scripts/reddit_brief_laptop.sh): it writes the
+Used by the local digest job (scripts/reddit_brief_local.sh): it writes the
 day's digests into a scratch copy, then merges only those digest rows into the
 latest production data/reddit.db before committing — so it never pushes back a
 stale copy of the posts GitHub Actions ingested meanwhile.

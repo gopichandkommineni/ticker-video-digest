@@ -4,7 +4,7 @@ after ingestion; safe to run by hand.
 
 Which model writes it (REDDIT_DIGEST_LLM = auto | claude | gemini):
 - claude — the Claude Code CLI (`claude -p`) on a Claude subscription: your own
-  login on a laptop, or CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) in
+  login on your own computer, or CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) in
   GitHub Actions. Counts against the plan's usage limits, not API billing.
   Model: REDDIT_DIGEST_CLAUDE_MODEL, default haiku.
 - gemini — Gemini's free tier (GEMINI_API_KEY; model: REDDIT_DIGEST_MODEL,

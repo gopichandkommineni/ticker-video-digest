@@ -302,7 +302,7 @@ link to the post it came from. It's written every day by an AI. Pick
 **one** of the options below.
 
 **Option A: Claude on your own computer (recommended if you pay for Claude
-Pro or Max and use Claude Code on a Mac or Linux laptop).** It uses your plan's
+Pro or Max and use Claude Code on a Mac or Linux computer).** It uses your plan's
 normal usage allowance, the same one you use in the Claude app. There's no
 separate bill and nothing to paste into GitHub. In a terminal, inside the
 project folder, run:

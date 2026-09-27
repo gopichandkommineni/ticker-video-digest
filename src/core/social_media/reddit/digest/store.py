@@ -174,7 +174,7 @@ def _digest(conn: sqlite3.Connection, row: sqlite3.Row) -> Digest:
 def merge_recent(src: Path, dst: Path, since_date: str) -> list[str]:
     """Copy digests dated *since_date* or later from *src* into *dst*.
 
-    For a digest written away from the main copy (the laptop job): *src* is the
+    For a digest written away from the main copy (the local job): *src* is the
     file it wrote, *dst* the latest production reddit.db. Only digest rows move,
     so posts ingested into *dst* in the meantime are kept. Same rules as a
     re-run: a newer digest replaces an older one, but a quiet or failed one never

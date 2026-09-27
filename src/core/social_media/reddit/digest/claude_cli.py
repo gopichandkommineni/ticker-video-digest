@@ -2,7 +2,7 @@
 
 `claude -p` (print mode) answers once and exits, so a program can call it. It
 runs on whatever the CLI is signed in as:
-- on a laptop, the account you log in with when you run `claude`;
+- locally, the account you log in with when you run `claude`;
 - in GitHub Actions, `CLAUDE_CODE_OAUTH_TOKEN`, the token `claude setup-token`
   prints.
 
