@@ -31,6 +31,7 @@ import logging
 import os
 import sys
 
+from core.social_media.reddit import error_log
 from core.social_media.reddit.digest import (
     ClaudeCliClient,
     DigestConfig,
@@ -67,6 +68,9 @@ def render(report: DigestReport) -> list[str]:
     if report.failed:
         lines += ["", f"### Failed ({len(report.failed)})", ""]
         lines += [f"- {t}: {e}" for t, e in report.failed.items()]
+    reasons = error_log.summary_lines("digest_llm")
+    if reasons:
+        lines += ["", *reasons]
     return lines
 
 

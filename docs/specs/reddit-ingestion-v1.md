@@ -48,6 +48,17 @@ company names cache ────┘    2. search: [TICKER, short company name] i
   A *failed* run doesn't move the window, so nothing is skipped after an outage.
 - **Search list.** The resolver's general list; while that is empty, the five
   big finance subreddits (`DEFAULT_SEARCH_SUBREDDITS`).
+- **Refused searches.** Arctic Shift refuses (HTTP 422) a full-text search it
+  finds too expensive — seen on r/stocks, r/options and r/wallstreetbets over a
+  7-day window, especially for phrases like "Rocket Lab". The client then
+  retries the same search one day at a time, and if that is refused too, reads
+  the subreddit's posts in the window (the cheap request the feeds use, up to
+  `LISTING_SCAN` = 3,000 newest, cached so a run reads each subreddit once)
+  and matches the keywords itself. Only what still fails becomes a warning.
+- **Why it failed.** Every refused or failed archive call is recorded with the
+  archive's own reason (`reddit/error_log.py`) and shown in the run report as
+  "Why calls failed" (grouped, with a count and an example query). With
+  `REDDIT_ERROR_LOG` set, each is also appended to that file as a JSON line.
 - **Company name.** From `config/ticker_company_names.yaml`, shortened to its
   distinctive words ("Applied Optoelectronics, Inc." → "Applied
   Optoelectronics").

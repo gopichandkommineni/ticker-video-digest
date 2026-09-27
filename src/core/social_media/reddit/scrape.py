@@ -18,6 +18,7 @@ discussion thread's content actually lives.
 """
 import logging
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 
@@ -100,9 +101,62 @@ def _clean_subreddit(name: str) -> str:
     return re.sub(r"^/?r/", "", name.strip(), flags=re.IGNORECASE).strip()
 
 
-def _status_note(status: int) -> str:
+def _status_note(status: int, detail: str = "") -> str:
     """Human wording for an archive status: 0 means the request never completed."""
-    return "archive unreachable (network error)" if status == 0 else f"archive returned HTTP {status}"
+    note = "archive unreachable (network error)" if status == 0 else f"archive returned HTTP {status}"
+    return f"{note}: {detail}" if detail and status else note
+
+
+# When the archive refuses a full-text search in a subreddit (typically a big
+# one — the query is too expensive for it), the search retries one day at a time,
+# then falls back to reading the subreddit's newest posts in the window and
+# matching keywords here. That listing is the same cheap request the per-stock
+# subreddit feeds use; it's cached so one run reads each subreddit at most once.
+LISTING_SCAN = 3_000                 # posts read per subreddit by the fallback
+_LISTING_TTL = 3_600.0               # seconds a listing is reused within a run
+_listing_cache: dict[tuple[str, int], tuple[float, int, list[dict]]] = {}
+
+
+def _listing(subreddit: str, after: datetime) -> tuple[int, list[dict]]:
+    """The subreddit's posts since *after*, newest first, at most LISTING_SCAN."""
+    key = (subreddit.lower(), int(after.timestamp()) // 3600)
+    hit = _listing_cache.get(key)
+    if hit and time.monotonic() - hit[0] < _LISTING_TTL:
+        return hit[1], hit[2]
+    status, items = arctic.search_posts_paged(subreddit=subreddit, after=after,
+                                              max_items=LISTING_SCAN)
+    if status == 200:
+        _listing_cache[key] = (time.monotonic(), status, items)
+    return status, items
+
+
+def _search_harder(subreddit: str, keyword: str, query: str, after: datetime,
+                   scan_limit: int) -> tuple[int, list[dict], str]:
+    """Retry a refused full-text search. Returns (status, items, how): how is
+    "daily" (same search, one day at a time), "listing" (read the subreddit's
+    posts, matched here) or "" when both failed (status is the last failure)."""
+    now = datetime.now(tz=timezone.utc)
+    items: list[dict] = []
+    start, status = after, 200
+    while start < now:
+        end = min(start + timedelta(days=1), now)
+        status, got = arctic.search_posts_paged(subreddit=subreddit, query=query, after=start,
+                                                before=end, max_items=scan_limit)
+        if status != 200:
+            break
+        items.extend(got)
+        start = end
+    if status == 200:
+        return 200, items, "daily"
+    status, posts = _listing(subreddit, after)
+    if status != 200:
+        return status, [], ""
+    matched = []
+    for item in posts:
+        post = arctic._to_post(item, "", max_chars=_MAX_BODY_CHARS)
+        if post is not None and matched_keywords(post, [keyword]):
+            matched.append(item)
+    return 200, matched, "listing"
 
 
 def _rank(posts: list[ScrapedPost], sort: SortOrder) -> list[ScrapedPost]:
@@ -241,8 +295,16 @@ def search_reddit(
                 scopes = list(DEFAULT_SEARCH_SUBREDDITS)
                 kw_scopes = list(DEFAULT_SEARCH_SUBREDDITS)
                 continue
+            if status not in (0, 200) and scope is not None:
+                refused = arctic.last_error
+                status, items, how = _search_harder(scope, kw, query, after, scan_limit)
+                if how:
+                    logger.info("'%s' in r/%s: text search refused (%s) — found %d via %s",
+                                kw, scope, refused or f"HTTP {status}", len(items),
+                                "day-by-day search" if how == "daily" else "the subreddit's posts")
             if status != 200:
-                result.warnings.append(f"'{kw}' in r/{scope}: {_status_note(status)}")
+                result.warnings.append(
+                    f"'{kw}' in r/{scope}: {_status_note(status, arctic.last_error)}")
                 continue
             raw.extend(items)
 

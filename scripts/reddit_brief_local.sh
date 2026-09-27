@@ -39,7 +39,8 @@ CLONE="$HOME_DIR/repo"
 LOGS="$HOME_DIR/logs"
 CONF="$HOME_DIR/config"
 STAMP="$HOME_DIR/last_digested_ingest"
-SEEN="$HOME_DIR/last_seen_reddit_db"   # git object id of data/reddit.db last looked at
+SEEN="$HOME_DIR/last_seen_reddit_db"
+ERRORS="$LOGS/errors.jsonl"            # why outside calls failed: one JSON line each   # git object id of data/reddit.db last looked at
 LOCK="$HOME_DIR/lock"
 BIN="$HOME_DIR/bin/reddit-brief.sh"
 LABEL="com.ticker-video-digest.reddit-brief"
@@ -247,6 +248,38 @@ take_lock() {
   trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
 }
 
+# The error log keeps its newest 1,000 lines.
+trim_errors() {
+  if [ -f "$ERRORS" ] && [ "$(wc -l <"$ERRORS")" -gt 1000 ]; then
+    tail -n 1000 "$ERRORS" >"$ERRORS.tmp" && mv "$ERRORS.tmp" "$ERRORS"
+  fi
+  return 0
+}
+
+# The last N failures from the error log, one readable line each.
+show_errors() {
+  local n="${1:-5}" since="${2:-}"
+  [ -s "$ERRORS" ] || return 0
+  "$CLONE/.venv/bin/python" - "$ERRORS" "$n" "$since" <<'PY' 2>/dev/null || tail -n "$n" "$ERRORS"
+import json, sys
+path, n, since = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+rows = []
+for line in open(path, encoding="utf-8").read().splitlines():
+    try:
+        r = json.loads(line)
+    except ValueError:
+        continue
+    if not since or r.get("at", "") >= since:
+        rows.append(r)
+for r in rows[-n:]:
+    ctx = ", ".join(f"{k}={v}" for k, v in r.get("context", {}).items())
+    status = r.get("status") or "no response"
+    print(f"    {r.get('at', '')}  {r.get('source', '')} [{status}] {r.get('reason') or '(no reason given)'}")
+    if ctx:
+        print(f"        ↳ {ctx}")
+PY
+}
+
 # Keep the private copy small: drop what older fetches left behind.
 compact_clone() {
   git -C "$CLONE" reflog expire --expire=now --all 2>/dev/null || true
@@ -268,7 +301,7 @@ PY
 
 # Stand-ins so the shared config module imports; the digest never uses them.
 py_env() {
-  env REDDIT_DIGEST_LLM=claude \
+  env REDDIT_DIGEST_LLM=claude REDDIT_ERROR_LOG="$ERRORS" \
       YOUTUBE_API_KEY="${YOUTUBE_API_KEY:-unused-by-reddit-brief}" \
       ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-unused-by-reddit-brief}" "$@"
 }
@@ -280,6 +313,7 @@ cmd_run() {
   [ -d "$CLONE/.git" ] || die "Not set up yet. Run:  ./run reddit-brief install"
   mkdir -p "$LOGS"
   take_lock || exit 0                     # another run is going
+  trim_errors
   local logfile="$LOGS/$(date -u +%Y-%m-%d).log"
   find "$LOGS" -name '*.log' -mtime +30 -delete 2>/dev/null || true
   exec >>"$logfile" 2>&1
@@ -349,7 +383,9 @@ cmd_now() {
   fi
   mkdir -p "$LOGS"
   take_lock || die "Another Reddit brief run is going. Try again in a few minutes."
-  local logfile="$LOGS/$(date -u +%Y-%m-%d).log"
+  local logfile="$LOGS/$(date -u +%Y-%m-%d).log" started
+  started="$(date -u +%Y-%m-%dT%H:%M:%S)"
+  trim_errors
   bold "Reddit brief for ${tickers[*]} — last $days days"
 
   log "Updating the private copy…"
@@ -363,7 +399,7 @@ cmd_now() {
   log "Fetching the last $days days of Reddit posts for ${tickers[*]}…"
   if ! (cd "$CLONE" && py_env REDDIT_DB_PATH="$work" \
         .venv/bin/python -m casino_dashboard.jobs.reddit_ingest --days "$days" "${tickers[@]}") \
-        2>&1 | tee -a "$logfile" | { grep -vE '^[0-9-]+ [0-9:,]+ (INFO|DEBUG)' || true; }; then
+        2>&1 | tee -a "$logfile" | { grep -vE '^[0-9-]+ [0-9:,]+ (INFO|DEBUG|WARNING)' || true; }; then
     die "Couldn't fetch Reddit posts (is the Reddit archive reachable?). Details: $logfile"
   fi
 
@@ -372,6 +408,10 @@ cmd_now() {
      .venv/bin/python -m casino_dashboard.jobs.reddit_digest --days "$days" --show "${tickers[@]}") \
      2>>"$logfile" | tee "$out" || true
   grep -q "Stopped early" "$out" && warn "Claude stopped early (see above) — publishing what was done."
+  if [ -s "$ERRORS" ] && [ -n "$(show_errors 1 "$started")" ]; then
+    warn "Some calls failed on this run. Refused searches were retried other ways (see the report); the reasons, newest last (all: $ERRORS):"
+    show_errors 8 "$started"
+  fi
 
   log "Publishing to the dashboard's database on ${REF}…"
   publish_digests "$work" "Reddit brief on demand (${tickers[*]}, ${days}d, Claude subscription)" \
@@ -519,6 +559,11 @@ cmd_status() {
       else warn "Not scheduled — run:  ./run reddit-brief install"; fi ;;
   esac
   if [ -f "$STAMP" ]; then ok "Last collection digested: $(cat "$STAMP")"; else warn "No brief written yet"; fi
+  if [ -s "$ERRORS" ]; then
+    echo
+    echo "Latest failed calls and why ($ERRORS):"
+    show_errors 5
+  fi
   local latest
   latest="$(ls -1 "$LOGS"/20*.log 2>/dev/null | tail -1 || true)"
   if [ -n "$latest" ]; then

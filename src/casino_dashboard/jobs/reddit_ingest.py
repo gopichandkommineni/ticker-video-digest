@@ -22,6 +22,7 @@ import logging
 import os
 import sys
 
+from core.social_media.reddit import error_log
 from core.social_media.reddit.ingest import IngestConfig, IngestReport, run_ingest
 from core.social_media.reddit.resolver import load_general_subreddits, load_subreddit_map
 from casino_dashboard.jobs.subreddit_catalog_run import load_company_names
@@ -65,6 +66,11 @@ def render(report: IngestReport, mapped: set[str]) -> list[str]:
         lines += [f"- {e}" for e in report.errors[:50]]
         if len(report.errors) > 50:
             lines.append(f"- … and {len(report.errors) - 50} more")
+    reasons = error_log.summary_lines("arctic_shift")
+    if reasons:
+        lines += ["", *reasons, "",
+                  "_A refused keyword search is retried one day at a time, then by reading "
+                  "the subreddit's recent posts; only what still failed is under Problems._"]
     return lines
 
 
