@@ -2,9 +2,10 @@
 
 Why Gemini: the repository's free-LLM probes (research/probes/gemini_digest,
 research/probes/groq_digest) ran the same batched summarisation job on both
-free tiers. Gemini 2.5 Flash completed 11/11 calls with no throttling; Groq's
-Llama 3.3 70B was rate-limited on 22/22, because large prompts exhaust its
-per-minute token bucket. A daily digest is exactly that batched shape.
+free tiers. Groq's per-minute token bucket is emptied by one digest-sized
+prompt. Gemini's limit is requests per day, and it differs by model: the probe
+hit ~20/day on Flash (since the Dec-2025 cut), too few for 64 stocks, while
+Flash-Lite allows several hundred a day.
 
 Plain HTTPS + JSON (requests), no SDK: one endpoint, and the response schema
 makes the model return JSON that parses. Free-tier limits are enforced by
@@ -22,10 +23,11 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-# Google's moving alias for the current Flash model. A pinned version breaks the
-# day Google retires it for new keys (gemini-2.5-flash already has); override
-# with REDDIT_DIGEST_MODEL to pin one on purpose.
-DEFAULT_MODEL = "gemini-flash-latest"
+# Google's moving alias for the current Flash-Lite model. Flash-Lite, because
+# the free tier gives full Flash only ~20 requests a day (64 stocks need 64). An
+# alias, because a pinned version breaks the day Google retires it for new keys
+# (gemini-2.5-flash already has). Override with REDDIT_DIGEST_MODEL.
+DEFAULT_MODEL = "gemini-flash-lite-latest"
 _URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 

@@ -328,7 +328,7 @@ sqlite3 /tmp/reddit.db "SELECT ticker, kind, stance, headline FROM insights;"
 
 | Reason in the report | Meaning | Fix |
 |---|---|---|
-| `daily free-tier quota used up` | Google's daily allowance is spent | Wait a day, or set `REDDIT_DIGEST_MODEL=gemini-flash-lite-latest` (bigger allowance) |
+| `daily free-tier quota used up` | Google's daily allowance is spent | Wait a day. If `REDDIT_DIGEST_MODEL` is set to a full Flash model, clear it: Flash's free tier is ~20 requests/day |
 | `HTTP 400 … API key not valid` | The secret is wrong | Re-copy the key from AI Studio |
 | `HTTP 402 … prepayment credits are depleted` | The key belongs to a *billed* project with no credit | Use a key from a project without billing (free tier), or top it up |
 | `HTTP 404 … no longer available` | The pinned model was retired | Clear `REDDIT_DIGEST_MODEL`, or set a current model |

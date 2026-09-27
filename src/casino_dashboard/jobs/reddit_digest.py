@@ -3,7 +3,7 @@ posts ingestion stored in data/reddit.db. Run by `reddit_ingest.yml` right
 after ingestion; safe to run by hand.
 
 Uses Gemini's free tier (GEMINI_API_KEY; model: REDDIT_DIGEST_MODEL, default
-gemini-flash-latest, Google's alias for the current Flash model). Without a key
+gemini-flash-lite-latest, Google's alias for the current Flash-Lite model). Without a key
 it does nothing and says so.
 
 Usage:

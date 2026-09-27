@@ -23,20 +23,22 @@ Requirement: **free**, and able to handle one summary per stock per day
 (64 stocks, each call ~5–15k tokens of posts in).
 
 The repository already measured this. The `research/probes/gemini_digest` and
-`groq_digest` probes ran the same batched summarisation job on both free tiers:
+`groq_digest` probes ran the same summarisation job on both free tiers:
 
-| Free tier | Batched run | Why |
+| Free tier | Measured | Why |
 |---|---|---|
-| **Gemini 2.5 Flash** | **11/11 calls succeeded, 0 throttled** | Generous tokens-per-minute; the limit is requests per day, and 64/day fits |
-| Groq, Llama 3.3 70B | 22/22 calls throttled | ~12k tokens-per-minute bucket; one digest-sized prompt nearly empties it |
+| Gemini 2.5 Flash | Strict JSON every time, but **stopped at ~20 calls/day** (HTTP 429, daily limit) | Since Google's Dec-2025 cut, full Flash gets ~20 requests/day on the free tier — too few for 64 stocks |
+| Groq, Llama 3.3 70B | Throttled on batched prompts | ~12k tokens-per-minute bucket; one digest-sized prompt nearly empties it (and the model has since left Groq's free tier) |
 
-**Decision: Gemini Flash.** The default model is **`gemini-flash-latest`**,
-Google's moving alias for the current Flash model. The probes used
-`gemini-2.5-flash`, but by September 2026 Google refused that version for new
-keys ("no longer available to new users") — a pinned version is a scheduled
-breakage. Pin one on purpose with the `REDDIT_DIGEST_MODEL` repository variable
-(e.g. `gemini-flash-lite-latest` for a larger daily allowance). Plain HTTPS to `generateContent` with a response
-schema, so the answer is JSON that parses (`digest/gemini.py`).
+**Decision: Gemini Flash-Lite.** The default model is
+**`gemini-flash-lite-latest`**, Google's moving alias for the current
+Flash-Lite model, whose free tier allows several hundred requests a day
+(reported Sep 2026; Google shows each project's real limits in AI Studio).
+An alias rather than a version, because by September 2026 Google already
+refused `gemini-2.5-flash` for new keys ("no longer available to new users") —
+a pinned version is a scheduled breakage. Pin one on purpose with the
+`REDDIT_DIGEST_MODEL` repository variable. Plain HTTPS to `generateContent`
+with a response schema, so the answer is JSON that parses (`digest/gemini.py`).
 
 Free-tier caveats, accepted: limits are set by Google and change; free-tier
 prompts may be used to improve Google's products — the input is public Reddit

@@ -291,7 +291,7 @@ def test_gemini_client_errors_are_fatal_and_immediate(status, message):
 
 def test_gemini_default_model_is_the_moving_alias(monkeypatch):
     monkeypatch.delenv("REDDIT_DIGEST_MODEL", raising=False)
-    assert GeminiClient(api_key="k").model == "gemini-flash-latest"
+    assert GeminiClient(api_key="k").model == "gemini-flash-lite-latest"
 
 
 def test_gemini_unusable_body():
