@@ -1,8 +1,9 @@
 # `scripts/` — one-off commands a human runs
 
-Nothing here runs on its own schedule as part of normal operation. These are
-either **maintenance commands** invoked by a manual GitHub workflow, or
-**migrations** that have already been applied and are kept only for the record.
+Almost nothing here runs on its own schedule. These are **maintenance
+commands** invoked by a manual GitHub workflow, **migrations** that have already
+been applied and are kept only for the record, and one opt-in job for your own
+computer (`reddit_brief_local.sh`).
 
 Day-to-day work needs `./run` at the repository root, not this folder.
 
@@ -16,6 +17,7 @@ Day-to-day work needs `./run` at the repository root, not this folder.
 | `run_backfill.py` | `fintwit-backfill.yml`, manual | Fill in history for one or more handles |
 | `run_variance.py` | `fintwit-variance.yml`, manual | Ask both tweet providers the same question N times and compare — do they return consistent data? |
 | `import_probe_data.py` | By hand | Load already-paid-for probe JSON into the database instead of re-fetching it |
+| `reddit_brief_local.sh` | `./run reddit-brief install` sets up your computer's scheduler (launchd / systemd / cron) to run it hourly while on | Writes the daily Reddit digest with Claude Code on **your Claude subscription**, when GitHub has collected new posts; merges only the new digest rows into the latest `data/reddit.db` on `main` and pushes. Checks and walks you through its prerequisites first. See the Reddit runbook §5e |
 
 > 💸 `run_backfill.py` spends real money — the tweet providers are metered.
 > Check the date range twice before starting one.

@@ -102,16 +102,21 @@ python -m casino_dashboard.jobs.subreddit_resolve company "Rocket Lab"
 python -m casino_dashboard.jobs.subreddit_resolve company "Rocket Lab" --save          # the confident ones
 python -m casino_dashboard.jobs.subreddit_resolve company "Rocket Lab" --pick RocketLab # exactly these
 
-# A subreddit you already know: added directly, no lookup
-python -m casino_dashboard.jobs.subreddit_resolve add wallstreetbets              # general list
-python -m casino_dashboard.jobs.subreddit_resolve add r/RKLB --ticker RKLB
+# A subreddit you already know: filed under the stock it's about, else general
+python -m casino_dashboard.jobs.subreddit_resolve add RocketLab                # → RKLB
+python -m casino_dashboard.jobs.subreddit_resolve add wallstreetbets           # → general list
+python -m casino_dashboard.jobs.subreddit_resolve add r/SomeSub --ticker RKLB  # you decide, no lookup
+python -m casino_dashboard.jobs.subreddit_resolve add r/SomeSub --general      # you decide, no lookup
 
 python -m casino_dashboard.jobs.subreddit_resolve list
 python -m casino_dashboard.jobs.subreddit_resolve remove r/RKLB --ticker RKLB
 ```
 
 The **Subreddits** page in the dashboard does the same with two input fields.
-The company search uses the same prefix matcher as `subreddit_match_run`. The
+The company search uses the same prefix matcher as `subreddit_match_run`;
+adding by name uses the catalog sweep's attribution rule (name form, or a
+description naming the ticker/company in a finance context; a tie between two
+stocks counts as no match). The
 sections that follow are the older bulk tools, still useful for sweeping the
 whole universe; their `--save` keeps any subreddit you added by hand.
 
@@ -297,6 +302,101 @@ It prints a report: posts new vs re-seen, comments saved, rows pruned, file
 size, a per-stock table, and a "Problems" list (e.g. `archive unreachable`).
 A run that stored nothing exits with code 1.
 
+## 5d. The daily digest (LLM brief per stock)
+
+Right after ingestion, the same workflow writes each stock's digest — a short
+brief and linked insights shown on Ticker Detail. Design:
+[reddit-digest-v1](../specs/reddit-digest-v1.md).
+
+Which model writes it is set by `REDDIT_DIGEST_LLM`:
+
+| Value | Model | Needs |
+|---|---|---|
+| `auto` (default) | Claude if the Claude Code CLI is installed, else Gemini | — |
+| `claude` | Claude Code CLI (`claude -p`) on a Claude subscription. Counts against the plan's usage limits, never API billing. Model: `REDDIT_DIGEST_CLAUDE_MODEL` (default `haiku`) | Locally: `claude` installed and signed in. In Actions: secret `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`); the workflow installs the CLI only when it's set |
+| `gemini` | Gemini free tier. Model: `REDDIT_DIGEST_MODEL` (default `gemini-flash-lite-latest`) | `GEMINI_API_KEY` |
+
+The Claude client removes `ANTHROPIC_API_KEY` from the CLI's environment, so a
+key in `.env` or the workflow can never switch it to API billing. It also runs
+the CLI with no tools (`--tools ""`): Reddit text is untrusted, and the model
+can only answer.
+
+```bash
+# On your own computer, with Claude Code signed in:
+REDDIT_DB_PATH=/tmp/reddit.db REDDIT_DIGEST_LLM=claude \
+  python -m casino_dashboard.jobs.reddit_digest RKLB ASTS
+
+# Or on Gemini:
+GEMINI_API_KEY=... REDDIT_DB_PATH=/tmp/reddit.db REDDIT_DIGEST_LLM=gemini \
+  python -m casino_dashboard.jobs.reddit_digest RKLB ASTS
+```
+
+On Claude, each stock with new posts takes about 30–60 seconds.
+
+Run it after an ingest into the same scratch file. Expect
+`## Reddit digest — ✅ ok`, an insight count per stock, and "Quiet" for stocks
+with no new posts. Look at the result:
+
+```bash
+sqlite3 /tmp/reddit.db "SELECT ticker, status, mood, summary FROM digests;"
+sqlite3 /tmp/reddit.db "SELECT ticker, kind, stance, headline FROM insights;"
+```
+
+"⚠️ Stopped early: …" gives the reason and lists the stocks not digested
+(the next run covers them). The usual reasons:
+
+| Reason in the report | Meaning | Fix |
+|---|---|---|
+| `daily free-tier quota used up` | Google's daily allowance is spent | Wait a day. If `REDDIT_DIGEST_MODEL` is set to a full Flash model, clear it: Flash's free tier is ~20 requests/day |
+| `HTTP 400 … API key not valid` | The secret is wrong | Re-copy the key from AI Studio |
+| `HTTP 402 … prepayment credits are depleted` | The key belongs to a *billed* project with no credit | Use a key from a project without billing (free tier), or top it up |
+| `HTTP 404 … no longer available` | The pinned model was retired | Clear `REDDIT_DIGEST_MODEL`, or set a current model |
+| `Claude plan usage limit reached` | The Claude plan's 5-hour or weekly allowance is spent (shared with your own Claude use) | Wait for it to reset; the next run covers the skipped stocks |
+| `Claude CLI isn't signed in to a subscription` | `CLAUDE_CODE_OAUTH_TOKEN` is wrong or expired (locally: not signed in) | Run `claude setup-token` again and replace the secret (locally: run `claude` and sign in) |
+| `Claude CLI exited …` | The CLI crashed or didn't install | Check the "Install Claude Code CLI" step's log |
+
+## 5e. The digest on your own computer (Claude subscription, scheduled)
+
+`scripts/reddit_brief_local.sh` (via `./run reddit-brief …`) writes the digest
+locally, on the owner's computer, with the Claude Code login already there, so there's no
+token in GitHub and no API key. GitHub Actions keeps doing the ingest.
+
+| Command | Does |
+|---|---|
+| `./run reddit-brief check` | Checks the prerequisites, prompting until each is fixed: macOS/Linux, git, uv (offers to install it) or Python 3.11+, `claude`, a working subscription login (one tiny `claude -p` call with API-key variables removed), `main` having the Claude digest code, and push access (`git push --dry-run`) |
+| `./run reddit-brief install` | `check`, then sets up a private clone, its Python packages, and the schedule: **launchd** agent on macOS (at log-in + hourly), **systemd user timer** on Linux (3 min after log-in + hourly), else **cron** (`@reboot` + hourly). Offers a first run |
+| `./run reddit-brief run [--force]` | What the scheduler runs (see below). `--force` digests even if the latest collection was already done |
+| `./run reddit-brief status` | Scheduled? Last collection digested, and the tail of the latest log |
+| `./run reddit-brief uninstall` | Removes the schedule (keeps any other cron lines); offers to delete its folder |
+
+Everything lives in `~/.local/share/ticker-reddit-brief/` (`TICKER_BRIEF_HOME`
+to move it): `repo/` (a private clone, never your working copy), `logs/`
+(one file per UTC day, kept 30 days), `config` (clone URL, branch, and the PATH
+captured at install, since schedulers start jobs with a bare PATH), and
+`bin/reddit-brief.sh` (a copy of the script, so updating the clone can't change
+it mid-run; re-run `install` to pick up a newer script).
+
+**Each hourly run:**
+
+1. Resets the private clone to `origin/main`. No `data/reddit.db` → nothing to do.
+2. Reads the newest finished ingest in `runs`. Same as the last one digested →
+   nothing to do, **no Claude call**. So it digests once per GitHub collection
+   (daily), and catches up the next time the computer is on.
+3. Runs the digest (`REDDIT_DIGEST_LLM=claude`) on a scratch copy.
+4. Publishes: fetches `main` again, merges **only the digest rows** into the
+   newest `data/reddit.db` (`reddit_digest_merge`: newer replaces older, never a
+   good digest with a quiet/failed one), commits as `reddit-brief-local`,
+   pushes. A rejected push (main moved) → merge again, up to 4 tries.
+5. Records the ingest it digested — unless the run stopped early (e.g. the
+   plan's usage limit), in which case the next hourly check retries.
+
+This is the one sanctioned writer of `data/reddit.db` outside GitHub Actions: it
+never pushes back a whole local copy, only new digest rows on top of `main`.
+
+Troubleshooting: `./run reddit-brief status`, then the log it names. A push
+that keeps failing usually means git's GitHub login expired: run
+`gh auth login` (or fix your SSH key) and `./run reddit-brief check`.
+
 ## 6. Verify what landed
 
 ```bash
@@ -342,7 +442,8 @@ authenticated PRAW; otherwise it uses the public JSON API.
 | `python -m casino_dashboard.jobs.subreddit_catalog_run --fetch-only --out DIR` | Phase 1: dump every subreddit + subscriber count | `DIR/` |
 | `python -m casino_dashboard.jobs.subreddit_catalog_run --from-catalog CSV [--save]` | Phase 2: filter that dump → stock subs → per-stock subs (no network) | `config/ticker_subreddits.yaml` (with `--save`), `DIR/` (with `--out`) |
 | `python -m casino_dashboard.jobs.subreddit_resolve company "NAME" [--save \| --pick A,B]` | Find a company's subreddits; save the confident ones or your picks | `config/ticker_subreddits.yaml` (with `--save`/`--pick`) |
-| `python -m casino_dashboard.jobs.subreddit_resolve add NAME [--ticker T]` | Add a subreddit directly (general list without `--ticker`) | `config/ticker_subreddits.yaml` |
+| `python -m casino_dashboard.jobs.subreddit_resolve add NAME [--ticker T \| --general]` | Add a subreddit: filed under the stock its name/description match, else the general list; `--ticker`/`--general` decide it yourself | `config/ticker_subreddits.yaml` |
+| `python -m casino_dashboard.jobs.reddit_digest [TICKERS…]` | Daily LLM brief + linked insights per stock (Claude Code CLI on a subscription, or `GEMINI_API_KEY`) | `digests`, `insights` in `data/reddit.db` |
 | `python -m casino_dashboard.jobs.reddit_ingest [TICKERS…]` | Daily ingestion: posts + top comments per stock | `data/reddit.db` (or `REDDIT_DB_PATH`) |
 | `python -m casino_dashboard.jobs.reddit_refresh [TICKERS…]` | Pull posts into the DB (Reddit only) | `data/snapshots.db` |
 | `python -m casino_dashboard.jobs.reddit_scrape subreddit SUBS… [--comments N]` | Every post in whole subreddits, ranked | nothing (`--json PATH`, `--save --ticker T` optional) |

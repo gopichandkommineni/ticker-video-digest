@@ -3,7 +3,8 @@ Subreddits page.
 
     company   find the subreddits for a company name (or ticker), then save the
               ones you pick
-    add       add a subreddit by name, for one stock or on the general list
+    add       add a subreddit by name — filed under the stock it belongs to,
+              or on the general list when it isn't about one stock
     remove    take a subreddit off the map
     list      show what is saved
 
@@ -12,8 +13,10 @@ Usage:
     python -m casino_dashboard.jobs.subreddit_resolve company "Rocket Lab" --save
     python -m casino_dashboard.jobs.subreddit_resolve company "Rocket Lab" --pick RocketLab,RKLB
     python -m casino_dashboard.jobs.subreddit_resolve company "Some Co" --ticker SOME --save
-    python -m casino_dashboard.jobs.subreddit_resolve add wallstreetbets
-    python -m casino_dashboard.jobs.subreddit_resolve add r/RKLB --ticker RKLB
+    python -m casino_dashboard.jobs.subreddit_resolve add RocketLab           # → RKLB
+    python -m casino_dashboard.jobs.subreddit_resolve add wallstreetbets      # → general list
+    python -m casino_dashboard.jobs.subreddit_resolve add r/SomeSub --ticker RKLB   # no lookup
+    python -m casino_dashboard.jobs.subreddit_resolve add r/SomeSub --general
     python -m casino_dashboard.jobs.subreddit_resolve remove wallstreetbets
     python -m casino_dashboard.jobs.subreddit_resolve list --ticker RKLB
 
@@ -27,12 +30,15 @@ import sys
 
 from core.social_media.reddit.resolver import (
     add_subreddit,
+    add_subreddit_auto,
     clean_subreddit_name,
     load_entries,
     remove_entry,
     resolve_company,
     save_resolved,
 )
+from core.social_media.reddit.subreddit_catalog import UniverseEntry
+from casino_dashboard.jobs.subreddit_catalog_run import load_company_names
 from casino_dashboard.jobs.subreddit_match_run import _universe_tickers, result_lines
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -55,7 +61,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
     a = sub.add_parser("add", help="add a subreddit by name")
     a.add_argument("name", help="e.g. wallstreetbets, r/wallstreetbets or a reddit.com URL")
-    a.add_argument("--ticker", default="", help="tie it to this stock (default: general list)")
+    where = a.add_mutually_exclusive_group()
+    where.add_argument("--ticker", default="", help="file it under this stock (skips the lookup)")
+    where.add_argument("--general", action="store_true", help="put it on the general list (skips the lookup)")
 
     r = sub.add_parser("remove", help="take a subreddit off the map")
     r.add_argument("name")
@@ -101,6 +109,13 @@ def _company(args: argparse.Namespace) -> int:
     return 0
 
 
+def _universe_entries() -> list[UniverseEntry]:
+    """Every stock in the universe, with its cached company name."""
+    names = load_company_names()
+    return [UniverseEntry(ticker=t, company_name=names.get(t))
+            for t in sorted(_universe_tickers() or [])]
+
+
 def _list(ticker: str) -> int:
     entries = load_entries()
     if ticker:
@@ -126,7 +141,15 @@ def main(argv: list[str] | None = None) -> int:
 
     where = args.ticker.upper() if args.ticker else "the general list"
     try:
-        if args.command == "add":
+        if args.command == "add" and not (args.ticker or args.general):
+            entry, attribution = add_subreddit_auto(args.name, _universe_entries())
+            where = attribution.ticker or "the general list"
+            print(f"✓ Added r/{entry.name} to {where}." if entry
+                  else f"r/{attribution.name} is already on {where} — nothing changed.")
+            print(f"  Why: {attribution.reason}.")
+            if not attribution.archive_ok:
+                print("  ⚠️ Only the name was checked. Wrong place? remove it and add with --ticker.")
+        elif args.command == "add":
             entry = add_subreddit(args.name, ticker=args.ticker or None)
             print(f"✓ Added r/{entry.name} to {where}." if entry
                   else f"Already on {where} — nothing changed.")

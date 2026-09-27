@@ -10,6 +10,16 @@ name: Reddit — Daily Ingest
 #
 # Each run re-reads the last few days so posts and scores the archive filled
 # in late are picked up; the first run reads a week.
+#
+# Then the daily digest: per stock, a short brief of the chatter and a list of
+# insights linked to their posts, shown on the Ticker Detail page
+# (docs/specs/reddit-digest-v1.md). Written by one of:
+#   - Claude, through the Claude Code CLI on a Claude subscription (Pro/Max):
+#     secret CLAUDE_CODE_OAUTH_TOKEN, from running `claude setup-token` on your
+#     computer. Uses the plan's usage limits, never API billing.
+#   - Gemini's free tier: secret GEMINI_API_KEY.
+# With both set, Claude is used (variable REDDIT_DIGEST_LLM=gemini overrides).
+# With neither, the digest step is skipped with a note.
 
 on:
   schedule:
@@ -33,13 +43,20 @@ permissions:
 jobs:
   ingest:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120  # ingest ~10–20 min + digest: up to 64 calls, ~30–60s each
 
     env:
       # Placeholders keep core.config importable; ingestion never calls them.
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
       REDDIT_INGEST_TICKERS: ${{ github.event.inputs.tickers }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      REDDIT_DIGEST_MODEL: ${{ vars.REDDIT_DIGEST_MODEL }}
+      # The digest's Claude client removes ANTHROPIC_API_KEY (set above) before
+      # calling the CLI, so Claude runs on this subscription token only.
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      REDDIT_DIGEST_LLM: ${{ vars.REDDIT_DIGEST_LLM }}
+      REDDIT_DIGEST_CLAUDE_MODEL: ${{ vars.REDDIT_DIGEST_CLAUDE_MODEL }}
 
     steps:
       - name: Checkout main
@@ -57,6 +74,17 @@ jobs:
 
       - name: Ingest Reddit & write run report
         run: python -m casino_dashboard.jobs.reddit_ingest
+
+      # Only with the subscription token: without it the digest uses Gemini.
+      - name: Install Claude Code CLI
+        if: always() && env.CLAUDE_CODE_OAUTH_TOKEN != ''
+        run: npm install -g @anthropic-ai/claude-code
+
+      # Digest whatever is in reddit.db, even if today's ingest only partly
+      # worked — a quiet stock just gets a "no new posts" note.
+      - name: Daily digest (LLM) & write report
+        if: always()
+        run: python -m casino_dashboard.jobs.reddit_digest
 
       # Commit even if ingestion failed part-way (if: always) so progress is
       # never lost — stage only the DB file, never `git add -A`.

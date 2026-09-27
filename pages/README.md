@@ -17,11 +17,11 @@ requires that.
 | `../app.py` | Home | Which themes exist, and how is each doing? |
 | `00_Sector_Heat.py` | Sector Heat | Which theme is hottest, on money flow / hype / growth? |
 | `01_All_Tickers.py` | All Tickers | Every stock in one sortable table |
-| `02_Ticker_Detail.py` | Ticker Detail | Everything about one stock |
+| `02_Ticker_Detail.py` | Ticker Detail | Everything about one stock, including what Reddit is saying about it |
 | `03_Market_Reality_Check.py` | Market Reality Check | Is the whole market priced above what the economy supports? |
 | `05_Congress.py` | Congress | What are US politicians trading? |
 | `06_Add_Stocks.py` | Add Stocks | Add a stock to the watched universe |
-| `07_Subreddits.py` | Subreddits | Which Reddit communities are read for each stock? Find them by company name or add one by name |
+| `07_Subreddits.py` | Subreddits | Which Reddit communities are read for each stock? Find them by company name, or add one by name and it's filed under its stock (or the general list) |
 
 There's no `04_`. A page was removed and the rest were never renumbered —
 harmless, and renumbering would change everyone's bookmarks.

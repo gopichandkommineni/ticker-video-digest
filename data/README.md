@@ -51,6 +51,8 @@ Created by the first run of `reddit_ingest.yml`. Design and limits:
 | `post_scores` | How each post's score changed over time |
 | `comments` | Top comments on busy posts, with what each one replied to |
 | `runs` | One row per ingestion run: what it read and whether it worked |
+| `digests` | The daily per-stock Reddit brief: summary, mood, status |
+| `insights` | Each day's insights per stock, with links to their source posts |
 
 Old and quiet posts are deleted automatically so the file stays small enough
 to commit every day.

@@ -35,6 +35,10 @@ cmd_help() {
     ./run refresh      Download fresh data into a THROWAWAY local database.
                        (The real data is refreshed automatically on GitHub.)
     ./run clean        Delete caches and throwaway files. Safe.
+    ./run reddit-brief install
+                       Write the daily Reddit brief on THIS computer with your
+                       Claude subscription, whenever it's on. (Also: check,
+                       status, run, uninstall.)
 
   New to the project? Start with README.md, then docs/start-here/.
 
@@ -150,6 +154,7 @@ case "${1:-help}" in
   threads)    shift; cmd_threads "$@" ;;
   refresh)    shift; cmd_refresh "$@" ;;
   clean)      shift; cmd_clean "$@" ;;
+  reddit-brief) shift; exec bash scripts/reddit_brief_local.sh "$@" ;;
   help|-h|--help) cmd_help ;;
   *) printf '\033[31mUnknown command: %s\033[0m\n' "$1"; cmd_help; exit 1 ;;
 esac

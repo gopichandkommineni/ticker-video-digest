@@ -28,7 +28,8 @@ Read `docs/README.md` first — it indexes everything. The structure is:
   `.github/workflows/`). When you change what a folder contains, update it.
 
 `./run` at the repo root wraps the common commands (`setup`, `dashboard`,
-`test`, `check`, `market`, `digest`, `threads`, `refresh`, `clean`). Prefer
+`test`, `check`, `market`, `digest`, `threads`, `refresh`, `clean`,
+`reddit-brief`). Prefer
 teaching it over raw commands in user-facing docs.
 
 ## Subsystems
@@ -72,6 +73,9 @@ Non-package trees: **`research/`** (one-off probes + committed run outputs),
 - pandas, yfinance — market data
 - google-api-python-client — YouTube Data API v3 (ticker_digest)
 - youtube-transcript-api — caption extraction (ticker_digest)
+- Claude Code CLI on a Claude subscription, or Gemini free tier — the daily
+  Reddit digest
+  (`core/social_media/reddit/digest/`, see `docs/specs/reddit-digest-v1.md`)
 - anthropic SDK — Claude API calls (thesis, per-video extraction);
   the digest falls back to the local Claude Code CLI (`claude -p
   --json-schema`) when no ANTHROPIC_API_KEY is set — see `ticker_digest/llm.py`
@@ -97,7 +101,7 @@ scripts/                # operational + one-time migration scripts
 research/               # one-off probes + committed run outputs
 docs/                   # start-here/ runbooks/ specs/ research/ archive/
 tests/                  # pytest suite (mirrors the packages above)
-run                     # task runner: ./run setup|dashboard|test|check|market|digest|threads|refresh|clean
+run                     # task runner: ./run setup|dashboard|test|check|market|digest|threads|refresh|clean|reddit-brief
 .env.example            # every supported env var, documented
 pyproject.toml
 README.md
@@ -160,6 +164,10 @@ must surface this clearly.
 - Local runs of the refresh job are for testing only — **DO NOT commit
   `data/snapshots.db`, `data/fintwit.db` or `data/reddit.db` from a local sandbox run** (it will
   overwrite production data with incomplete/test results).
+- One sanctioned exception: the owner's local Reddit digest
+  (`./run reddit-brief`, `scripts/reddit_brief_local.sh`) pushes
+  `data/reddit.db`, but only as new digest rows merged onto the latest `main`
+  copy — never a whole local file.
 
 ## v6 canonical-files policy
 The following files are CANONICAL CONFIGURATION. Do not modify, regenerate,
