@@ -112,7 +112,15 @@ def _status_note(status: int, detail: str = "") -> str:
 # then falls back to reading the subreddit's newest posts in the window and
 # matching keywords here. That listing is the same cheap request the per-stock
 # subreddit feeds use; it's cached so one run reads each subreddit at most once.
+#
+# The archive's text search can also be overloaded outright: it has answered
+# "Timeout. Maybe slow down a bit" even for one day of a small subreddit. After
+# one such timeout, text search is skipped for TEXT_SEARCH_PAUSE seconds and
+# subreddits are read directly — no waiting on timeouts, no day-by-day retries.
+# The next run after the pause tries text search again.
 LISTING_SCAN = 3_000                 # posts read per subreddit by the fallback
+TEXT_SEARCH_PAUSE = 1_800.0          # seconds to skip text search after a timeout
+_text_search_paused_until = 0.0
 _LISTING_TTL = 3_600.0               # seconds a listing is reused within a run
 _listing_cache: dict[tuple[str, int], tuple[float, int, list[dict]]] = {}
 
@@ -130,24 +138,50 @@ def _listing(subreddit: str, after: datetime) -> tuple[int, list[dict]]:
     return status, items
 
 
+def _is_timeout(status: int) -> bool:
+    """The archive's "Timeout. Maybe slow down a bit": its text search is overloaded."""
+    return status == 422 and "timeout" in (arctic.last_error or "").lower()
+
+
+def text_search_paused() -> bool:
+    return time.monotonic() < _text_search_paused_until
+
+
+def _pause_text_search() -> None:
+    global _text_search_paused_until
+    if not text_search_paused():
+        logger.info("The archive's text search is timing out — reading subreddits' posts "
+                    "instead for the next %d minutes", TEXT_SEARCH_PAUSE // 60)
+    _text_search_paused_until = time.monotonic() + TEXT_SEARCH_PAUSE
+
+
 def _search_harder(subreddit: str, keyword: str, query: str, after: datetime,
                    scan_limit: int) -> tuple[int, list[dict], str]:
     """Retry a refused full-text search. Returns (status, items, how): how is
-    "daily" (same search, one day at a time), "listing" (read the subreddit's
-    posts, matched here) or "" when both failed (status is the last failure)."""
+    "daily" (same search, one day at a time — skipped while text search is
+    paused), "listing" (read the subreddit's posts, matched here) or "" when
+    both failed (status is the last failure)."""
     now = datetime.now(tz=timezone.utc)
     items: list[dict] = []
     start, status = after, 200
-    while start < now:
+    while start < now and not text_search_paused():
         end = min(start + timedelta(days=1), now)
         status, got = arctic.search_posts_paged(subreddit=subreddit, query=query, after=start,
                                                 before=end, max_items=scan_limit)
         if status != 200:
+            if _is_timeout(status):
+                _pause_text_search()
             break
         items.extend(got)
         start = end
-    if status == 200:
+    if status == 200 and start >= now:
         return 200, items, "daily"
+    return _listing_match(subreddit, keyword, after)
+
+
+def _listing_match(subreddit: str, keyword: str,
+                   after: datetime) -> tuple[int, list[dict], str]:
+    """The subreddit's posts in the window that mention *keyword* (matched here)."""
     status, posts = _listing(subreddit, after)
     if status != 200:
         return status, [], ""
@@ -282,12 +316,28 @@ def search_reddit(
         kw_scopes = list(scopes)
         while kw_scopes:
             scope = kw_scopes.pop(0)
-            status, items = arctic.search_posts_paged(
-                subreddit=scope, query=query, after=after, max_items=scan_limit
-            )
+            if text_search_paused():
+                if scope is None:
+                    status = 422                  # don't ask; go to the fallback subreddits
+                else:
+                    status, items, _ = _listing_match(scope, kw, after)
+                    if status != 200:
+                        result.warnings.append(
+                            f"'{kw}' in r/{scope}: {_status_note(status, arctic.last_error)}")
+                    else:
+                        raw.extend(items)
+                    continue
+            else:
+                status, items = arctic.search_posts_paged(
+                    subreddit=scope, query=query, after=after, max_items=scan_limit
+                )
+                if _is_timeout(status):
+                    _pause_text_search()
             if scope is None and status != 200:
+                reason = ("archive text search is timing out" if text_search_paused()
+                          else _status_note(status))
                 note = (
-                    f"Reddit-wide search unavailable ({_status_note(status)}); searched "
+                    f"Reddit-wide search unavailable ({reason}); searched "
                     f"{', '.join('r/' + s for s in DEFAULT_SEARCH_SUBREDDITS)} instead"
                 )
                 if note not in result.warnings:

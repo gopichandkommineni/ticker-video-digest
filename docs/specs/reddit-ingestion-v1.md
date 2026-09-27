@@ -55,6 +55,11 @@ company names cache ────┘    2. search: [TICKER, short company name] i
   the subreddit's posts in the window (the cheap request the feeds use, up to
   `LISTING_SCAN` = 3,000 newest, cached so a run reads each subreddit once)
   and matches the keywords itself. Only what still fails becomes a warning.
+  When the refusal is the archive's "Timeout. Maybe slow down a bit" — its text
+  search overloaded, which (Sep 2026) happens even for one day of a small
+  subreddit — text search is paused for 30 minutes (`TEXT_SEARCH_PAUSE`):
+  every further keyword goes straight to reading subreddits, with no more
+  timeouts to wait on. The next run tries text search again.
 - **Why it failed.** Every refused or failed archive call is recorded with the
   archive's own reason (`reddit/error_log.py`) and shown in the run report as
   "Why calls failed" (grouped, with a count and an example query). With
