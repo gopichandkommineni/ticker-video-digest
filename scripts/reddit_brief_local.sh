@@ -19,6 +19,12 @@
 #      commits that file and pushes it — so posts collected meanwhile are kept.
 # If nothing new has landed it does nothing, so it spends none of your plan.
 #
+# The private copy is small on purpose: the repository also commits two ~30 MB
+# databases several times a day, so its full history is several GB. The copy is
+# shallow (latest commit only), fetches file contents on demand, and checks out
+# only what the digest needs (code, config/, data/reddit.db — not research/). An hourly check
+# downloads a few KB unless data/reddit.db actually changed.
+#
 # Works on macOS (launchd) and Linux (systemd user timer, or cron). Everything
 # lives in ~/.local/share/ticker-reddit-brief (override with TICKER_BRIEF_HOME).
 # See docs/runbooks/reddit-local-runbook.md §5e.
@@ -30,6 +36,7 @@ CLONE="$HOME_DIR/repo"
 LOGS="$HOME_DIR/logs"
 CONF="$HOME_DIR/config"
 STAMP="$HOME_DIR/last_digested_ingest"
+SEEN="$HOME_DIR/last_seen_reddit_db"   # git object id of data/reddit.db last looked at
 LOCK="$HOME_DIR/lock"
 BIN="$HOME_DIR/bin/reddit-brief.sh"
 LABEL="com.ticker-video-digest.reddit-brief"
@@ -120,8 +127,8 @@ how_claude_login() {
 
 has_clone() { [ -d "$CLONE/.git" ]; }
 main_has_code() {
-  git -C "$CLONE" fetch -q origin "$REF" 2>/dev/null &&
-    git -C "$CLONE" cat-file -e "origin/$REF:$DIGEST_CODE" 2>/dev/null
+  fetch_main 2>/dev/null &&
+    [ -n "$(git -C "$CLONE" ls-tree --name-only "origin/$REF" -- "$DIGEST_CODE")" ]
 }
 can_push() { git -C "$CLONE" push --dry-run -q origin "HEAD:$REF" >/dev/null 2>&1; }
 
@@ -159,9 +166,18 @@ prepare_clone() {
     ORIGIN_URL="$(git -C "$here" remote get-url origin 2>/dev/null || true)"
     [ -n "$ORIGIN_URL" ] || die "Run this from inside the project folder (couldn't find its GitHub address)."
   fi
+  # A copy left half-made by an interrupted install: start again.
+  if [ -d "$CLONE" ] && ! git -C "$CLONE" rev-parse -q --verify HEAD >/dev/null 2>&1; then
+    rm -rf "$CLONE"
+  fi
   if ! has_clone; then
-    log "Making a private copy of the repository in $CLONE (your own folder is never touched)…"
-    git clone -q --branch "$REF" "$ORIGIN_URL" "$CLONE" || git clone -q "$ORIGIN_URL" "$CLONE"
+    log "Making a small private copy of the repository in $CLONE (your own folder is never touched)…"
+    git clone --depth 1 --filter=blob:none --no-checkout --single-branch --branch "$REF" \
+      "$ORIGIN_URL" "$CLONE"
+    # Everything except research/ and the big databases in data/; of data/,
+    # only reddit.db.
+    git -C "$CLONE" sparse-checkout set --no-cone '/*' '!/research/' '!/data/*' '/data/reddit.db'
+    git -C "$CLONE" checkout -q "$REF"
   fi
   git -C "$CLONE" config user.name "reddit-brief-local"
   git -C "$CLONE" config user.email "bot@users.noreply.github.com"
@@ -184,6 +200,17 @@ install_deps() {
 }
 
 # --- the job ------------------------------------------------------------------------
+
+# Newest main: latest commit only, no file contents until they're needed.
+fetch_main() {
+  git -C "$CLONE" fetch -q --depth 1 --filter=blob:none origin "$REF"
+}
+
+# Keep the private copy small: drop what older fetches left behind.
+compact_clone() {
+  git -C "$CLONE" reflog expire --expire=now --all 2>/dev/null || true
+  git -C "$CLONE" gc -q --prune=now 2>/dev/null || true
+}
 
 # The newest finished ingest in a reddit.db ("" if none).
 latest_ingest() {
@@ -226,18 +253,25 @@ cmd_run() {
   exec >>"$logfile" 2>&1
 
   log "Checking for new Reddit data on $REF…"
-  git -C "$CLONE" fetch -q origin "$REF"
-  git -C "$CLONE" reset -q --hard "origin/$REF"
-  install_deps
-  local db="$CLONE/data/reddit.db"
-  if [ ! -f "$db" ]; then
+  fetch_main
+  local blob
+  blob="$(git -C "$CLONE" rev-parse -q --verify "origin/$REF:data/reddit.db" 2>/dev/null || true)"
+  if [ -z "$blob" ]; then
     log "No data/reddit.db on $REF yet — GitHub's Reddit ingest hasn't run. Nothing to do."
     return 0
   fi
+  if [ -z "$force" ] && [ "$blob" = "$(cat "$SEEN" 2>/dev/null)" ]; then
+    log "data/reddit.db hasn't changed since the last check. Nothing to do."
+    return 0
+  fi
+  git -C "$CLONE" reset -q --hard "origin/$REF"
+  install_deps
+  local db="$CLONE/data/reddit.db"
   local ingest
   ingest="$(latest_ingest "$db")"
   if [ -z "$force" ] && [ -n "$ingest" ] && [ "$ingest" = "$(cat "$STAMP" 2>/dev/null)" ]; then
     log "Already digested the latest collection ($ingest). Nothing to do."
+    echo "$blob" > "$SEEN"
     return 0
   fi
 
@@ -251,7 +285,7 @@ cmd_run() {
   # Publish: only the new digest rows, on top of the newest reddit.db on main.
   local attempt published=""
   for attempt in 1 2 3 4; do
-    git -C "$CLONE" fetch -q origin "$REF"
+    fetch_main
     git -C "$CLONE" reset -q --hard "origin/$REF"
     (cd "$CLONE" && py_env .venv/bin/python -m casino_dashboard.jobs.reddit_digest_merge "$work" "$db")
     git -C "$CLONE" add -- data/reddit.db
@@ -276,8 +310,10 @@ cmd_run() {
     log "Stopped early — will retry on the next check."
   else
     [ -n "$ingest" ] && echo "$ingest" > "$STAMP"
+    git -C "$CLONE" rev-parse -q --verify "HEAD:data/reddit.db" > "$SEEN" 2>/dev/null || true
     log "Done."
   fi
+  compact_clone
 }
 
 # --- scheduling ------------------------------------------------------------------------
