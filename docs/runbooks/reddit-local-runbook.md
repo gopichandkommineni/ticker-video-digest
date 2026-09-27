@@ -94,6 +94,29 @@ Expect a table with **non-zero** post counts. If everything is `0` with
 
 ## 4. Discover subreddits and save the map
 
+**Start with the resolver.** It is the front door to the map, with two inputs:
+
+```bash
+# A company name (or ticker): shows ranked candidates; saves nothing on its own
+python -m casino_dashboard.jobs.subreddit_resolve company "Rocket Lab"
+python -m casino_dashboard.jobs.subreddit_resolve company "Rocket Lab" --save          # the confident ones
+python -m casino_dashboard.jobs.subreddit_resolve company "Rocket Lab" --pick RocketLab # exactly these
+
+# A subreddit you already know: added directly, no lookup
+python -m casino_dashboard.jobs.subreddit_resolve add wallstreetbets              # general list
+python -m casino_dashboard.jobs.subreddit_resolve add r/RKLB --ticker RKLB
+
+python -m casino_dashboard.jobs.subreddit_resolve list
+python -m casino_dashboard.jobs.subreddit_resolve remove r/RKLB --ticker RKLB
+```
+
+The **Subreddits** page in the dashboard does the same with two input fields.
+The company search uses the same prefix matcher as `subreddit_match_run`. The
+sections that follow are the older bulk tools, still useful for sweeping the
+whole universe; their `--save` keeps any subreddit you added by hand.
+
+### 4a. Discovery runner
+
 ```bash
 # Prints a ranked report AND writes config/ticker_subreddits.yaml
 python -m casino_dashboard.jobs.subreddit_discovery_run RKLB ASTS "Rocket Lab" IONQ OKLO --save
@@ -207,6 +230,73 @@ Tuning:
 REDDIT_POSTS_PER_TICKER=50 python -m casino_dashboard.jobs.reddit_refresh RKLB
 ```
 
+## 5b. Scrape a subreddit, or search Reddit by keyword
+
+`reddit_scrape` reads posts on demand. It uses Arctic Shift, needs no keys, and
+works from a laptop or from the **Reddit Scrape** workflow in the Actions tab.
+
+**Read whole subreddits:** every post in the window, with no text filter. Use
+this for a stock's own community, where a post like "BlueBird launch news" is
+about the stock even though it never says "ASTS".
+
+```bash
+python -m casino_dashboard.jobs.reddit_scrape subreddit ASTSpaceMobile RKLB
+python -m casino_dashboard.jobs.reddit_scrape subreddit wallstreetbets --days 1 --sort comments
+```
+
+**Search by keyword:** posts that mention any of the keywords. It searches all
+of Reddit, or only the subreddits you name with `--subreddits`. Each result is
+re-checked as a whole word: an all-capitals keyword like `PATH` has to appear
+in capitals (`PATH` or `$PATH`), so "career path" and "Paired-Path" don't count.
+Other keywords, like `rocket lab`, match in any case.
+
+```bash
+python -m casino_dashboard.jobs.reddit_scrape search "rocket lab" RKLB Neutron
+python -m casino_dashboard.jobs.reddit_scrape search '$ASTS' --subreddits wallstreetbets,stocks
+```
+
+If the archive refuses a Reddit-wide search, the report says so and searches
+wallstreetbets, stocks, investing, options and StockMarket instead.
+
+Options for both modes:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--days N` | 7 | How far back to look |
+| `--limit N` | 25 | Posts returned after ranking |
+| `--sort` | `top` | `top` (score), `new` (date) or `comments` (comment count) |
+| `--comments N` | 0 | Also pull each post's top N comments. This is where a daily discussion thread's content is. |
+| `--json PATH` | — | Save the full result (whole post bodies and comments) as JSON |
+| `--save --ticker T` | — | Store the posts in `data/snapshots.db` under ticker T. Don't commit that file (see below). |
+
+The command prints a table (score, comments, age, subreddit, title) and then
+each post's opening text and top comments. For example:
+
+```
+## Reddit scrape — r/ASTSpaceMobile
+Last 7d · sorted by top · 25 posts
+| # | Score | Comments | Age | Subreddit | Title |
+| 1 | 112 | 521 | 2d | r/ASTSpaceMobile | AST SpaceMobile - $ASTS - Daily Discussion Thread |
+…
+```
+
+## 5c. Daily ingestion into `reddit.db`
+
+The scheduled way to collect Reddit: **`reddit_ingest.yml`** runs daily. For every
+stock it reads the subreddits in the map, searches the general list for the
+ticker and company name, saves the top comments on busy posts, and commits
+`data/reddit.db`. Design and limits: [reddit-ingestion-v1](../specs/reddit-ingestion-v1.md).
+
+Run it by hand against a scratch file (never commit a local `reddit.db`):
+
+```bash
+REDDIT_DB_PATH=/tmp/reddit.db python -m casino_dashboard.jobs.reddit_ingest RKLB ASTS
+```
+
+It prints a report: posts new vs re-seen, comments saved, rows pruned, file
+size, a per-stock table, and a "Problems" list (e.g. `archive unreachable`).
+A run that stored nothing exits with code 1.
+
 ## 6. Verify what landed
 
 ```bash
@@ -251,4 +341,9 @@ authenticated PRAW; otherwise it uses the public JSON API.
 | `python -m casino_dashboard.jobs.subreddit_discovery_run [QUERIES…] [--save]` | Discover + rank subreddits; `--save` writes the map | `config/ticker_subreddits.yaml` (with `--save`) |
 | `python -m casino_dashboard.jobs.subreddit_catalog_run --fetch-only --out DIR` | Phase 1: dump every subreddit + subscriber count | `DIR/` |
 | `python -m casino_dashboard.jobs.subreddit_catalog_run --from-catalog CSV [--save]` | Phase 2: filter that dump → stock subs → per-stock subs (no network) | `config/ticker_subreddits.yaml` (with `--save`), `DIR/` (with `--out`) |
+| `python -m casino_dashboard.jobs.subreddit_resolve company "NAME" [--save \| --pick A,B]` | Find a company's subreddits; save the confident ones or your picks | `config/ticker_subreddits.yaml` (with `--save`/`--pick`) |
+| `python -m casino_dashboard.jobs.subreddit_resolve add NAME [--ticker T]` | Add a subreddit directly (general list without `--ticker`) | `config/ticker_subreddits.yaml` |
+| `python -m casino_dashboard.jobs.reddit_ingest [TICKERS…]` | Daily ingestion: posts + top comments per stock | `data/reddit.db` (or `REDDIT_DB_PATH`) |
 | `python -m casino_dashboard.jobs.reddit_refresh [TICKERS…]` | Pull posts into the DB (Reddit only) | `data/snapshots.db` |
+| `python -m casino_dashboard.jobs.reddit_scrape subreddit SUBS… [--comments N]` | Every post in whole subreddits, ranked | nothing (`--json PATH`, `--save --ticker T` optional) |
+| `python -m casino_dashboard.jobs.reddit_scrape search KEYWORDS… [--subreddits A,B]` | Keyword search, whole-word matched, ranked | nothing (`--json PATH`, `--save --ticker T` optional) |

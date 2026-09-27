@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 _BASE = "https://arctic-shift.photon-reddit.com"
 _POSTS_URL = _BASE + "/api/posts/search"
 _SUBS_URL = _BASE + "/api/subreddits/search"
+_COMMENTS_URL = _BASE + "/api/comments/search"
 _USER_AGENT = "casino-dashboard/0.1 (+https://github.com/gopichandkommineni/ticker-video-digest)"
 
 # Subreddits searched per ticker when no per-ticker map is supplied.
@@ -91,15 +92,14 @@ def _get(url: str, params: dict, timeout: int = 20) -> list[dict]:
     return request(url, params, timeout)[1]
 
 
-def search_posts(
-    subreddit: str | None = None,
-    query: str | None = None,
-    after: datetime | None = None,
-    before: datetime | None = None,
-    limit: int = 100,
-    sort: str = "desc",
-) -> list[dict]:
-    """Raw Arctic Shift post search. Returns the list of post dicts."""
+def _post_params(
+    subreddit: str | None,
+    query: str | None,
+    after: datetime | None,
+    before: datetime | None,
+    limit: int,
+    sort: str,
+) -> dict:
     params: dict = {"limit": min(max(limit, 1), 100), "sort": sort}
     if subreddit:
         params["subreddit"] = subreddit
@@ -109,7 +109,89 @@ def search_posts(
         params["after"] = int(after.timestamp())
     if before:
         params["before"] = int(before.timestamp())
-    return _get(_POSTS_URL, params)
+    return params
+
+
+def search_posts(
+    subreddit: str | None = None,
+    query: str | None = None,
+    after: datetime | None = None,
+    before: datetime | None = None,
+    limit: int = 100,
+    sort: str = "desc",
+) -> list[dict]:
+    """Raw Arctic Shift post search. Returns the list of post dicts."""
+    return _get(_POSTS_URL, _post_params(subreddit, query, after, before, limit, sort))
+
+
+def search_posts_paged(
+    subreddit: str | None = None,
+    query: str | None = None,
+    after: datetime | None = None,
+    max_items: int = 500,
+    page_size: int = 100,
+    sleep: float = 0.5,
+) -> tuple[int, list[dict]]:
+    """Post search that pages past the archive's 100-per-request cap.
+
+    Walks newest → oldest with a descending `before` cursor (the oldest
+    created_utc seen so far) until the window is exhausted or *max_items* posts
+    are collected. Returns (http_status_of_first_page, posts) so a caller can
+    tell "the archive rejected this query shape" (e.g. a full-text search with
+    no subreddit) from "nothing matched".
+    """
+    out: list[dict] = []
+    seen: set[str] = set()
+    before: datetime | None = None
+    first_status: int | None = None
+    while len(out) < max_items:
+        status, items = request(
+            _POSTS_URL, _post_params(subreddit, query, after, before, page_size, "desc")
+        )
+        if first_status is None:
+            first_status = status
+        if not items:
+            break
+        oldest: float | None = None
+        progressed = False
+        for it in items:
+            pid = _first(it, "id", "name")
+            created = _first(it, "created_utc", "created")
+            if created is not None:
+                try:
+                    ts = float(created)
+                    oldest = ts if oldest is None else min(oldest, ts)
+                except (TypeError, ValueError):
+                    pass
+            if pid is None or str(pid) in seen:
+                continue
+            seen.add(str(pid))
+            out.append(it)
+            progressed = True
+            if len(out) >= max_items:
+                break
+        # A short page means the window is exhausted; no progress or no
+        # timestamp means the cursor can't advance — stop rather than loop.
+        if len(items) < page_size or not progressed or oldest is None:
+            break
+        before = datetime.fromtimestamp(oldest, tz=timezone.utc)
+        if sleep:
+            time.sleep(sleep)
+    return (first_status if first_status is not None else 0), out
+
+
+def search_comments(link_id: str, limit: int = 100) -> list[dict]:
+    """Comments on one post, by the post's id (with or without the t3_ prefix).
+
+    The archive has taken both id forms at different times, so try the bare id
+    first and retry with the t3_ prefix if that comes back empty.
+    """
+    bare = link_id.removeprefix("t3_")
+    params = {"limit": min(max(limit, 1), 100)}
+    items = _get(_COMMENTS_URL, {**params, "link_id": bare})
+    if not items:
+        items = _get(_COMMENTS_URL, {**params, "link_id": f"t3_{bare}"})
+    return items
 
 
 def _epoch(value: "int | float | datetime | None") -> int | None:
@@ -261,7 +343,7 @@ def count_posts_in_window(subreddit: str, days: int = 7) -> int:
     return len(search_posts(subreddit=subreddit, after=after, limit=100))
 
 
-def _to_post(item: dict, ticker: str) -> SocialPost | None:
+def _to_post(item: dict, ticker: str, max_chars: int = 2000) -> SocialPost | None:
     post_id = _first(item, "id", "name")
     created = _first(item, "created_utc", "created")
     if post_id is None or created is None:
@@ -277,7 +359,7 @@ def _to_post(item: dict, ticker: str) -> SocialPost | None:
         post_id=str(post_id),
         author=str(_first(item, "author", default="[unknown]")),
         title=_first(item, "title", default="") or "",
-        content=(_first(item, "selftext", "body", default="") or "")[:2000],
+        content=(_first(item, "selftext", "body", default="") or "")[:max_chars],
         url=url,
         published_at=published,
         score=int(_first(item, "score", "ups", default=0) or 0),

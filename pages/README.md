@@ -21,6 +21,7 @@ requires that.
 | `03_Market_Reality_Check.py` | Market Reality Check | Is the whole market priced above what the economy supports? |
 | `05_Congress.py` | Congress | What are US politicians trading? |
 | `06_Add_Stocks.py` | Add Stocks | Add a stock to the watched universe |
+| `07_Subreddits.py` | Subreddits | Which Reddit communities are read for each stock? Find them by company name or add one by name |
 
 There's no `04_`. A page was removed and the rest were never renumbered —
 harmless, and renumbering would change everyone's bookmarks.
@@ -49,8 +50,10 @@ by the daily job and are sitting in `data/snapshots.db`. If you find yourself
 writing a formula in this folder, it probably belongs in
 `src/casino_dashboard/signals/` instead.
 
-The one exception is **Add Stocks**, which has to check a brand-new ticker
-exists before accepting it, and so does call out to the internet.
+The exceptions are **Add Stocks**, which has to check a brand-new ticker
+exists before accepting it, and **Subreddits**, whose company search asks the
+Reddit archive. Both call out to the internet, and both write: Add Stocks to the
+database, Subreddits to `config/ticker_subreddits.yaml`.
 
 ## Editing a page
 

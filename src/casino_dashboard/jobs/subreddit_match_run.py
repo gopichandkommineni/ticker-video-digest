@@ -28,7 +28,7 @@ import sys
 from datetime import date
 
 from core.social_media.reddit.subreddit_match import MatchResult, match
-from core.social_media.reddit.ticker_resolver import company_name_for, resolve_ticker
+from core.social_media.reddit.resolver import resolve_query
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -42,20 +42,6 @@ def _universe_tickers() -> set[str] | None:
     except Exception as exc:  # config missing / import issue — carry on without it
         logger.warning("Could not load universe: %s", exc)
         return None
-
-
-def resolve(query: str, universe: set[str] | None) -> tuple[str | None, str | None]:
-    """Turn a free-form query into (ticker, company_name).
-
-    Both directions matter: "RKLB" needs a company name so the search can find
-    r/RocketLab, and "rocket lab" needs a ticker so it can find r/RKLB.
-    """
-    ticker = resolve_ticker(query, universe)
-    looked_like_ticker = ticker is not None and query.strip().upper() == ticker
-    company = None if looked_like_ticker else query.strip()
-    if ticker and not company:
-        company = company_name_for(ticker)
-    return ticker, company
 
 
 def result_lines(result: MatchResult) -> list[str]:
@@ -136,7 +122,7 @@ def main(argv: list[str] | None = None) -> None:
     winners: dict[str, list[str]] = {}
     incomplete: list[str] = []
     for query in queries:
-        ticker, company = resolve(query, universe)
+        ticker, company = resolve_query(query, universe)
         logger.info("matching %r -> ticker=%s company=%s", query, ticker, company)
         result = match(query, ticker=ticker, company_name=company,
                        with_metrics=not args.no_metrics, finalists=args.finalists)
@@ -156,7 +142,7 @@ def main(argv: list[str] | None = None) -> None:
         logger.info("wrote %s", args.json)
 
     if args.save and winners:
-        from casino_dashboard.data.subreddit_map_loader import save_subreddit_map  # noqa: PLC0415
+        from core.social_media.reddit.resolver.store import save_subreddit_map  # noqa: PLC0415
 
         save_subreddit_map(winners, updated=date.today().isoformat())
         logger.info("wrote %d ticker(s) to config/ticker_subreddits.yaml", len(winners))

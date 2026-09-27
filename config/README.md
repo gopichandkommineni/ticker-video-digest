@@ -22,7 +22,7 @@ nesting, `#` starts a comment.
 | `deal_log.yaml` | Notable deals and contracts, by theme | You, by hand |
 | `etf_mapping.yaml` | Which ETFs represent each theme | You, by hand |
 | `star_traders.yaml` | Which politicians to track individually | You, by hand |
-| `ticker_subreddits.yaml` | Which subreddits to read per stock | A job writes it; you may edit |
+| `ticker_subreddits.yaml` | Which subreddits to read per stock, plus a general list | The Subreddits page, jobs, or you |
 | `ticker_company_names.yaml` | Ticker → company name cache | A job writes it; a pure speed-up |
 
 Step-by-step recipes for each are in
@@ -66,9 +66,13 @@ If you add a theme here, use the same key in `etf_mapping.yaml` and
 `ticker_subreddits.yaml` and `ticker_company_names.yaml` are produced by jobs,
 but both are plain text you can safely hand-edit:
 
-- **`ticker_subreddits.yaml`** — written by `subreddit_discovery_run --save`.
-  Add or remove subreddits and your changes are respected on the next run.
-  Re-running discovery for one ticker overwrites only that ticker's entry.
+- **`ticker_subreddits.yaml`** — written by the **Subreddits** page (or
+  `python -m casino_dashboard.jobs.subreddit_resolve`) and by the discovery
+  jobs' `--save`. Each stock has a `subreddits` list; an optional `details`
+  block records whether each one was added by hand (`manual`) or found by the
+  company search (`resolved`), and when. A `general` section holds subreddits
+  not tied to one stock. Hand edits are respected. Re-running discovery for a
+  ticker replaces only that ticker's found subreddits — ones added by hand stay.
 - **`ticker_company_names.yaml`** — a cache. Looking a name up costs one
   network round-trip per stock and the answer never changes, so it's saved.
   Delete a line to have it re-resolved, or run with `--refresh-names`.

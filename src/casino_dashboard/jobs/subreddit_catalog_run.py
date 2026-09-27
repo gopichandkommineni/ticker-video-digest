@@ -557,7 +557,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.save:
         mapping = {**report.by_ticker(), **filled}
         if mapping:
-            from casino_dashboard.data.subreddit_map_loader import save_subreddit_map  # noqa: PLC0415
+            from core.social_media.reddit.resolver.store import save_subreddit_map  # noqa: PLC0415
 
             save_subreddit_map(mapping, updated=stamp)
             logger.info("Wrote %d tickers to config/ticker_subreddits.yaml", len(mapping))
