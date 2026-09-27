@@ -408,8 +408,20 @@ each run.
 This is the one sanctioned writer of `data/reddit.db` outside GitHub Actions: it
 never pushes back a whole local copy, only new digest rows on top of `main`.
 
-Troubleshooting: `./run reddit-brief status`, then the log it names. A push
-that keeps failing usually means git's GitHub login expired: run
+Troubleshooting: `./run reddit-brief status` shows the last failed calls and
+**why** — the Reddit archive's or Claude's own reason, and what was being asked
+(subreddit, query, window, stock). Every failure is kept, one JSON line each, in
+`~/.local/share/ticker-reddit-brief/logs/errors.jsonl` (newest 1,000 lines), and
+the day's full output is in the log `status` names. An on-demand run lists its
+own failures at the end. Common reasons:
+
+| Reason | Meaning |
+|---|---|
+| `arctic_shift [422] Timeout…` (or similar) | The archive found a keyword search too expensive. Already retried day by day, then by reading the subreddit's posts — only a problem if the report's **Problems** list still has it |
+| `arctic_shift [no response] …` | Network error reaching the archive |
+| `digest_llm … usage limit` | The Claude plan's allowance is spent; the next run retries |
+
+A push that keeps failing usually means git's GitHub login expired: run
 `gh auth login` (or fix your SSH key) and `./run reddit-brief check`.
 
 ## 6. Verify what landed

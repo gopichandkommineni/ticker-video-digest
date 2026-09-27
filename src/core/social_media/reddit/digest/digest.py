@@ -24,6 +24,7 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, Field, ValidationError
 
+from core.social_media.reddit import error_log
 from core.social_media.reddit.digest import store
 from core.social_media.reddit.digest.errors import LLMError, LLMFatal
 from core.social_media.reddit.digest.store import Digest, Insight, SourcePost
@@ -281,11 +282,15 @@ def run_digest(
                 # further call would fail the same way. Stop; the skipped
                 # stocks' posts stay unread and tomorrow's window covers them.
                 logger.warning("Stopping the digest at %s: %s", ticker, exc)
+                error_log.record("digest_llm", 0, str(exc), ticker=ticker, model=llm.model,
+                                 effect="run stopped")
                 report.stopped = str(exc)[:300]
                 report.skipped = [t.upper() for t in tickers[n:]]
                 break
             except (LLMError, ValidationError, ValueError) as exc:
                 logger.warning("Digest failed for %s (continuing): %s", ticker, exc)
+                error_log.record("digest_llm", 0, str(exc), ticker=ticker, model=llm.model,
+                                 effect="stock skipped")
                 # Recorded, but not as a read: the next run retries these posts.
                 # A good digest already written today is kept, not overwritten.
                 if not store.has_ok_digest(conn, ticker, digest_date):

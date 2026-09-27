@@ -14,14 +14,14 @@ Response shape is `{"data": [ ...items... ]}` (we also tolerate a bare list).
 Field access is defensive because archive schemas drift.
 """
 import logging
+import os
 import time
 from datetime import datetime, timedelta, timezone
-
-import os
 
 import requests
 
 from core.social_media.base import SocialPost, SocialSignals, SocialScraper
+from core.social_media.reddit import error_log
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,11 @@ _USER_AGENT = "casino-dashboard/0.1 (+https://github.com/gopichandkommineni/tick
 _DEFAULT_SUBREDDITS = ["wallstreetbets", "stocks", "investing", "options", "StockMarket"]
 
 _RATE_LIMIT_BACKOFF = 5.0
+
+# The archive's own reason for the last non-200 answer ("" if none), e.g. its
+# message when a full-text search is too expensive. `request` keeps its
+# (status, items) shape for existing callers; this carries the detail.
+last_error = ""
 
 
 class SubscriberSortUnsupported(RuntimeError):
@@ -63,6 +68,7 @@ def request(url: str, params: dict, timeout: int = 20) -> tuple[int, list[dict]]
     catalog sweep negotiating which query params this deployment supports — use
     this; everything else uses the simpler `_get`.
     """
+    global last_error
     for attempt in (1, 2):
         try:
             resp = requests.get(
@@ -70,6 +76,8 @@ def request(url: str, params: dict, timeout: int = 20) -> tuple[int, list[dict]]
             )
         except Exception as exc:  # network / proxy / any transport error
             logger.warning("Arctic Shift request error (%s): %s", url, exc)
+            last_error = str(exc)[:200]
+            _record(url, params, 0, last_error)
             return 0, []
         if resp.status_code == 429 and attempt == 1:
             wait = float(resp.headers.get("X-RateLimit-Reset", _RATE_LIMIT_BACKOFF) or _RATE_LIMIT_BACKOFF)
@@ -77,7 +85,10 @@ def request(url: str, params: dict, timeout: int = 20) -> tuple[int, list[dict]]
             time.sleep(min(wait, 30.0))
             continue
         if resp.status_code != 200:
-            logger.warning("Arctic Shift HTTP %d for %s", resp.status_code, url)
+            last_error = _error_detail(resp)
+            logger.warning("Arctic Shift HTTP %d for %s %s: %s", resp.status_code, url,
+                           params, last_error or "(no reason given)")
+            _record(url, params, resp.status_code, last_error)
             return resp.status_code, []
         try:
             payload = resp.json()
@@ -89,6 +100,30 @@ def request(url: str, params: dict, timeout: int = 20) -> tuple[int, list[dict]]
             data = payload
         return resp.status_code, data if isinstance(data, list) else []
     return 429, []
+
+
+def _record(url: str, params: dict, status: int, reason: str) -> None:
+    """Into the pipeline's error log: which endpoint, what was asked, and why not."""
+    context = {k: params.get(k) for k in ("subreddit", "query", "link_id", "after", "before")}
+    for k in ("after", "before"):
+        if isinstance(context[k], (int, float)):
+            context[k] = datetime.fromtimestamp(context[k], tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
+    error_log.record("arctic_shift", status, reason, endpoint=url.rsplit("/api/", 1)[-1],
+                     **context)
+
+
+def _error_detail(resp: requests.Response) -> str:
+    """The archive's reason for refusing a request, short enough for a report."""
+    try:
+        body = resp.json()
+        if isinstance(body, dict):
+            msg = body.get("error") or body.get("message") or body.get("detail")
+            if msg:
+                return str(msg)[:200]
+    except (ValueError, AttributeError, TypeError):
+        pass
+    text = getattr(resp, "text", "")
+    return text.strip()[:200] if isinstance(text, str) else ""
 
 
 def _get(url: str, params: dict, timeout: int = 20) -> list[dict]:
@@ -135,6 +170,7 @@ def search_posts_paged(
     max_items: int = 500,
     page_size: int = 100,
     sleep: float = 0.5,
+    before: datetime | None = None,
 ) -> tuple[int, list[dict]]:
     """Post search that pages past the archive's 100-per-request cap.
 
@@ -146,7 +182,6 @@ def search_posts_paged(
     """
     out: list[dict] = []
     seen: set[str] = set()
-    before: datetime | None = None
     first_status: int | None = None
     while len(out) < max_items:
         status, items = request(

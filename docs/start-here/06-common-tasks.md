@@ -349,6 +349,9 @@ Rocket Lab won a $515M SDA contract… tempered by a Neutron delay…
 Name several stocks at once (`./run reddit-brief RKLB ASTS`), or look further
 back with `--days 14`. The first time, it runs the same checks as `install`.
 
+If something didn't work, `./run reddit-brief status` lists the last failed
+calls and, for each, the reason the Reddit archive or Claude gave.
+
 **Option B: Claude, run by GitHub instead of your computer.** Same Claude
 subscription, but the brief is written even when your computer is off.
 

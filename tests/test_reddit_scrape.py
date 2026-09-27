@@ -269,3 +269,73 @@ def test_unreachable_archive_is_worded_plainly():
     with patch(_GET, side_effect=ConnectionError("blocked")):
         res = scrape_subreddits(["RKLB"])
     assert res.warnings == ["r/RKLB: archive unreachable (network error)"]
+
+
+# --- when the archive refuses a text search ---------------------------------------------
+
+@pytest.fixture
+def fresh_log():
+    from core.social_media.reddit import error_log
+    error_log.clear()
+    scrape._listing_cache.clear()
+    yield error_log
+    error_log.clear()
+    scrape._listing_cache.clear()
+
+
+def _refuse(message="Timeout. Maybe slow down a bit"):
+    r = _resp(status=422, payload={"error": message})
+    return r
+
+
+def test_refused_search_retries_day_by_day(fresh_log):
+    hit = {"data": [_item("d1", sub="stocks", title="RKLB contract news")]}
+
+    def fake_get(url, params, **_):
+        span = params.get("before", 0) - params.get("after", 0) if "before" in params else None
+        if params.get("query") and (span is None or span > 86_400):
+            return _refuse()                           # a week at once: too expensive
+        return _resp(payload=hit if params.get("query") else {"data": []})
+
+    with patch(_GET, side_effect=fake_get), patch.object(arctic.time, "sleep"):
+        res = search_reddit(["RKLB"], subreddits=["stocks"], days_back=3)
+    assert [sp.post.post_id for sp in res.posts] == ["d1"] and res.warnings == []
+    rec = fresh_log.recent("arctic_shift")[0]          # the refusal is still on record
+    assert rec.status == 422 and rec.reason == "Timeout. Maybe slow down a bit"
+    assert rec.context["subreddit"] == "stocks" and rec.context["query"] == "RKLB"
+
+
+def test_refused_search_falls_back_to_reading_the_subreddit(fresh_log):
+    listing = {"data": [
+        _item("a", sub="wallstreetbets", title="Rocket Lab Neutron update"),
+        _item("b", sub="wallstreetbets", title="rocketlabs merch drop"),   # not a whole-word hit
+        _item("c", sub="wallstreetbets", title="SPY puts"),
+    ]}
+
+    def fake_get(url, params, **_):
+        if params.get("query"):
+            return _refuse()
+        return _resp(payload=listing)
+
+    with patch(_GET, side_effect=fake_get) as g, patch.object(arctic.time, "sleep"):
+        res = search_reddit(["Rocket Lab", "Neutron"], subreddits=["wallstreetbets"])
+    assert [sp.post.post_id for sp in res.posts] == ["a"] and res.warnings == []
+    assert res.posts[0].matched_keywords == ["Rocket Lab", "Neutron"]
+    listings = [c for c in g.call_args_list if "query" not in c.kwargs["params"]]
+    assert len(listings) == 1                            # read once, reused for the 2nd keyword
+
+
+def test_every_way_refused_warns_with_the_archives_reason(fresh_log):
+    with patch(_GET, return_value=_refuse("subreddit too large")), \
+            patch.object(arctic.time, "sleep"):
+        res = search_reddit(["RKLB"], subreddits=["stocks"], days_back=2)
+    assert res.posts == []
+    assert res.warnings == ["'RKLB' in r/stocks: archive returned HTTP 422: subreddit too large"]
+
+
+def test_network_errors_are_not_retried_the_slow_way(fresh_log):
+    with patch(_GET, side_effect=OSError("connection reset")) as g:
+        res = search_reddit(["RKLB"], subreddits=["stocks"])
+    assert g.call_count == 1
+    assert res.warnings == ["'RKLB' in r/stocks: archive unreachable (network error)"]
+    assert fresh_log.recent()[0].reason == "connection reset"
