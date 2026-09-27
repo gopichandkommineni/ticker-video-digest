@@ -38,6 +38,8 @@ Mood = Literal["bullish", "bearish", "mixed", "neutral"]
 
 class DigestConfig(BaseModel):
     first_days: int = 7            # window for a stock's first digest
+    window_days: int | None = None # on demand: every post from the last N days,
+                                   # not just those new since the last digest
     max_age_days: int = 7          # never feed posts older than this
     max_posts: int = 30            # busiest posts sent per stock
     body_chars: int = 1_200
@@ -141,10 +143,15 @@ class _Post(BaseModel):
 
 def select_posts(conn: sqlite3.Connection, ticker: str, now: datetime,
                  cfg: DigestConfig) -> list[_Post]:
-    """This stock's posts first seen since its last digest, busiest first."""
-    last = store.last_digest_at(conn, ticker, now.date().isoformat())
-    seen_after = last or (now - timedelta(days=cfg.first_days))
-    oldest = now - timedelta(days=cfg.max_age_days)
+    """This stock's posts first seen since its last digest, busiest first.
+    With cfg.window_days: every post from the last N days, read or not."""
+    if cfg.window_days:
+        seen_after = datetime.min.replace(tzinfo=timezone.utc)
+        oldest = now - timedelta(days=cfg.window_days)
+    else:
+        last = store.last_digest_at(conn, ticker, now.date().isoformat())
+        seen_after = last or (now - timedelta(days=cfg.first_days))
+        oldest = now - timedelta(days=cfg.max_age_days)
     rows = conn.execute(
         """SELECT p.* FROM posts p JOIN post_tickers t ON t.post_id = p.post_id
            WHERE t.ticker = ? AND p.first_seen > ? AND p.created_at >= ?

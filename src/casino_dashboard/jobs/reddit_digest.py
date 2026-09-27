@@ -15,6 +15,8 @@ With neither available it does nothing and says so.
 Usage:
     python -m casino_dashboard.jobs.reddit_digest                 # whole universe
     python -m casino_dashboard.jobs.reddit_digest RKLB ASTS       # these stocks only
+    python -m casino_dashboard.jobs.reddit_digest --days 7 --show RKLB
+        # every post from the last 7 days (not only unread ones); print the insights
     REDDIT_DB_PATH=/tmp/reddit.db python -m casino_dashboard.jobs.reddit_digest RKLB
 
 Writes to data/reddit.db (or REDDIT_DB_PATH) — production data, committed by the
@@ -24,6 +26,7 @@ In GitHub Actions the report is also appended to $GITHUB_STEP_SUMMARY.
 Exit code 1 only when every stock that needed the LLM failed, or
 REDDIT_DIGEST_LLM is not a known choice.
 """
+import argparse
 import logging
 import os
 import sys
@@ -99,7 +102,38 @@ def make_llm(choice: str) -> ClaudeCliClient | GeminiClient | None:
     return None
 
 
+def show(tickers: list[str]) -> list[str]:
+    """Today's brief and insights per stock, for reading in a terminal."""
+    from core.social_media.reddit.digest import load_recent  # noqa: PLC0415
+
+    lines: list[str] = []
+    for ticker in tickers:
+        recent = load_recent(ticker, days=1)
+        if not recent:
+            continue
+        d = recent[0]
+        lines += ["", f"━━ {ticker} — {d.mood or d.status} ━━", d.summary or ""]
+        for ins in d.insights:
+            arrow = {"bullish": "▲", "bearish": "▼"}.get(ins.stance, "•")
+            lines += ["", f"  {arrow} [{ins.kind}] {ins.headline}", f"    {ins.detail}"]
+            lines += [f"    ↳ r/{s.subreddit}: {s.url}" for s in ins.sources]
+    if lines:
+        lines += ["", "AI summary of public Reddit posts — can be wrong; read the linked "
+                  "posts. Not investment advice."]
+    return lines
+
+
+def _args(argv: list[str]) -> argparse.Namespace:
+    ap = argparse.ArgumentParser(prog="reddit_digest", description="Daily Reddit digest.")
+    ap.add_argument("tickers", nargs="*", help="stocks to digest (default: whole universe)")
+    ap.add_argument("--days", type=int, default=None,
+                    help="digest every post from the last N days, not only unread ones")
+    ap.add_argument("--show", action="store_true", help="print each stock's insights")
+    return ap.parse_args(argv)
+
+
 def main(argv: list[str] | None = None) -> int:
+    args = _args(sys.argv[1:] if argv is None else argv)
     choice = os.environ.get("REDDIT_DIGEST_LLM", "").strip().lower() or "auto"
     if choice not in _SKIPPED:
         _emit(f"## Reddit digest — ❌ failed\n\nREDDIT_DIGEST_LLM={choice!r} is not one of "
@@ -110,10 +144,12 @@ def main(argv: list[str] | None = None) -> int:
         _emit(f"## Reddit digest — skipped\n\n{_SKIPPED[choice]}")
         return 0
     logger.info("Digest model: %s", llm.model)
-    report = run_digest(_tickers(sys.argv[1:] if argv is None else argv), llm,
-                        company_names=load_company_names(),
-                        cfg=DigestConfig(call_delay=llm.call_delay))
+    tickers = _tickers(args.tickers)
+    report = run_digest(tickers, llm, company_names=load_company_names(),
+                        cfg=DigestConfig(call_delay=llm.call_delay, window_days=args.days))
     _emit("\n".join(render(report)))
+    if args.show:
+        print("\n".join(show([t.upper() for t in tickers])))
     return 1 if report.status == "failed" else 0
 
 

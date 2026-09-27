@@ -455,3 +455,44 @@ def test_merge_job_reports_and_handles_a_missing_file(tmp_path, capsys):
     conn.close()
     assert merge_job.main([str(src), str(tmp_path / "d.db")]) == 0
     assert f"Merged 1 digest(s): RKLB {today}" in capsys.readouterr().out
+
+
+# --- on demand: a fixed window and printing the insights --------------------------------
+
+def test_window_days_rereads_posts_already_digested(tmp_path):
+    path = tmp_path / "r.db"
+    _seed(path, posts=[("p1", "Rocket Lab wins SDA award", 50, 10, 30)])     # 30 h old
+    run_digest(["RKLB"], FakeLLM(), db_path=path, cfg=CFG, now=NOW)           # reads p1
+    later = NOW + timedelta(days=1)
+    conn = store.connect(path)
+    assert select_posts(conn, "RKLB", later, CFG) == []                       # already read
+    fixed = CFG.model_copy(update={"window_days": 7})
+    assert [p.post_id for p in select_posts(conn, "RKLB", later, fixed)] == ["p1"]
+    week_later = NOW + timedelta(days=8)
+    assert select_posts(conn, "RKLB", week_later, fixed) == []                # older than 7 days
+    conn.close()
+
+
+def test_job_days_and_show_print_the_insights(tmp_path, monkeypatch, capsys):
+    path = tmp_path / "r.db"
+    _seed(path, posts=[("p1", "Rocket Lab wins SDA award", 50, 10, 2)])
+    monkeypatch.setenv("REDDIT_DB_PATH", str(path))
+    monkeypatch.setenv("REDDIT_DIGEST_LLM", "gemini")
+    answer = {"RKLB": {"summary": "Posters cheer an SDA award.", "mood": "bullish",
+                       "insights": [{"headline": "SDA award", "detail": "A $515M contract.",
+                                     "kind": "contract", "stance": "bullish",
+                                     "sources": ["P1"]}]}}
+    monkeypatch.setattr(job, "GeminiClient", lambda: FakeLLM(answers=answer))
+    monkeypatch.setattr(job, "load_company_names", lambda: {})
+    seen = {}
+    real = job.run_digest
+
+    def run(*a, cfg, **k):
+        seen["window"] = cfg.window_days
+        return real(*a, cfg=cfg.model_copy(update={"call_delay": 0}), **k)
+    monkeypatch.setattr(job, "run_digest", run)
+    assert job.main(["--days", "7", "--show", "rklb"]) == 0
+    out = capsys.readouterr().out
+    assert seen["window"] == 7
+    assert "━━ RKLB — bullish ━━" in out and "▲ [contract] SDA award" in out
+    assert "↳ r/RocketLab: https://" in out and "Not investment advice" in out

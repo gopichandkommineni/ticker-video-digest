@@ -151,6 +151,32 @@ def test_rerun_window_overlap_and_score_history(path):
     assert _rows(path, "SELECT score, num_comments FROM posts")[0] == {"score": 55, "num_comments": 9}
 
 
+def test_fixed_window_reads_exactly_the_last_n_days(path):
+    """On demand (--days): the window ignores the last run and its overlap."""
+    run_ingest([], {}, [], {}, db_path=path, cfg=CFG, now=NOW, client=FakeClient())
+    fixed = CFG.model_copy(update={"window_days": 7})
+    rep = run_ingest([], {}, [], {}, db_path=path, cfg=fixed, now=NOW + timedelta(hours=2),
+                     client=FakeClient())
+    assert rep.days_back == 7
+
+
+def test_job_days_flag_sets_the_fixed_window(tmp_path, monkeypatch):
+    monkeypatch.setenv("REDDIT_DB_PATH", str(tmp_path / "r.db"))
+    monkeypatch.setattr(job, "load_subreddit_map", lambda: {})
+    monkeypatch.setattr(job, "load_general_subreddits", lambda: [])
+    monkeypatch.setattr(job, "load_company_names", lambda: {})
+    seen = {}
+
+    def fake_run(tickers, *a, cfg=None, **k):
+        seen["tickers"], seen["cfg"] = tickers, cfg
+        return run_ingest(tickers, {}, [], {}, cfg=CFG, client=FakeClient())
+    monkeypatch.setattr(job, "run_ingest", fake_run)
+    job.main(["--days", "7", "rklb"])
+    assert seen["tickers"] == ["RKLB"] and seen["cfg"].window_days == 7
+    job.main(["RKLB"])
+    assert seen["cfg"] is None                     # scheduled runs keep "since last run"
+
+
 def test_window_is_capped_after_a_long_gap(path):
     run_ingest([], {}, [], {}, db_path=path, cfg=CFG, now=NOW, client=FakeClient())
     rep = run_ingest([], {}, [], {}, db_path=path, cfg=CFG, now=NOW + timedelta(days=60),
@@ -281,7 +307,7 @@ def test_job_runs_and_reports(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(job, "load_company_names", lambda: {})
     real = job.run_ingest
     monkeypatch.setattr(job, "run_ingest",
-                        lambda *a, **k: real(*a, cfg=CFG, client=fake, **k))
+                        lambda *a, cfg=None, **k: real(*a, cfg=cfg or CFG, client=fake, **k))
     assert job.main(["RKLB", "ASTS"]) == 0
     out = capsys.readouterr().out
     assert "## Reddit ingest — ✅ ok" in out

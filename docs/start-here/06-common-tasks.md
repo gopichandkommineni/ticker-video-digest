@@ -324,6 +324,31 @@ it. If the computer was off, it catches up the next time it's on.
 - `./run reddit-brief status` — is it scheduled, and what happened last time?
 - `./run reddit-brief uninstall` — stop it.
 
+**Want a brief for one stock right now?** Name it:
+
+```bash
+./run reddit-brief RKLB
+```
+
+Your computer fetches that stock's Reddit posts from the last 7 days, Claude
+reads them, and the brief is printed in the terminal and published to the
+dashboard. It takes about a minute. You'll see something like:
+
+```
+━━ RKLB — mixed ━━
+Rocket Lab won a $515M SDA contract… tempered by a Neutron delay…
+
+  ▲ [contract] $515M SDA Tranche 3 contract awarded to Rocket Lab
+    ↳ r/RocketLab: https://reddit.com/r/RocketLab/comments/…
+  ▼ [guidance] Neutron first launch delayed to Q1 2027
+    ↳ r/RKLB: https://reddit.com/r/RKLB/comments/…
+…
+✓ Done. They show on each stock's Ticker Detail page…
+```
+
+Name several stocks at once (`./run reddit-brief RKLB ASTS`), or look further
+back with `--days 14`. The first time, it runs the same checks as `install`.
+
 **Option B: Claude, run by GitHub instead of your computer.** Same Claude
 subscription, but the brief is written even when your computer is off.
 

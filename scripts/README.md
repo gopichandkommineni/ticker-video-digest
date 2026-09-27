@@ -17,7 +17,7 @@ Day-to-day work needs `./run` at the repository root, not this folder.
 | `run_backfill.py` | `fintwit-backfill.yml`, manual | Fill in history for one or more handles |
 | `run_variance.py` | `fintwit-variance.yml`, manual | Ask both tweet providers the same question N times and compare — do they return consistent data? |
 | `import_probe_data.py` | By hand | Load already-paid-for probe JSON into the database instead of re-fetching it |
-| `reddit_brief_local.sh` | `./run reddit-brief install` sets up your computer's scheduler (launchd / systemd / cron) to run it hourly while on | Writes the daily Reddit digest with Claude Code on **your Claude subscription**, when GitHub has collected new posts; merges only the new digest rows into the latest `data/reddit.db` on `main` and pushes. Checks and walks you through its prerequisites first. See the Reddit runbook §5e |
+| `reddit_brief_local.sh` | `./run reddit-brief install` sets up your computer's scheduler (launchd / systemd / cron) to run it hourly while on | Writes the daily Reddit digest with Claude Code on **your Claude subscription**; `./run reddit-brief RKLB` does one stock on demand (fetch last 7 days → Claude → publish), when GitHub has collected new posts; merges only the new digest rows into the latest `data/reddit.db` on `main` and pushes. Checks and walks you through its prerequisites first. See the Reddit runbook §5e |
 
 > 💸 `run_backfill.py` spends real money — the tweet providers are metered.
 > Check the date range twice before starting one.

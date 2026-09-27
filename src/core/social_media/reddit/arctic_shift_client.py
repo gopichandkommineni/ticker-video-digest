@@ -17,13 +17,17 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 
+import os
+
 import requests
 
 from core.social_media.base import SocialPost, SocialSignals, SocialScraper
 
 logger = logging.getLogger(__name__)
 
-_BASE = "https://arctic-shift.photon-reddit.com"
+# ARCTIC_SHIFT_BASE_URL points at a mirror or a local fake (rehearsals, tests).
+_BASE = (os.environ.get("ARCTIC_SHIFT_BASE_URL", "").strip().rstrip("/")
+         or "https://arctic-shift.photon-reddit.com")
 _POSTS_URL = _BASE + "/api/posts/search"
 _SUBS_URL = _BASE + "/api/subreddits/search"
 _COMMENTS_URL = _BASE + "/api/comments/search"
