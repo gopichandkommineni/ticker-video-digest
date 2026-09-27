@@ -355,6 +355,48 @@ sqlite3 /tmp/reddit.db "SELECT ticker, kind, stance, headline FROM insights;"
 | `Claude CLI isn't signed in to a subscription` | `CLAUDE_CODE_OAUTH_TOKEN` is wrong or expired (locally: not signed in) | Run `claude setup-token` again and replace the secret (locally: run `claude` and sign in) |
 | `Claude CLI exited …` | The CLI crashed or didn't install | Check the "Install Claude Code CLI" step's log |
 
+## 5e. The digest on your own computer (Claude subscription, scheduled)
+
+`scripts/reddit_brief_laptop.sh` (via `./run reddit-brief …`) writes the digest
+on the owner's laptop with the Claude Code login already there, so there's no
+token in GitHub and no API key. GitHub Actions keeps doing the ingest.
+
+| Command | Does |
+|---|---|
+| `./run reddit-brief check` | Checks the prerequisites, prompting until each is fixed: macOS/Linux, git, uv (offers to install it) or Python 3.11+, `claude`, a working subscription login (one tiny `claude -p` call with API-key variables removed), `main` having the Claude digest code, and push access (`git push --dry-run`) |
+| `./run reddit-brief install` | `check`, then sets up a private clone, its Python packages, and the schedule: **launchd** agent on macOS (at log-in + hourly), **systemd user timer** on Linux (3 min after log-in + hourly), else **cron** (`@reboot` + hourly). Offers a first run |
+| `./run reddit-brief run [--force]` | What the scheduler runs (see below). `--force` digests even if the latest collection was already done |
+| `./run reddit-brief status` | Scheduled? Last collection digested, and the tail of the latest log |
+| `./run reddit-brief uninstall` | Removes the schedule (keeps any other cron lines); offers to delete its folder |
+
+Everything lives in `~/.local/share/ticker-reddit-brief/` (`TICKER_BRIEF_HOME`
+to move it): `repo/` (a private clone, never your working copy), `logs/`
+(one file per UTC day, kept 30 days), `config` (clone URL, branch, and the PATH
+captured at install, since schedulers start jobs with a bare PATH), and
+`bin/reddit-brief.sh` (a copy of the script, so updating the clone can't change
+it mid-run; re-run `install` to pick up a newer script).
+
+**Each hourly run:**
+
+1. Resets the private clone to `origin/main`. No `data/reddit.db` → nothing to do.
+2. Reads the newest finished ingest in `runs`. Same as the last one digested →
+   nothing to do, **no Claude call**. So it digests once per GitHub collection
+   (daily), and catches up the next time the computer is on.
+3. Runs the digest (`REDDIT_DIGEST_LLM=claude`) on a scratch copy.
+4. Publishes: fetches `main` again, merges **only the digest rows** into the
+   newest `data/reddit.db` (`reddit_digest_merge`: newer replaces older, never a
+   good digest with a quiet/failed one), commits as `reddit-brief-laptop`,
+   pushes. A rejected push (main moved) → merge again, up to 4 tries.
+5. Records the ingest it digested — unless the run stopped early (e.g. the
+   plan's usage limit), in which case the next hourly check retries.
+
+This is the one sanctioned writer of `data/reddit.db` outside GitHub Actions: it
+never pushes back a whole local copy, only new digest rows on top of `main`.
+
+Troubleshooting: `./run reddit-brief status`, then the log it names. A push
+that keeps failing usually means git's GitHub login expired: run
+`gh auth login` (or fix your SSH key) and `./run reddit-brief check`.
+
 ## 6. Verify what landed
 
 ```bash

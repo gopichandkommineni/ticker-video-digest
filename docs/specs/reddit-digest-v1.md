@@ -146,6 +146,10 @@ there is no digest yet.
   the workflow then installs the Claude Code CLI and uses it — or
   **`GEMINI_API_KEY`** (free key from Google AI Studio). Without either, the
   step prints "skipped" and the page says there is no digest yet.
+- **Or on the owner's computer:** `./run reddit-brief install` schedules the
+  Claude digest on a laptop's own Claude Code login (hourly check, runs once
+  per GitHub collection, merges only digest rows into `main`'s reddit.db).
+  Runbook §5e.
 - **By hand:** `python -m casino_dashboard.jobs.reddit_digest RKLB` with
   `REDDIT_DB_PATH` pointing at a scratch copy, and either Claude Code signed
   in or `GEMINI_API_KEY` set.

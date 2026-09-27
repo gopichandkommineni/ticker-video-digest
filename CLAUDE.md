@@ -28,7 +28,8 @@ Read `docs/README.md` first — it indexes everything. The structure is:
   `.github/workflows/`). When you change what a folder contains, update it.
 
 `./run` at the repo root wraps the common commands (`setup`, `dashboard`,
-`test`, `check`, `market`, `digest`, `threads`, `refresh`, `clean`). Prefer
+`test`, `check`, `market`, `digest`, `threads`, `refresh`, `clean`,
+`reddit-brief`). Prefer
 teaching it over raw commands in user-facing docs.
 
 ## Subsystems
@@ -100,7 +101,7 @@ scripts/                # operational + one-time migration scripts
 research/               # one-off probes + committed run outputs
 docs/                   # start-here/ runbooks/ specs/ research/ archive/
 tests/                  # pytest suite (mirrors the packages above)
-run                     # task runner: ./run setup|dashboard|test|check|market|digest|threads|refresh|clean
+run                     # task runner: ./run setup|dashboard|test|check|market|digest|threads|refresh|clean|reddit-brief
 .env.example            # every supported env var, documented
 pyproject.toml
 README.md
@@ -163,6 +164,10 @@ must surface this clearly.
 - Local runs of the refresh job are for testing only — **DO NOT commit
   `data/snapshots.db`, `data/fintwit.db` or `data/reddit.db` from a local sandbox run** (it will
   overwrite production data with incomplete/test results).
+- One sanctioned exception: the owner's laptop Reddit digest
+  (`./run reddit-brief`, `scripts/reddit_brief_laptop.sh`) pushes
+  `data/reddit.db`, but only as new digest rows merged onto the latest `main`
+  copy — never a whole local file.
 
 ## v6 canonical-files policy
 The following files are CANONICAL CONFIGURATION. Do not modify, regenerate,

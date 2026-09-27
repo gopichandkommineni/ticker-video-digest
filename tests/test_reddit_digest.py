@@ -389,3 +389,69 @@ def test_header_markdown_by_status():
 
 def test_md_escape_neutralises_links():
     assert md_escape("[click](http://x)") == "\\[click\\]\\(http://x\\)"
+
+
+# --- merging a digest written elsewhere (the laptop job) ------------------------------
+
+def _digest(ticker, status, created, headline="h"):
+    from core.social_media.reddit.digest import Digest, Insight, SourcePost
+    ins = [Insight(kind="contract", stance="bullish", headline=headline, detail="d",
+                   sources=[SourcePost(post_id="p", url="https://reddit.com/r/x/comments/p/",
+                                       title="t", subreddit="x")])] if status == "ok" else []
+    return Digest(ticker=ticker, digest_date="2026-09-27", created_at=created, status=status,
+                  model="claude-haiku", summary=f"{ticker} {status}", insights=ins)
+
+
+def test_merge_recent_copies_digests_and_keeps_newer_posts(tmp_path):
+    src, dst = tmp_path / "work.db", tmp_path / "main.db"
+    _seed(dst, posts=[("p1", "t", 10, 1, 2)])
+    _seed(dst, ticker="ASTS", posts=[("p9", "arrived later", 5, 0, 1)])  # ingested meanwhile
+    conn = store.connect(src)
+    store.save_digest(conn, _digest("RKLB", "ok", "2026-09-27T10:00:00+00:00"))
+    store.save_digest(conn, _digest("ASTS", "quiet", "2026-09-27T10:00:00+00:00"))
+    conn.close()
+    copied = store.merge_recent(src, dst, "2026-09-26")
+    assert sorted(copied) == ["ASTS 2026-09-27", "RKLB 2026-09-27"]
+    got = load_recent("RKLB", path=dst, today=NOW)
+    assert got[0].status == "ok" and got[0].insights[0].sources[0].url.startswith("https://")
+    c = db.connect(dst)
+    assert c.execute("SELECT COUNT(*) FROM posts").fetchone()[0] == 2    # posts untouched
+    c.close()
+
+
+def test_merge_recent_never_downgrades_or_goes_backwards(tmp_path):
+    src, dst = tmp_path / "work.db", tmp_path / "main.db"
+    conn = store.connect(dst)
+    store.save_digest(conn, _digest("RKLB", "ok", "2026-09-27T09:00:00+00:00", "main's"))
+    store.save_digest(conn, _digest("ASTS", "ok", "2026-09-27T11:00:00+00:00", "newer on main"))
+    conn.close()
+    conn = store.connect(src)
+    store.save_digest(conn, _digest("RKLB", "failed", "2026-09-27T10:00:00+00:00"))
+    store.save_digest(conn, _digest("ASTS", "ok", "2026-09-27T10:00:00+00:00", "older"))
+    conn.close()
+    assert store.merge_recent(src, dst, "2026-09-26") == []
+    assert load_recent("RKLB", path=dst, today=NOW)[0].insights[0].headline == "main's"
+    assert load_recent("ASTS", path=dst, today=NOW)[0].insights[0].headline == "newer on main"
+
+
+def test_merge_recent_only_takes_digests_since_the_date(tmp_path):
+    src, dst = tmp_path / "work.db", tmp_path / "main.db"
+    conn = store.connect(src)
+    store.save_digest(conn, _digest("RKLB", "ok", "2026-09-27T10:00:00+00:00"))
+    conn.close()
+    assert store.merge_recent(src, dst, "2026-09-28") == []
+    assert store.merge_recent(src, dst, "2026-09-27") == ["RKLB 2026-09-27"]
+
+
+def test_merge_job_reports_and_handles_a_missing_file(tmp_path, capsys):
+    from casino_dashboard.jobs import reddit_digest_merge as merge_job
+    assert merge_job.main([str(tmp_path / "nope.db"), str(tmp_path / "d.db")]) == 1
+    src = tmp_path / "w.db"
+    conn = store.connect(src)
+    today = datetime.now(tz=timezone.utc).date().isoformat()
+    d = _digest("RKLB", "ok", f"{today}T10:00:00+00:00")
+    d.digest_date = today
+    store.save_digest(conn, d)
+    conn.close()
+    assert merge_job.main([str(src), str(tmp_path / "d.db")]) == 0
+    assert f"Merged 1 digest(s): RKLB {today}" in capsys.readouterr().out

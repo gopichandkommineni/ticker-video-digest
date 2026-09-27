@@ -298,12 +298,34 @@ Reading is completely safe. Don't write.
 Each stock's **Ticker Detail** page has a **What Reddit is saying** section:
 a short summary of the day's Reddit chatter and a list of specific points
 people raised (a contract, a product launch, a thesis, a risk), each with a
-link to the post it came from. It's written every morning by an AI. Pick
-**one** of the two options below.
+link to the post it came from. It's written every day by an AI. Pick
+**one** of the options below.
 
-**Option A: Claude, on your Claude subscription (recommended if you pay for
-Claude Pro or Max).** It uses your plan's normal usage allowance, the same one
-you use in the Claude app. There's no separate bill.
+**Option A: Claude on your own computer (recommended if you pay for Claude
+Pro or Max and use Claude Code on a Mac or Linux laptop).** It uses your plan's
+normal usage allowance, the same one you use in the Claude app. There's no
+separate bill and nothing to paste into GitHub. In a terminal, inside the
+project folder, run:
+
+```bash
+./run reddit-brief install
+```
+
+It checks everything it needs, one item at a time, and tells you how to fix
+anything missing: git, Python, Claude Code, that Claude Code is signed in, and
+that your computer can push to GitHub. Fix an item, press Enter, and it checks
+again. When everything is ticked it prints **All set.** and offers to write the
+first brief straight away.
+
+From then on, whenever the computer is on, it checks every hour. Once a day,
+after GitHub has collected new Reddit posts, it writes the brief and publishes
+it. If the computer was off, it catches up the next time it's on.
+
+- `./run reddit-brief status` — is it scheduled, and what happened last time?
+- `./run reddit-brief uninstall` — stop it.
+
+**Option B: Claude, run by GitHub instead of your computer.** Same Claude
+subscription, but the brief is written even when your computer is off.
 
 1. On your own computer, open a terminal and run:
 
@@ -319,7 +341,7 @@ you use in the Claude app. There's no separate bill.
    → **Actions** → **New repository secret**.
 3. Name it `CLAUDE_CODE_OAUTH_TOKEN`, paste the token, and save.
 
-**Option B: Google's Gemini, free.**
+**Option C: Google's Gemini, free.**
 
 1. Go to [Google AI Studio](https://aistudio.google.com/apikey), sign in with
    a Google account, and press **Create API key**. Use a project with no
@@ -328,7 +350,7 @@ you use in the Claude app. There's no separate bill.
    → **Actions** → **New repository secret**.
 3. Name it `GEMINI_API_KEY`, paste the key, and save.
 
-If both are added, Claude is used.
+If both B and C are set up, Claude is used. Use only one of A or B, not both.
 
 That's all. The next morning's **Reddit — Daily Ingest** run writes the
 brief. To see it sooner, go to **Actions → Reddit — Daily Ingest → Run

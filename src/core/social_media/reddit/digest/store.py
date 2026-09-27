@@ -151,19 +151,50 @@ def load_recent(ticker: str, days: int = 7, path: Path | None = None,
             "SELECT * FROM digests WHERE ticker=? AND digest_date >= ? ORDER BY digest_date DESC",
             (ticker.upper(), since),
         ).fetchall()
-        out: list[Digest] = []
-        for r in rows:
-            d = Digest(**{k: r[k] for k in r.keys()})
-            d.insights = [
-                Insight(kind=i["kind"], stance=i["stance"], headline=i["headline"],
-                        detail=i["detail"],
-                        sources=[SourcePost(**s) for s in json.loads(i["sources"])])
-                for i in conn.execute(
-                    "SELECT * FROM insights WHERE ticker=? AND digest_date=? ORDER BY rank",
-                    (d.ticker, d.digest_date),
-                )
-            ]
-            out.append(d)
-        return out
+        return [_digest(conn, r) for r in rows]
     finally:
         conn.close()
+
+
+def _digest(conn: sqlite3.Connection, row: sqlite3.Row) -> Digest:
+    """A digests row with its insights."""
+    d = Digest(**{k: row[k] for k in row.keys()})
+    d.insights = [
+        Insight(kind=i["kind"], stance=i["stance"], headline=i["headline"],
+                detail=i["detail"],
+                sources=[SourcePost(**s) for s in json.loads(i["sources"])])
+        for i in conn.execute(
+            "SELECT * FROM insights WHERE ticker=? AND digest_date=? ORDER BY rank",
+            (d.ticker, d.digest_date),
+        )
+    ]
+    return d
+
+
+def merge_recent(src: Path, dst: Path, since_date: str) -> list[str]:
+    """Copy digests dated *since_date* or later from *src* into *dst*.
+
+    For a digest written away from the main copy (the laptop job): *src* is the
+    file it wrote, *dst* the latest production reddit.db. Only digest rows move,
+    so posts ingested into *dst* in the meantime are kept. Same rules as a
+    re-run: a newer digest replaces an older one, but a quiet or failed one never
+    replaces a good one. Returns "TICKER date" for each digest copied.
+    """
+    s = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+    s.row_factory = sqlite3.Row
+    d = connect(dst)
+    copied: list[str] = []
+    try:
+        for row in s.execute("SELECT * FROM digests WHERE digest_date >= ?", (since_date,)):
+            new = _digest(s, row)
+            have = d.execute("SELECT created_at, status FROM digests WHERE ticker=? AND digest_date=?",
+                             (new.ticker, new.digest_date)).fetchone()
+            if have and (have["created_at"] >= new.created_at
+                         or (have["status"] == "ok" and new.status != "ok")):
+                continue
+            save_digest(d, new)
+            copied.append(f"{new.ticker} {new.digest_date}")
+    finally:
+        s.close()
+        d.close()
+    return copied
