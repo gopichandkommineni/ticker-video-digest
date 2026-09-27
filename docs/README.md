@@ -38,6 +38,7 @@ was never finished — each one states its own status at the top.
 
 | Doc | Status | Subject |
 |---|---|---|
+| [Reddit daily digest v1](specs/reddit-digest-v1.md) | Implemented | Per-stock LLM brief of Reddit chatter with linked insights, on Ticker Detail |
 | [Reddit ingestion v1](specs/reddit-ingestion-v1.md) | Implemented | Collecting Reddit posts and comment threads per stock into `reddit.db` |
 | [YouTube insight threads v2](specs/youtube-insight-threads-v2.md) | Spec | Corroboration counts, trusted channels, budgeted batch runs |
 | [YouTube insight threads v1](specs/youtube-insight-threads-v1.md) | Shipped | Reading YouTube commentary for a ticker and surfacing only what's new |

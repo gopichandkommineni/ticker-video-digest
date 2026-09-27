@@ -75,7 +75,7 @@ Six pages, listed in the sidebar:
 | **Home** (`app.py`) | One card per theme. Broadest possible overview. |
 | **Sector Heat** | Rank the 12 themes against each other on money flow, hype, and growth. |
 | **All Tickers** | Every stock in one sortable, filterable table. |
-| **Ticker Detail** | Everything known about one stock, on one screen. |
+| **Ticker Detail** | Everything known about one stock, on one screen — including a daily AI brief of what Reddit is saying, with links to the posts. |
 | **Market Reality Check** | Zoom out: is the *whole* stock market priced above what the real economy supports? |
 | **Congress** | What US politicians have been buying and selling. |
 | **Add Stocks** | A form to add a new stock to the list being watched. |

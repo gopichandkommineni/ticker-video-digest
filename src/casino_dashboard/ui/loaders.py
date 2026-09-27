@@ -336,3 +336,15 @@ def load_recent_news_all_dates(
             continue
         items.append(NewsItem(title=r[0], link=r[1], publisher=r[2], published_at=pub))
     return items
+
+
+@st.cache_data(ttl=3600)
+def load_reddit_digests(ticker: str, days: int = 7) -> list:
+    """The Reddit digest for *ticker* over the last *days* days, newest first.
+
+    Reads data/reddit.db read-only (it is written by the daily Reddit job);
+    returns [] when there is no digest yet.
+    """
+    from core.social_media.reddit.digest import load_recent  # noqa: PLC0415
+
+    return load_recent(ticker, days=days)

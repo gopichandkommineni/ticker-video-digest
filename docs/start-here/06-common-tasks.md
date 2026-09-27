@@ -293,6 +293,36 @@ Reading is completely safe. Don't write.
 
 ---
 
+## Turn on the daily Reddit brief *(a one-time setup)*
+
+Each stock's **Ticker Detail** page has a **What Reddit is saying** section:
+a short summary of the day's Reddit chatter and a list of specific points
+people raised (a contract, a product launch, a thesis, a risk), each with a
+link to the post it came from. It's written every morning by Google's Gemini
+AI, on its free tier.
+
+It needs one free key:
+
+1. Go to [Google AI Studio](https://aistudio.google.com/apikey), sign in with
+   a Google account, and press **Create API key**. Copy it.
+2. On GitHub, open the repository → **Settings** → **Secrets and variables**
+   → **Actions** → **New repository secret**.
+3. Name it `GEMINI_API_KEY`, paste the key, and save.
+
+That's all. The next morning's **Reddit — Daily Ingest** run writes the
+brief. To see it sooner, go to **Actions → Reddit — Daily Ingest → Run
+workflow** and type a couple of tickers such as `RKLB,ASTS`. When it
+finishes, its **Summary** tab shows "Reddit digest — ✅ ok" and how many
+insights each stock got; the Ticker Detail page shows them within an hour.
+
+Until the key is added, the page says "No Reddit digest yet".
+
+> The brief is an AI summary of public posts. It can be wrong or miss
+> things — always open the linked post before acting on anything. It is not
+> investment advice.
+
+---
+
 ## Add an API key *(an edit)*
 
 ```bash

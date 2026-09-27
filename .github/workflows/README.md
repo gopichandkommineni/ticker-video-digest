@@ -14,7 +14,7 @@ started there: pick the workflow → **Run workflow**.
 |---|---|---|
 | `daily_refresh.yml` | 2am, 9am, 1pm, 5pm ET (weekdays; 2am at weekends) | **The important one.** Downloads prices, social mentions, metadata, ETF flows and congress trades; recomputes every signal; commits `data/snapshots.db` back to `main`. |
 | `fintwit-daily.yml` | 2am ET daily | Fetches yesterday's tweets for every tracked handle into `data/fintwit.db`. |
-| `reddit_ingest.yml` | 3am ET daily | Collects Reddit posts and the top comments on busy ones, for every stock, into `data/reddit.db`. |
+| `reddit_ingest.yml` | 3am ET daily | Collects Reddit posts and the top comments on busy ones, for every stock, into `data/reddit.db` — then writes the daily digest (a brief + linked insights per stock, via Gemini's free tier; needs the `GEMINI_API_KEY` secret). |
 
 The four daily-refresh times track the US trading day: overnight (market
 closed), pre-market (before the 9:30am open), mid-session, and after the 4pm
@@ -96,9 +96,10 @@ code. To add or rotate one: repository **Settings** → **Secrets and variables*
 
 Currently used: `ANTHROPIC_API_KEY`, `YOUTUBE_API_KEY`, `FINNHUB_API_KEY`,
 `FMP_API_KEY`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USERNAME`,
-`REDDIT_PASSWORD`, `APIFY_TOKEN`, `GETXAPI_KEY`, `TWITTERAPI_IO_KEY`.
+`REDDIT_PASSWORD`, `APIFY_TOKEN`, `GETXAPI_KEY`, `TWITTERAPI_IO_KEY`, `GEMINI_API_KEY`
+(Reddit digest).
 
-Non-secret settings (like `REDDIT_BACKEND`) are *variables*, on the same page
+Non-secret settings (like `REDDIT_BACKEND` or `REDDIT_DIGEST_MODEL`) are *variables*, on the same page
 under a different tab.
 
 ---

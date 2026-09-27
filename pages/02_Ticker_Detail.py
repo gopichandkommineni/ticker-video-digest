@@ -30,12 +30,14 @@ from casino_dashboard.ui.components.tile import (
     render_returns_tile,
     render_tile,
 )
+from casino_dashboard.ui.components.reddit_digest import render_reddit_digest
 from casino_dashboard.ui.components.tradingview import render_tradingview_technicals
 from casino_dashboard.ui.external_links import build_external_links
 from casino_dashboard.ui.formatters import format_currency, format_market_cap, format_pct
 from casino_dashboard.ui.loaders import (
     load_manual_notes_all,
     load_recent_news_all_dates,
+    load_reddit_digests,
     load_signals_for_detail,
     load_latest_snapshot_for_ticker,
     load_ticker_metadata_all,
@@ -438,6 +440,11 @@ st.markdown(
     "Updates in real-time during market hours. Source: TradingView.</p>",
     unsafe_allow_html=True,
 )
+
+# ── WHAT REDDIT IS SAYING ─────────────────────────────────────────────────────
+
+_section_header("What Reddit is saying")
+render_reddit_digest(load_reddit_digests(ticker))
 
 # ── RECENT NEWS ───────────────────────────────────────────────────────────────
 

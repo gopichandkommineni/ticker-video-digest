@@ -302,6 +302,37 @@ It prints a report: posts new vs re-seen, comments saved, rows pruned, file
 size, a per-stock table, and a "Problems" list (e.g. `archive unreachable`).
 A run that stored nothing exits with code 1.
 
+## 5d. The daily digest (LLM brief per stock)
+
+Right after ingestion, the same workflow writes each stock's digest — a short
+brief and linked insights shown on Ticker Detail. It uses Gemini's free tier
+and needs `GEMINI_API_KEY` (repository secret; in `.env` locally). Design:
+[reddit-digest-v1](../specs/reddit-digest-v1.md).
+
+```bash
+GEMINI_API_KEY=... REDDIT_DB_PATH=/tmp/reddit.db \
+  python -m casino_dashboard.jobs.reddit_digest RKLB ASTS
+```
+
+Run it after an ingest into the same scratch file. Expect
+`## Reddit digest — ✅ ok`, an insight count per stock, and "Quiet" for stocks
+with no new posts. Look at the result:
+
+```bash
+sqlite3 /tmp/reddit.db "SELECT ticker, status, mood, summary FROM digests;"
+sqlite3 /tmp/reddit.db "SELECT ticker, kind, stance, headline FROM insights;"
+```
+
+"⚠️ Stopped early: …" gives the reason and lists the stocks not digested
+(the next run covers them). The usual reasons:
+
+| Reason in the report | Meaning | Fix |
+|---|---|---|
+| `daily free-tier quota used up` | Google's daily allowance is spent | Wait a day, or set `REDDIT_DIGEST_MODEL=gemini-flash-lite-latest` (bigger allowance) |
+| `HTTP 400 … API key not valid` | The secret is wrong | Re-copy the key from AI Studio |
+| `HTTP 402 … prepayment credits are depleted` | The key belongs to a *billed* project with no credit | Use a key from a project without billing (free tier), or top it up |
+| `HTTP 404 … no longer available` | The pinned model was retired | Clear `REDDIT_DIGEST_MODEL`, or set a current model |
+
 ## 6. Verify what landed
 
 ```bash
@@ -348,6 +379,7 @@ authenticated PRAW; otherwise it uses the public JSON API.
 | `python -m casino_dashboard.jobs.subreddit_catalog_run --from-catalog CSV [--save]` | Phase 2: filter that dump → stock subs → per-stock subs (no network) | `config/ticker_subreddits.yaml` (with `--save`), `DIR/` (with `--out`) |
 | `python -m casino_dashboard.jobs.subreddit_resolve company "NAME" [--save \| --pick A,B]` | Find a company's subreddits; save the confident ones or your picks | `config/ticker_subreddits.yaml` (with `--save`/`--pick`) |
 | `python -m casino_dashboard.jobs.subreddit_resolve add NAME [--ticker T \| --general]` | Add a subreddit: filed under the stock its name/description match, else the general list; `--ticker`/`--general` decide it yourself | `config/ticker_subreddits.yaml` |
+| `python -m casino_dashboard.jobs.reddit_digest [TICKERS…]` | Daily LLM brief + linked insights per stock (needs `GEMINI_API_KEY`) | `digests`, `insights` in `data/reddit.db` |
 | `python -m casino_dashboard.jobs.reddit_ingest [TICKERS…]` | Daily ingestion: posts + top comments per stock | `data/reddit.db` (or `REDDIT_DB_PATH`) |
 | `python -m casino_dashboard.jobs.reddit_refresh [TICKERS…]` | Pull posts into the DB (Reddit only) | `data/snapshots.db` |
 | `python -m casino_dashboard.jobs.reddit_scrape subreddit SUBS… [--comments N]` | Every post in whole subreddits, ranked | nothing (`--json PATH`, `--save --ticker T` optional) |

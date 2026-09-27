@@ -112,10 +112,9 @@ limits after the first two weeks of real runs. All of them live in
 
 ## 8. Not in v1
 
-1. **LLM analysis.** Feed stored posts + threads into the `ticker_digest`
-   claim-extraction and novelty pipeline, so Reddit gets "what's new" the way
-   YouTube does. The store was shaped for this (threads, per-stock links,
-   score history).
+1. **LLM analysis.** Done as the daily digest —
+   [reddit-digest-v1](reddit-digest-v1.md). Novelty across days (the YouTube
+   treatment) is still open.
 2. **A dashboard panel.** "What Reddit is saying" on Ticker Detail, reading
    `reddit.db`.
 3. **Retiring the old posts stage** in the daily refresh (`reddit_posts` in
