@@ -216,6 +216,49 @@ remedy is a bigger `--max-requests` (or a higher floor), not a direction change.
 `--max-requests` counts pages in every strategy, but a ranked page is 1,000
 subreddits against the creation-time walk's 100.
 
+### 4c. Find subreddits from where the stock is discussed
+
+The tools above start from **names**: what a stock's subreddit might be
+called. This one starts from **posts**: where people actually talk about it.
+Read-only, no credentials, runs locally or in Actions.
+
+```bash
+./run subreddits RKLB PATH AG ON
+# same as: python -m casino_dashboard.jobs.subreddit_find RKLB PATH AG ON [--days 90] [--json out.json]
+```
+
+How it works (`core/social_media/reddit/mention_discovery.py`):
+
+1. **Seeds.** Reads the last 90 days of the stock's mapped subreddits and the
+   general list (the five big finance subreddits while that list is empty),
+   and keeps the posts that mention the ticker or company name.
+2. **Authors.** Follows the 40 people who wrote most of those posts: reads
+   their own posts (a plain author filter; the archive refuses keyword
+   searches across all of Reddit) and notes every subreddit where they mention
+   the stock.
+3. **Measure.** Reads each candidate's posts once and counts how many mention
+   the stock. No archive text search is used anywhere, so its timeouts don't
+   apply.
+
+One table per stock. Columns:
+
+| Column | Meaning |
+|---|---|
+| Verdict | **stock**: at least 25% of posts mention it (5% when the name carries the ticker or company). **general**: discussed, but a small share: a sector or general finance subreddit. **weak**: under 3 mentions or 2 authors. **excluded**: profile pages, NSFW, quarantined |
+| Mentions / posts read | Posts mentioning the stock / posts read. "(newest Nd)" means the subreddit is busy enough that only its newest 1,000 posts, covering N days, were read |
+| Authors | Distinct people behind those mentions |
+| Found via | `map` (already mapped), `seed` (the general list), `authors` (where the followed authors mention it) |
+| In map | ✓ already in `config/ticker_subreddits.yaml`, or `new` |
+
+Under each table: **Not in the map yet** (stock-verdict subreddits missing
+from the map) and **In the map, but the posts don't back it**. Nothing is
+written. Add or remove with `subreddit_resolve add` / `remove` (above) or the
+Subreddits page, then commit `config/ticker_subreddits.yaml`.
+
+Tuning lives in `DiscoveryConfig`. A ticker that is an everyday word (PATH,
+ON, AG) only counts a post that says `$PATH` or the company name, as in
+ingestion.
+
 ## 5. Pull Reddit posts into the DB
 
 ```bash

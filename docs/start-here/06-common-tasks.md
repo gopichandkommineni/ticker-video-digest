@@ -116,6 +116,21 @@ The same actions work from a terminal (after `./run setup`):
 .venv/bin/python -m casino_dashboard.jobs.subreddit_resolve add wallstreetbets
 ```
 
+**Not sure the list is right?** Ask where people actually talk about the stock:
+
+```bash
+./run subreddits RKLB
+```
+
+It looks at who posts about RKLB, follows them to the other communities where
+they mention it, and counts how much of each community's last 90 days of
+posts is about the stock. It takes a few minutes and changes nothing. You get a
+table with a verdict for each community: ✅ **stock** (a real share of its
+posts are about RKLB), **general** (discussed, among much else), **weak** (too
+little to go on) or ✗ **excluded**. Below the table it lists communities that
+are **not in your list yet**, and ones **in your list that the posts don't
+back**. Add or remove them with the Subreddits page as above.
+
 ---
 
 ## Add a note, catalyst, or red flag for a stock *(an edit)*
