@@ -21,7 +21,7 @@ requires that.
 | `03_Market_Reality_Check.py` | Market Reality Check | Is the whole market priced above what the economy supports? |
 | `05_Congress.py` | Congress | What are US politicians trading? |
 | `06_Add_Stocks.py` | Add Stocks | Add a stock to the watched universe |
-| `07_Subreddits.py` | Subreddits | Which Reddit communities are read for each stock? Find them by company name or add one by name |
+| `07_Subreddits.py` | Subreddits | Which Reddit communities are read for each stock? Find them by company name, or add one by name and it's filed under its stock (or the general list) |
 
 There's no `04_`. A page was removed and the rest were never renumbered —
 harmless, and renumbering would change everyone's bookmarks.

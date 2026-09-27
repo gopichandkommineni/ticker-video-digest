@@ -80,11 +80,23 @@ If it can't work out the ticker from the name, a box appears asking for it.
 
 **Add a subreddit** — when you already know the community:
 
-1. Type its name: `wallstreetbets`, `r/wallstreetbets` or a pasted
-   reddit.com link all work.
-2. Pick the stock it belongs to, or leave **none (general list)** for a
-   community that covers many stocks.
-3. Press **Add subreddit**. You'll see "Added r/… to …".
+1. Type its name: `RocketLab`, `r/RocketLab` or a pasted reddit.com link
+   all work.
+2. Leave **For stock** on **Work it out**. Press **Add subreddit**.
+3. The page looks the community up and files it under the stock it's about.
+   You'll see, for example:
+
+   > Added r/RocketLab to RKLB.
+   > Why: Name and description match RKLB (Rocket Lab Corporation).
+
+   A community that isn't about one stock, like r/wallstreetbets or r/space,
+   goes on the **general list** instead ("Added r/wallstreetbets to the
+   general list").
+
+If it guessed wrong, remove it (below) and add it again with the stock picked
+in **For stock**; picking a stock, or **General list**, skips the lookup. If
+you see a yellow note saying the archive couldn't be reached, only the name
+was checked, so glance at where it went.
 
 Everything is saved to `config/ticker_subreddits.yaml`. The table at the
 bottom of the page shows what's saved, and **Remove a subreddit** takes one off.

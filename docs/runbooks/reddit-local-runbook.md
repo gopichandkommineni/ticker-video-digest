@@ -102,16 +102,21 @@ python -m casino_dashboard.jobs.subreddit_resolve company "Rocket Lab"
 python -m casino_dashboard.jobs.subreddit_resolve company "Rocket Lab" --save          # the confident ones
 python -m casino_dashboard.jobs.subreddit_resolve company "Rocket Lab" --pick RocketLab # exactly these
 
-# A subreddit you already know: added directly, no lookup
-python -m casino_dashboard.jobs.subreddit_resolve add wallstreetbets              # general list
-python -m casino_dashboard.jobs.subreddit_resolve add r/RKLB --ticker RKLB
+# A subreddit you already know: filed under the stock it's about, else general
+python -m casino_dashboard.jobs.subreddit_resolve add RocketLab                # → RKLB
+python -m casino_dashboard.jobs.subreddit_resolve add wallstreetbets           # → general list
+python -m casino_dashboard.jobs.subreddit_resolve add r/SomeSub --ticker RKLB  # you decide, no lookup
+python -m casino_dashboard.jobs.subreddit_resolve add r/SomeSub --general      # you decide, no lookup
 
 python -m casino_dashboard.jobs.subreddit_resolve list
 python -m casino_dashboard.jobs.subreddit_resolve remove r/RKLB --ticker RKLB
 ```
 
 The **Subreddits** page in the dashboard does the same with two input fields.
-The company search uses the same prefix matcher as `subreddit_match_run`. The
+The company search uses the same prefix matcher as `subreddit_match_run`;
+adding by name uses the catalog sweep's attribution rule (name form, or a
+description naming the ticker/company in a finance context; a tie between two
+stocks counts as no match). The
 sections that follow are the older bulk tools, still useful for sweeping the
 whole universe; their `--save` keeps any subreddit you added by hand.
 
@@ -342,7 +347,7 @@ authenticated PRAW; otherwise it uses the public JSON API.
 | `python -m casino_dashboard.jobs.subreddit_catalog_run --fetch-only --out DIR` | Phase 1: dump every subreddit + subscriber count | `DIR/` |
 | `python -m casino_dashboard.jobs.subreddit_catalog_run --from-catalog CSV [--save]` | Phase 2: filter that dump → stock subs → per-stock subs (no network) | `config/ticker_subreddits.yaml` (with `--save`), `DIR/` (with `--out`) |
 | `python -m casino_dashboard.jobs.subreddit_resolve company "NAME" [--save \| --pick A,B]` | Find a company's subreddits; save the confident ones or your picks | `config/ticker_subreddits.yaml` (with `--save`/`--pick`) |
-| `python -m casino_dashboard.jobs.subreddit_resolve add NAME [--ticker T]` | Add a subreddit directly (general list without `--ticker`) | `config/ticker_subreddits.yaml` |
+| `python -m casino_dashboard.jobs.subreddit_resolve add NAME [--ticker T \| --general]` | Add a subreddit: filed under the stock its name/description match, else the general list; `--ticker`/`--general` decide it yourself | `config/ticker_subreddits.yaml` |
 | `python -m casino_dashboard.jobs.reddit_ingest [TICKERS…]` | Daily ingestion: posts + top comments per stock | `data/reddit.db` (or `REDDIT_DB_PATH`) |
 | `python -m casino_dashboard.jobs.reddit_refresh [TICKERS…]` | Pull posts into the DB (Reddit only) | `data/snapshots.db` |
 | `python -m casino_dashboard.jobs.reddit_scrape subreddit SUBS… [--comments N]` | Every post in whole subreddits, ranked | nothing (`--json PATH`, `--save --ticker T` optional) |

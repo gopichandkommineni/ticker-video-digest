@@ -113,7 +113,7 @@ def in_tmp(tmp_path, monkeypatch):
 
 
 def test_cli_add_list_remove(in_tmp, capsys):
-    assert cli.main(["add", "r/wallstreetbets"]) == 0
+    assert cli.main(["add", "r/wallstreetbets", "--general"]) == 0
     assert cli.main(["add", "RKLB", "--ticker", "rklb"]) == 0
     assert cli.main(["add", "RKLB", "--ticker", "RKLB"]) == 0
     assert cli.main(["add", "bad name"]) == 1
@@ -190,3 +190,143 @@ def test_page_resolves_then_saves_ticked(in_tmp):
         at.run()
     assert not at.exception
     assert load_subreddit_map(in_tmp) == {"RKLB": ["RocketLab", "RKLB"]}
+
+
+# --- input 2, automatic: which stock does this subreddit belong to? -----------------
+
+from core.social_media.reddit.resolver import add_subreddit_auto, attribute_subreddit  # noqa: E402
+from core.social_media.reddit.subreddit_catalog import UniverseEntry  # noqa: E402
+
+_RAW = "core.social_media.reddit.arctic_shift_client.search_subreddits_raw"
+_UNIVERSE_ENTRIES = [
+    UniverseEntry(ticker="RKLB", company_name="Rocket Lab Corporation"),
+    UniverseEntry(ticker="ASTS", company_name="AST SpaceMobile, Inc."),
+    UniverseEntry(ticker="PATH", company_name="UiPath, Inc."),
+]
+_ARCHIVE = {
+    "rocketlab": {"display_name": "RocketLab", "subscribers": 29000, "title": "Rocket Lab",
+                  "public_description": "Unofficial community for Rocket Lab (RKLB)"},
+    "wallstreetbets": {"display_name": "wallstreetbets", "subscribers": 15_000_000,
+                       "title": "wallstreetbets", "public_description": "Like 4chan found a Bloomberg terminal"},
+    "space": {"display_name": "space", "subscribers": 26_000_000, "title": "space",
+              "public_description": "Share and discuss space news"},
+    "uipathbulls": {"display_name": "UiPathBulls", "subscribers": 900, "title": "UiPath investors",
+                    "public_description": "Discussion of UiPath stock, $PATH"},
+}
+
+
+def _archive(**kw):
+    item = _ARCHIVE.get(kw["subreddit"].lower())
+    return 200, [item] if item else []
+
+
+@pytest.mark.parametrize("name,ticker", [
+    ("RocketLab", "RKLB"),
+    ("rocketlab", "RKLB"),
+    ("https://reddit.com/r/UiPathBulls/", "PATH"),
+    ("r/wallstreetbets", None),
+    ("space", None),
+])
+def test_attribute_subreddit_from_archive(name, ticker):
+    with patch(_RAW, side_effect=_archive):
+        a = attribute_subreddit(name, _UNIVERSE_ENTRIES)
+    assert a.ticker == ticker and a.found and a.archive_ok
+    assert ("match" in a.reason) and (ticker or "any single stock") in a.reason
+
+
+def test_attribute_uses_archive_spelling():
+    with patch(_RAW, side_effect=_archive):
+        a = attribute_subreddit("rocketlab", _UNIVERSE_ENTRIES)
+    assert a.name == "RocketLab" and a.subscribers == 29000
+
+
+def test_attribute_unknown_subreddit_judged_on_name():
+    with patch(_RAW, side_effect=_archive):
+        good = attribute_subreddit("RKLB_stock", _UNIVERSE_ENTRIES)
+        vague = attribute_subreddit("SpaceStonks", _UNIVERSE_ENTRIES)
+    assert good.ticker == "RKLB" and not good.found and good.archive_ok
+    assert "doesn't know this subreddit" in good.reason
+    assert vague.ticker is None
+
+
+@pytest.mark.parametrize("failure", [lambda **kw: (0, []), lambda **kw: (503, [])])
+def test_attribute_archive_down_falls_back_to_name(failure):
+    with patch(_RAW, side_effect=failure):
+        a = attribute_subreddit("ASTSpaceMobile", _UNIVERSE_ENTRIES)
+    assert a.ticker == "ASTS" and not a.archive_ok and "couldn't be reached" in a.reason
+
+
+def test_attribute_survives_transport_exception():
+    with patch(_RAW, side_effect=ConnectionError("blocked")):
+        a = attribute_subreddit("wallstreetbets", _UNIVERSE_ENTRIES)
+    assert a.ticker is None and not a.archive_ok
+
+
+def test_attribute_tie_goes_to_general():
+    # Two share classes of one company: r/Alphabet fits both equally. A tie is
+    # filed on the general list rather than guessed.
+    tie = [UniverseEntry(ticker="GOOG", company_name="Alphabet Inc."),
+           UniverseEntry(ticker="GOOGL", company_name="Alphabet Inc.")]
+    with patch(_RAW, side_effect=lambda **kw: (200, [])):
+        assert attribute_subreddit("Alphabet", tie).ticker is None
+        assert attribute_subreddit("Alphabet", tie[:1]).ticker == "GOOG"
+
+
+def test_add_subreddit_auto_files_under_stock_or_general(tmp_path: Path):
+    p = tmp_path / "map.yaml"
+    with patch(_RAW, side_effect=_archive):
+        e1, a1 = add_subreddit_auto("RocketLab", _UNIVERSE_ENTRIES, path=p, added="2026-09-27")
+        e2, _ = add_subreddit_auto("wallstreetbets", _UNIVERSE_ENTRIES, path=p)
+        e3, a3 = add_subreddit_auto("rocketlab", _UNIVERSE_ENTRIES, path=p)
+    assert e1.ticker == "RKLB" and e2.ticker is None
+    assert e3 is None and a3.ticker == "RKLB"            # already there
+    assert load_subreddit_map(p) == {"RKLB": ["RocketLab"]}
+    assert load_general_subreddits(p) == ["wallstreetbets"]
+    saved = next(e for e in load_entries(p) if e.name == "RocketLab")
+    assert saved.source == "manual" and saved.subscribers == 29000
+    assert "RKLB" in saved.note
+
+
+def test_cli_add_auto(in_tmp, capsys):
+    with patch(_RAW, side_effect=_archive), \
+         patch.object(cli, "_universe_entries", return_value=_UNIVERSE_ENTRIES):
+        assert cli.main(["add", "RocketLab"]) == 0
+        assert cli.main(["add", "space"]) == 0
+    out = capsys.readouterr().out
+    assert "Added r/RocketLab to RKLB" in out and "Added r/space to the general list" in out
+    assert "Why: Name and description match RKLB" in out
+    assert load_subreddit_map(in_tmp) == {"RKLB": ["RocketLab"]}
+
+
+def test_cli_add_with_ticker_or_general_skips_lookup(in_tmp):
+    with patch(_RAW) as lookup:
+        assert cli.main(["add", "SomeSub", "--ticker", "RKLB"]) == 0
+        assert cli.main(["add", "OtherSub", "--general"]) == 0
+    lookup.assert_not_called()
+    assert load_subreddit_map(in_tmp) == {"RKLB": ["SomeSub"]}
+    assert load_general_subreddits(in_tmp) == ["OtherSub"]
+
+
+def test_cli_ticker_and_general_are_exclusive():
+    with pytest.raises(SystemExit):
+        cli._parse_args(["add", "x_sub", "--ticker", "RKLB", "--general"])
+
+
+def test_page_auto_detects_stock(in_tmp):
+    with patch("casino_dashboard.ui.loaders.load_universe_for_ui", return_value=_UNIVERSE), \
+         patch("casino_dashboard.jobs.subreddit_catalog_run.load_company_names",
+               return_value={"RKLB": "Rocket Lab Corporation"}), \
+         patch(_RAW, side_effect=_archive):
+        at = _app().run()
+        next(t for t in at.text_input if t.label == "Subreddit").input("RocketLab")
+        next(b for b in at.button if b.label == "Add subreddit").click()
+        at.run()
+        assert not at.exception
+        assert any("Added r/RocketLab to RKLB" in s.value for s in at.success)
+        next(t for t in at.text_input if t.label == "Subreddit").input("wallstreetbets")
+        next(b for b in at.button if b.label == "Add subreddit").click()
+        at.run()
+    assert not at.exception
+    assert any("Added r/wallstreetbets to the general list" in s.value for s in at.success)
+    assert load_subreddit_map(in_tmp) == {"RKLB": ["RocketLab"]}
+    assert load_general_subreddits(in_tmp) == ["wallstreetbets"]

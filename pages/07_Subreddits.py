@@ -4,14 +4,18 @@ import streamlit as st
 
 from core.social_media.reddit.resolver import (
     add_subreddit,
+    add_subreddit_auto,
     load_entries,
     remove_entry,
     resolve_company,
     save_resolved,
 )
+from core.social_media.reddit.subreddit_catalog import UniverseEntry
+from casino_dashboard.jobs.subreddit_catalog_run import load_company_names
 from casino_dashboard.ui.loaders import load_universe_for_ui
 
-_GENERAL = "— none (general list) —"
+_AUTO = "Work it out (general list if no match)"
+_GENERAL = "General list (not one stock)"
 
 st.set_page_config(page_title="Subreddits", layout="wide")
 st.title("Subreddits")
@@ -123,24 +127,45 @@ with left:
 
 with right:
     st.subheader("Add a subreddit")
-    st.caption("Know the community already? Add it straight to the list — no lookup.")
+    st.caption(
+        "Know the community already? Type it in. The page works out which stock "
+        "it belongs to from its name and description; if it isn't about one stock "
+        "(r/wallstreetbets, r/space) it goes on the general list."
+    )
     with st.form("add_form", clear_on_submit=True):
-        name = st.text_input("Subreddit", placeholder="e.g. wallstreetbets, r/RKLB or a reddit.com link")
-        stock = st.selectbox("For stock", options=[_GENERAL] + universe_tickers)
+        name = st.text_input("Subreddit", placeholder="e.g. RocketLab, r/wallstreetbets or a reddit.com link")
+        stock = st.selectbox("For stock", options=[_AUTO, _GENERAL] + universe_tickers)
         add = st.form_submit_button("Add subreddit", type="primary")
 
     if add:
-        ticker = None if stock == _GENERAL else stock
-        where = ticker or "the general list"
         try:
-            entry = add_subreddit(name, ticker=ticker)
+            if stock == _AUTO:
+                names = load_company_names()
+                universe = [UniverseEntry(ticker=t, company_name=names.get(t))
+                            for t in universe_tickers]
+                with st.spinner("Checking which stock it belongs to…"):
+                    entry, attribution = add_subreddit_auto(name, universe)
+                ticker, note = attribution.ticker, attribution.reason
+                shown_name = attribution.name
+            else:
+                ticker = None if stock == _GENERAL else stock
+                entry = add_subreddit(name, ticker=ticker)
+                note, shown_name = None, entry.name if entry else name.strip()
+                attribution = None
         except ValueError as exc:
             st.error(str(exc))
         else:
+            where = ticker or "the general list"
             if entry:
                 st.success(f"Added r/{entry.name} to {where}.")
             else:
-                st.info(f"Already on {where}.")
+                st.info(f"r/{shown_name.removeprefix('r/')} is already on {where}.")
+            if note:
+                st.caption(f"Why: {note}.")
+            if attribution is not None and not attribution.archive_ok:
+                st.warning("The Reddit archive couldn't be reached, so only the name was "
+                           "checked. If this landed in the wrong place, remove it below "
+                           "and add it again with the stock picked by hand.")
 
 # ---------------------------------------------------------------------------
 # What's saved
