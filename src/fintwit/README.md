@@ -78,9 +78,11 @@ In practice these run via `scripts/` and GitHub Actions, not by hand:
 | `fintwit-daily.yml` | 2am ET daily | `scripts/run_daily.py` — fetch yesterday |
 | `fintwit-backfill.yml` | Manual | `scripts/run_backfill.py` — fill history for a handle |
 | `fintwit-schedule.yml` | Manual | Pause or resume the daily ingest |
-| `fintwit-variance.yml` | Manual | `scripts/run_variance.py` — compare providers |
 
-It shares the `db-writer` lock with the dashboard's jobs, so the two never
+The provider comparison (`scripts/run_variance.py`) no longer has a workflow;
+run it by hand with `GETXAPI_KEY` and `TWITTERAPI_IO_KEY` set.
+
+The daily ingest shares the `db-writer` lock with the dashboard's jobs, so the two never
 write git-tracked databases at the same time.
 
 ---
