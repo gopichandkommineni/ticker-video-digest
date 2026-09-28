@@ -43,7 +43,11 @@ permissions:
 jobs:
   ingest:
     runs-on: ubuntu-latest
-    timeout-minutes: 120  # ingest ~10–20 min + digest: up to 64 calls, ~30–60s each
+    # Measured 2026-09-28: ingest ~25 s per stock; the digest ~1.5–3 min per
+    # stock with posts (claude -p, haiku). A full universe is ~30 min + up to
+    # ~2.5 h, so the job gets 5 h and the digest step is capped below it: the
+    # final commit always has time to run.
+    timeout-minutes: 300
 
     env:
       # Placeholders keep core.config importable; ingestion never calls them.
@@ -75,20 +79,9 @@ jobs:
       - name: Ingest Reddit & write run report
         run: python -m casino_dashboard.jobs.reddit_ingest
 
-      # Only with the subscription token: without it the digest uses Gemini.
-      - name: Install Claude Code CLI
-        if: always() && env.CLAUDE_CODE_OAUTH_TOKEN != ''
-        run: npm install -g @anthropic-ai/claude-code
-
-      # Digest whatever is in reddit.db, even if today's ingest only partly
-      # worked — a quiet stock just gets a "no new posts" note.
-      - name: Daily digest (LLM) & write report
-        if: always()
-        run: python -m casino_dashboard.jobs.reddit_digest
-
-      # Commit even if ingestion failed part-way (if: always) so progress is
-      # never lost — stage only the DB file, never `git add -A`.
-      - name: Commit updated reddit.db to main
+      # Save the collected posts before the (long) digest starts, so a digest
+      # that fails or runs out of time never costs the day's collection.
+      - name: Commit collected posts to main
         if: always()
         run: |
           test -f data/reddit.db || { echo "data/reddit.db not present — nothing to commit"; exit 0; }
@@ -97,5 +90,33 @@ jobs:
           git add -- data/reddit.db
           git diff --cached --quiet && echo "No changes to commit" && exit 0
           git commit -m "Reddit ingest: $(date -u +%Y-%m-%dT%H:%M)Z"
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      # Only with the subscription token: without it the digest uses Gemini.
+      - name: Install Claude Code CLI
+        if: always() && env.CLAUDE_CODE_OAUTH_TOKEN != ''
+        run: npm install -g @anthropic-ai/claude-code
+
+      # Digest whatever is in reddit.db, even if today's ingest only partly
+      # worked — a quiet stock just gets a "no new posts" note.
+      # Each stock's digest is saved as it finishes, so hitting this cap keeps
+      # every stock done so far; the rest are picked up by the next run.
+      - name: Daily digest (LLM) & write report
+        if: always()
+        timeout-minutes: 240
+        run: python -m casino_dashboard.jobs.reddit_digest
+
+      # Commit the digests even if a step failed part-way (if: always) so
+      # progress is never lost — stage only the DB file, never `git add -A`.
+      - name: Commit digests to main
+        if: always()
+        run: |
+          test -f data/reddit.db || { echo "data/reddit.db not present — nothing to commit"; exit 0; }
+          git config user.name  "reddit-ingest-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -- data/reddit.db
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "Reddit digest: $(date -u +%Y-%m-%dT%H:%M)Z"
           git pull --rebase origin main
           git push origin HEAD:main
