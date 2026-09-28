@@ -22,8 +22,14 @@ Across providers it also measures:
 
 ## How to run
 
-Trigger the **FinTwit API Variance Probe** GitHub Actions workflow
-(`fintwit-variance.yml`) via `workflow_dispatch`:
+Run the probe by hand (its GitHub Actions workflow was removed in Sep 2026),
+with `GETXAPI_KEY` and `TWITTERAPI_IO_KEY` set. 💸 Both providers are metered:
+
+```bash
+python scripts/run_variance.py <handle> [--since YYYY-MM-DD] [--runs N]
+```
+
+Arguments:
 
 | Input | Description | Default |
 |-------|-------------|---------|
@@ -31,8 +37,8 @@ Trigger the **FinTwit API Variance Probe** GitHub Actions workflow
 | `since` | Start date `YYYY-MM-DD` | Jan 1 of current year |
 | `runs` | Number of repeat runs per provider | `3` |
 
-The workflow saves outputs to `probes/variance/<YYYY-MM-DD>_<handle>/` and commits
-them back to `main`.
+Outputs land in `probes/variance/<YYYY-MM-DD>_<handle>/`. Commit them yourself
+if you want to keep them.
 
 ---
 

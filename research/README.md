@@ -34,9 +34,9 @@ holding the raw responses plus a written `report.md` and `meta.md`.
 
 `probes/README.md` and each subfolder's own README explain the methodology.
 
-The variance results are written by `scripts/run_variance.py` and committed
-automatically by the `fintwit-variance.yml` workflow — so this tree is a live
-output path, not a static archive. Don't restructure it without updating both.
+The variance results are written by `scripts/run_variance.py` (run by hand;
+its workflow was removed in Sep 2026), so this tree is still that script's
+output path. Don't restructure it without updating the script.
 
 ---
 

@@ -64,7 +64,7 @@ the easiest part of the codebase to test.
 |---|---|
 | `daily_refresh.py` | **The main one.** `daily_refresh.yml`, 4× every weekday |
 | `reddit_pull.py`, `reddit_refresh.py` | Called by the daily refresh |
-| `reddit_smoke_test.py` | `reddit_smoke_test.yml`, manually — "is Reddit still reachable?" |
+| `reddit_smoke_test.py` | By hand — only useful with Reddit API credentials (`REDDIT_CLIENT_ID`/`SECRET`); without them it finds nothing |
 | `subreddit_discovery_run.py` | Finds which subreddits discuss a stock |
 | `subreddit_match_run.py` | Matches subreddits to companies by name |
 | `subreddit_catalog_run.py` | Sweeps the archive for finance subreddits |

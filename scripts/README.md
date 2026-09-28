@@ -15,7 +15,7 @@ Day-to-day work needs `./run` at the repository root, not this folder.
 |---|---|---|
 | `run_daily.py` | `fintwit-daily.yml`, nightly | Fetch yesterday's tweets for every tracked handle |
 | `run_backfill.py` | `fintwit-backfill.yml`, manual | Fill in history for one or more handles |
-| `run_variance.py` | `fintwit-variance.yml`, manual | Ask both tweet providers the same question N times and compare — do they return consistent data? |
+| `run_variance.py` | By hand (needs `GETXAPI_KEY`, `TWITTERAPI_IO_KEY`; 💸 metered) | Ask both tweet providers the same question N times and compare — do they return consistent data? |
 | `import_probe_data.py` | By hand | Load already-paid-for probe JSON into the database instead of re-fetching it |
 | `reddit_brief_local.sh` | `./run reddit-brief install` sets up your computer's scheduler (launchd / systemd / cron) to run it hourly while on | Writes the daily Reddit digest with Claude Code on **your Claude subscription**; `./run reddit-brief RKLB` does one stock on demand (fetch last 7 days → Claude → publish), when GitHub has collected new posts; merges only the new digest rows into the latest `data/reddit.db` on `main` and pushes. Checks and walks you through its prerequisites first. See the Reddit runbook §5e |
 
@@ -26,7 +26,7 @@ Day-to-day work needs `./run` at the repository root, not this folder.
 
 | Script | Run by | Does |
 |---|---|---|
-| `cleanup_corrupt_news.py` | `cleanup_corrupt_news.yml`, manual | Delete news rows corrupted by an old parser bug |
+| `cleanup_corrupt_news.py` | By hand (ran once in May 2026; its workflow was removed) | Delete news rows corrupted by an old parser bug |
 | `shrink_fintwit_db.py` | By hand / before a backfill | Drop stored raw API payloads to keep `fintwit.db` under GitHub's 100 MB file limit |
 
 ## Migrations — already applied, kept for the record
