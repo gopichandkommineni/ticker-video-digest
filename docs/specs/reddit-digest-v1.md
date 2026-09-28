@@ -77,7 +77,11 @@ posts, so nothing private is sent.
 
 ## 3. One run
 
-Runs in `reddit_ingest.yml` right after ingestion (same job, same commit):
+Runs in `reddit_ingest.yml` right after ingestion, in the same job. The collected
+posts are committed first, then the digests in a second commit, so a digest that
+fails or runs long never costs the day's collection. Measured on the first cloud
+run (2026-09-28): about 1.5–3 minutes per stock with posts, so the digest step is
+capped at 4 hours inside a 5-hour job:
 
 ```
 for each stock:
